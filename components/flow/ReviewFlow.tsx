@@ -48,6 +48,8 @@ export function ReviewFlow({ campaignId, businessName, menus }: Props) {
 
   const [receiptCode, setReceiptCode] = useState("");
   const [receiptId, setReceiptId] = useState("");
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [photoMsg, setPhotoMsg] = useState<string | null>(null);
 
   const [rating, setRating] = useState(0);
   const [selected, setSelected] = useState<string[]>([]);
@@ -90,6 +92,23 @@ export function ReviewFlow({ campaignId, businessName, menus }: Props) {
       const d = await post("/api/receipts", { campaignId, code: receiptCode });
       setReceiptId(d.receiptId);
       setStep("rating");
+    });
+  const submitReceiptPhoto = () =>
+    run(async () => {
+      if (!photo) return;
+      setPhotoMsg(null);
+      const fd = new FormData();
+      fd.append("campaignId", campaignId);
+      fd.append("image", photo);
+      const res = await fetch("/api/receipts/ocr", { method: "POST", body: fd });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d?.error?.message ?? "업로드에 실패했어요");
+      if (d.status === "VERIFIED") {
+        setReceiptId(d.receiptId);
+        setStep("rating");
+      } else {
+        setPhotoMsg("사진을 검토 중이에요. 승인되면 적립돼요. 또는 승인번호를 직접 입력해 주세요.");
+      }
     });
   const submitFeedback = () =>
     run(async () => {
@@ -177,12 +196,32 @@ export function ReviewFlow({ campaignId, businessName, menus }: Props) {
         )}
 
         {step === "receipt" && (
-          <Step title={"영수증을\n인증해 주세요"} desc="영수증의 승인번호를 입력하세요.">
+          <Step title={"영수증을\n인증해 주세요"} desc="영수증에 안내된 인증코드를 입력하세요.">
             <TextInput
-              placeholder="승인번호 입력"
+              placeholder="인증코드 입력"
               value={receiptCode}
               onChange={(e) => setReceiptCode(e.target.value)}
             />
+            <div className="mt-5 border-t border-line pt-4">
+              <p className="mb-2 text-sm text-ink-sub">또는 영수증 사진으로 인증 (베타)</p>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => setPhoto(e.target.files?.[0] ?? null)}
+                className="block w-full text-sm text-ink-sub"
+              />
+              <Button
+                variant="secondary"
+                fullWidth
+                className="mt-3"
+                loading={busy}
+                disabled={!photo}
+                onClick={submitReceiptPhoto}
+              >
+                사진으로 인증
+              </Button>
+              {photoMsg && <p className="mt-2 text-sm text-ink-sub">{photoMsg}</p>}
+            </div>
           </Step>
         )}
 

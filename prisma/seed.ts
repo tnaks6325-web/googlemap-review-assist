@@ -38,9 +38,18 @@ async function main() {
     data: { businessId: business.id, slug: "demo", name: "기본 캠페인", active: true },
   });
 
+  // 발급 코드 DEMO0001 ~ DEMO0020 (정규화 형태로 저장)
+  await prisma.campaignCode.createMany({
+    data: Array.from({ length: 20 }, (_, i) => ({
+      campaignId: campaign.id,
+      code: `DEMO${String(i + 1).padStart(4, "0")}`,
+    })),
+  });
+
   console.log("seed 완료:");
   console.log("  매장:", business.name, `(id=${business.id})`);
   console.log("  캠페인 진입:", `/r/${campaign.slug}`);
+  console.log("  발급 코드: DEMO0001 ~ DEMO0020");
 }
 
 main()

@@ -144,6 +144,23 @@
 검증: 보류→승인(PAID)/반려(환불) 원장 정합, 잔액초과 차단(R1), 재반려 409(R3), 관리자 토큰 오류 403(R2) 실측.
 운영 권장(이월): R6 공유 레이트리밋, R1을 Postgres에서는 `Serializable`+재시도로 보강, 원장 SUM≥0 DB CHECK.
 
+## 7d. 레드팀 3라운드 (영수증 OCR/검증) — 조치 내역 / 이월
+
+| ID | 심각도 | 내용 | 상태 |
+|---|---|---|---|
+| R1 | CRITICAL | 코드 라우트가 임의 코드를 즉시 VERIFIED(전면 우회) | ✅ **발급 코드(CampaignCode) 1회용 매칭** 시에만 VERIFIED, 임의 코드 422 |
+| R4 | HIGH | 가맹점 미인식 시 검증 fail-open | ✅ fail-closed(가맹점 미인식→PENDING) + 매칭 강화 |
+| R5 | MEDIUM | 인메모리 일일 한도 멀티노드 우회 | ✅ DB 카운트 기반(24h)으로 교체 |
+| R7 | MEDIUM | 이미지 타입 클라 MIME 신뢰 | ✅ 매직바이트 스니핑(PNG/JPEG/GIF/WebP) |
+| R6 | MEDIUM | 코드 저장 비정규화 | ✅ 정규화 코드 저장 |
+| R8 | LOW | mockText 무제한 | ✅ 8KB 캡(+ReDoS 없음 확인) |
+| R3 | HIGH | 실 OCR 도입 시 검증은 decide 로직에 의존 | ⏭️ 실 프로바이더 도입 시 per-field confidence 사용(후속) |
+| R9 | LOW | ocrText 미렌더(잠재 저장 XSS) | ⏭️ 내보내기 시 sanitize(문서화) |
+| R10 | LOW | null-Origin 허용 | ⏭️ (인프라 라운드) |
+
+검증: 임의 코드 422·발급코드 VERIFIED·1회용 재사용 409·교차사용 409·OCR 가맹점불일치 PENDING(적립 403) 실측.
+참고: 발급 코드는 업체가 영수증/POS에 안내하는 1회용 코드 모델. 실 영수증 OCR/POS 매칭은 실 프로바이더 도입 라운드에서 확장.
+
 ## 8. 체크리스트 (구현 시)
 
 - [ ] OTP 코드 해시 저장 + 만료 3분 + 5회 제한

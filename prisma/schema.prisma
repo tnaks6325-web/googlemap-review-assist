@@ -48,9 +48,25 @@ model Campaign {
   business   Business  @relation(fields: [businessId], references: [id])
   slug       String    @unique
   name       String
-  active     Boolean   @default(true)
+  active     Boolean        @default(true)
   receipts   Receipt[]
+  codes      CampaignCode[]
+  createdAt  DateTime       @default(now())
+}
+
+// 업체가 발급한 1회용 인증 코드(영수증/POS 연동 전 단계의 검증 수단).
+// R1: 자가신고 임의 코드가 아니라 발급된 미사용 코드와 일치할 때만 VERIFIED.
+model CampaignCode {
+  id         String    @id @default(cuid())
+  campaignId String
+  campaign   Campaign  @relation(fields: [campaignId], references: [id])
+  code       String // 정규화된 코드
+  used       Boolean   @default(false)
+  usedAt     DateTime?
   createdAt  DateTime  @default(now())
+
+  @@unique([campaignId, code])
+  @@index([campaignId])
 }
 
 // ---------- 고객 / 적립 ----------
@@ -79,12 +95,15 @@ model Receipt {
   campaign   Campaign  @relation(fields: [campaignId], references: [id])
   reviewerId String
   reviewer   Reviewer  @relation(fields: [reviewerId], references: [id])
-  code       String?
-  amount     Int?
-  dedupeHash String    @unique // 동일 영수증 재사용 차단
-  status     String    @default("PENDING") // PENDING | VERIFIED | REJECTED
-  feedback   Feedback?
-  createdAt  DateTime  @default(now())
+  code         String? // 승인번호/식별 코드
+  amount       Int?
+  merchantName String?
+  ocrText      String? // OCR 원문(truncated)
+  source       String    @default("CODE") // CODE | OCR
+  dedupeHash   String    @unique // 동일 영수증 재사용 차단
+  status       String    @default("PENDING") // PENDING | VERIFIED | REJECTED
+  feedback     Feedback?
+  createdAt    DateTime  @default(now())
 
   @@index([reviewerId])
   @@index([businessId])
