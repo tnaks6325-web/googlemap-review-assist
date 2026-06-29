@@ -34,11 +34,21 @@ export default async function OwnerHome() {
     <main className="mx-auto max-w-3xl px-5 py-8">
       <header className="mb-8 flex items-center justify-between">
         <h1 className="text-[22px] font-bold text-ink">사장님 대시보드</h1>
-        <LogoutButton />
+        <div className="flex items-center gap-4">
+          <a href="/owner/new" className="text-sm font-semibold text-brand">
+            + 매장 등록
+          </a>
+          <LogoutButton />
+        </div>
       </header>
 
       {data.length === 0 && (
-        <p className="text-[15px] text-ink-sub">등록된 매장이 없어요.</p>
+        <p className="text-[15px] text-ink-sub">
+          등록된 매장이 없어요.{" "}
+          <a href="/owner/new" className="text-brand">
+            매장 등록하기
+          </a>
+        </p>
       )}
 
       {data.map(({ b, stats }) => {
@@ -47,11 +57,9 @@ export default async function OwnerHome() {
           <section key={b.id} className="mb-10 space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-ink">{b.name}</h2>
-              {b.campaigns[0] && (
-                <a className="text-sm text-brand" href={`/r/${b.campaigns[0].slug}`}>
-                  참여 링크 /r/{b.campaigns[0].slug}
-                </a>
-              )}
+              <a className="text-sm font-semibold text-brand" href={`/owner/${b.id}`}>
+                관리 →
+              </a>
             </div>
 
             <div className="grid grid-cols-3 gap-3">
