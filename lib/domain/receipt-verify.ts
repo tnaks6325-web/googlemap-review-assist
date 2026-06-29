@@ -18,12 +18,13 @@ export function decideReceiptStatus(r: OcrResult, businessName: string): VerifyD
   if (!r.amount || r.amount <= 0) return { status: "PENDING", reason: "금액 미인식" };
   if (r.confidence < CONFIDENCE_MIN) return { status: "PENDING", reason: "인식 신뢰도 낮음" };
 
-  // R4: 가맹점 검증은 fail-closed — 가맹점명을 못 읽으면 자동검증하지 않는다.
+  // R4/F5: 가맹점 검증 fail-closed. 짧은 상호(오탐 위험)는 자동검증 금지,
+  // 매칭은 "영수증 상호 텍스트가 등록 상호를 포함"만 인정(역방향 부분일치 제거).
   if (!r.merchantName) return { status: "PENDING", reason: "가맹점명 미인식" };
   const a = norm(r.merchantName);
   const b = norm(businessName);
-  if (b.length < 2) return { status: "PENDING", reason: "가맹점 확인 필요" };
-  if (!a.includes(b) && !b.includes(a)) {
+  if (b.length < 3) return { status: "PENDING", reason: "가맹점 확인 필요" };
+  if (!a.includes(b)) {
     return { status: "PENDING", reason: "가맹점명 불일치" };
   }
   return { status: "VERIFIED" };

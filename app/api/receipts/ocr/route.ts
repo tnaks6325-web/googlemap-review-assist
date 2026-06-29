@@ -85,7 +85,13 @@ export async function POST(req: Request) {
 
   // mockText는 개발 환경에서만 허용(운영에서는 실제 OCR 프로바이더가 무시)
   const devMock = process.env.NODE_ENV !== "production" ? mockText : undefined;
-  const result = await getOcrProvider().extract({ imageBytes, mimeType, mockText: devMock });
+  let result;
+  try {
+    result = await getOcrProvider().extract({ imageBytes, mimeType, mockText: devMock });
+  } catch {
+    // F1: 제공자 오류를 일반 응답으로(내부 메시지 비노출). 영수증 미생성(fail-closed).
+    return err("OCR_FAILED", "영수증 확인 중 문제가 생겼어요. 잠시 후 다시 시도해 주세요", 502);
+  }
 
   if (!result.approvalNo) {
     return err("RECEIPT_UNREADABLE", "영수증을 인식하지 못했어요. 승인번호를 직접 입력해 주세요", 422);

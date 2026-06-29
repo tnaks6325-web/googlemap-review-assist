@@ -1,0 +1,35 @@
+// 영수증 텍스트에서 핵심 필드를 추출하는 공유 파서.
+// stub(개발)·vision(운영) 프로바이더가 동일 파서를 재사용한다.
+
+export interface ParsedReceipt {
+  approvalNo?: string;
+  amount?: number;
+  paidAt?: string; // YYYY-MM-DD
+  merchantName?: string;
+  fieldsFound: number; // 0..4 (구조적 완성도)
+}
+
+export function parseReceiptText(text: string): ParsedReceipt {
+  const approval = text.match(/(?:승인\s*(?:번호|no\.?)|approval)\s*[:：]?\s*([0-9-]{4,})/i);
+  const amountM = text.match(/(?:합계|총액|결제\s*금액|금액|total)\s*[:：]?\s*₩?\s*([0-9,]{2,15})/i);
+  const dateM = text.match(/(20\d{2})[.\-/](\d{1,2})[.\-/](\d{1,2})/);
+  const merchantM = text.match(/(?:상호|가맹점(?:명)?)\s*[:：]?\s*(.+)/);
+
+  const approvalNo = approval?.[1]?.replace(/[^0-9]/g, "") || undefined;
+  const amountNum = amountM ? Number(amountM[1].replace(/[^0-9]/g, "")) : NaN;
+  const amount = Number.isFinite(amountNum) && amountNum > 0 ? amountNum : undefined;
+
+  let fieldsFound = 0;
+  if (approvalNo) fieldsFound++;
+  if (amount) fieldsFound++;
+  if (dateM) fieldsFound++;
+  if (merchantM) fieldsFound++;
+
+  return {
+    approvalNo,
+    amount,
+    paidAt: dateM ? `${dateM[1]}-${dateM[2].padStart(2, "0")}-${dateM[3].padStart(2, "0")}` : undefined,
+    merchantName: merchantM?.[1]?.trim().slice(0, 80),
+    fieldsFound,
+  };
+}

@@ -203,7 +203,8 @@ export function ReviewFlow({ campaignId, businessName, menus }: Props) {
               onChange={(e) => setReceiptCode(e.target.value)}
             />
             <div className="mt-5 border-t border-line pt-4">
-              <p className="mb-2 text-sm text-ink-sub">또는 영수증 사진으로 인증 (베타)</p>
+              <p className="mb-1 text-sm text-ink-sub">또는 영수증 사진으로 인증 (베타)</p>
+              <p className="mb-2 text-xs text-ink-weak">사진은 인식을 위해 OCR 서비스로 전송돼요.</p>
               <input
                 type="file"
                 accept="image/*"

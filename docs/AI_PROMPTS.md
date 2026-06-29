@@ -92,6 +92,14 @@
 
 ❌ 금지 예(창작): "사장님이 정말 친절하시고 주차도 편해요" — 고객이 말한 적 없음(C2 위반).
 
+## 6b. 영수증 OCR 프로바이더 (참고)
+
+리뷰 초안과 별개로, 영수증 검증용 OCR은 `lib/ocr`에 추상화되어 있다.
+- 개발: 스텁(`mockText` 정규식 파싱).
+- 운영: `OCR_PROVIDER=vision` + `GOOGLE_VISION_API_KEY` → Google Vision TEXT_DETECTION REST.
+- 파서(`lib/ocr/parse.ts`)는 두 프로바이더가 공유. 검증 판정은 `lib/domain/receipt-verify.ts`(승인번호·금액·가맹점·신뢰도 fail-closed)에서 수행.
+- 신뢰도: Vision은 페이지 confidence 평균 사용(없으면 0.8). 스텁은 구조적 완성도(필드수/4).
+
 ## 7. 로깅 / 감사
 
 - `AiDraft`에 입력 스냅샷 해시 + 모델·버전 기록(재현성).
