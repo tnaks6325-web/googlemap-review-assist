@@ -18,7 +18,8 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - run: npm ci
+      # npm install(ci 아님): 윈도우 생성 lockfile에 없는 리눅스 전용 optional deps 보정
+      - run: npm install --no-audit --no-fund
       - run: npx prisma generate
       - run: npm run build
       - run: npm test
