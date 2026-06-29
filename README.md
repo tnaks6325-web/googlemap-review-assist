@@ -64,6 +64,12 @@ prisma/schema.prisma       데이터 모델 (로컬 SQLite / 운영 PostgreSQL)
 
 - ✅ 기획·아키텍처·플로우·API·스키마·화면·AI·보안·UI/UX 문서
 - ✅ Next.js + 토스 스타일 디자인 토큰 + 공통 컴포넌트
-- ✅ **M1(MVP)**: Prisma 스키마, 핵심 루프(인증→영수증→설문→EARN→초안→게시 안내) API·화면.
-  전체 루프 + 멱등(중복 적립 0) + 영수증 dedupe(409) 동작 검증 완료.
-- ⏭️ 다음(P1): 사장님 대시보드, 정산/구독, OTP 레이트리밋, 영수증 OCR, PostgreSQL 전환, Pretendard self-host
+- ✅ **M1(MVP)**: 핵심 루프(인증→영수증→설문→EARN→초안→게시 안내)
+- ✅ **P1-1**: 사장님 대시보드([/owner](app/owner/page.tsx)), OTP 레이트리밋, Pretendard self-host
+- ✅ **P1-2**: 정산/구독 — 리뷰어 지갑([/me](app/me/page.tsx)), 정산 요청/승인/반려, 사장님 구독
+- ✅ **P1-3**: 영수증 OCR(프로바이더 추상화+사진 업로드) + 업체 발급 1회용 코드 검증
+- ✅ **P1-4**: PostgreSQL 전환 준비 — [docs/POSTGRES.md](docs/POSTGRES.md), docker-compose, money 트랜잭션 Serializable(운영)
+- 🔴 각 라운드 **레드팀/블루팀 보안 검증** 수행 — 조치/이월 내역 [docs/SECURITY_AUTH.md](docs/SECURITY_AUTH.md) §7b~7d
+- ⏭️ 다음 후보: 관리자 백오피스, 사장님 매장/메뉴 등록 UI, 실 OCR 프로바이더, Redis 레이트리밋, 통계 고도화
+
+> DB: 로컬 SQLite(`schema.prisma`) / 운영 PostgreSQL(`schema.postgres.prisma`, 동일 모델). 전환은 [docs/POSTGRES.md](docs/POSTGRES.md) 참고.

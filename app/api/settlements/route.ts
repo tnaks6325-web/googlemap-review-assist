@@ -2,12 +2,12 @@ import { prisma } from "@/lib/db";
 import { ok, err } from "@/lib/http";
 import { getReviewerId } from "@/lib/auth/session";
 import { checkOrigin } from "@/lib/auth/origin";
-import { rateLimit } from "@/lib/rate-limit";
 import { requestSettlement, SettlementError } from "@/lib/domain/settlement";
 
 export const runtime = "nodejs";
 
 const DAY = 24 * 60 * 60 * 1000;
+const DAILY_LIMIT = 3;
 const METHODS = new Set(["BANK"]);
 
 export async function POST(req: Request) {
@@ -15,7 +15,11 @@ export async function POST(req: Request) {
   const reviewerId = await getReviewerId();
   if (!reviewerId) return err("UNAUTHORIZED", "로그인이 필요해요", 401);
 
-  if (!rateLimit(`settle:req:${reviewerId}`, 3, DAY).ok) {
+  // R6: 정산 요청 일일 한도를 DB 기반으로(멀티 노드/재시작에 견고)
+  const todays = await prisma.settlement.count({
+    where: { reviewerId, createdAt: { gte: new Date(Date.now() - DAY) } },
+  });
+  if (todays >= DAILY_LIMIT) {
     return err("RATE_LIMITED", "오늘 정산 요청 한도를 초과했어요", 429);
   }
 

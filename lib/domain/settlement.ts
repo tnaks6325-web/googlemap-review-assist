@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/db";
+import { runMoneyTx } from "@/lib/tx";
 
 export const SETTLE_MIN = Number(process.env.SETTLE_MIN ?? "5000");
 const METHODS = new Set(["BANK"]);
@@ -46,7 +46,7 @@ export async function requestSettlement(
     payoutStr = s;
   }
 
-  return prisma.$transaction(async (tx) => {
+  return runMoneyTx(async (tx) => {
     const decremented = await tx.pointWallet.updateMany({
       where: { reviewerId, balance: { gte: amount } },
       data: { balance: { decrement: amount } },
@@ -84,7 +84,7 @@ export async function requestSettlement(
  * R3: 두 액션 모두 REQUESTED 상태에서만 허용 → 재처리·APPROVED 반려 이중환불 차단.
  */
 export async function processSettlement(settlementId: string, action: "approve" | "reject") {
-  return prisma.$transaction(async (tx) => {
+  return runMoneyTx(async (tx) => {
     const s = await tx.settlement.findUnique({ where: { id: settlementId } });
     if (!s) throw new SettlementError("NOT_FOUND", "정산 요청을 찾을 수 없어요", 404);
     if (s.status !== "REQUESTED") {

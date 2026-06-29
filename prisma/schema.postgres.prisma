@@ -1,0 +1,194 @@
+// PostgreSQL 운영 스키마. SQLite 스키마(schema.prisma)와 모델 정의는 동일하다.
+// String/JSON 어댑트를 유지하므로 enum/배열 복원 없이 그대로 호환된다.
+// 사용: prisma <cmd> --schema=prisma/schema.postgres.prisma  (DATABASE_URL=Postgres 접속 문자열)
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- 사장님 / 매장 ----------
+model Owner {
+  id         String     @id @default(cuid())
+  email      String     @unique
+  password   String // 해시
+  businesses Business[]
+  createdAt  DateTime   @default(now())
+}
+
+model Business {
+  id            String     @id @default(cuid())
+  ownerId       String
+  owner         Owner      @relation(fields: [ownerId], references: [id])
+  name          String
+  address       String?
+  googlePlaceId String?
+  menus         Menu[]
+  campaigns     Campaign[]
+  receipts      Receipt[]
+  subscription  Subscription?
+  createdAt     DateTime   @default(now())
+}
+
+model Menu {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id])
+  name       String
+  category   String?
+
+  @@index([businessId])
+}
+
+model Campaign {
+  id         String    @id @default(cuid())
+  businessId String
+  business   Business  @relation(fields: [businessId], references: [id])
+  slug       String    @unique
+  name       String
+  active     Boolean        @default(true)
+  receipts   Receipt[]
+  codes      CampaignCode[]
+  createdAt  DateTime       @default(now())
+}
+
+// 업체가 발급한 1회용 인증 코드(영수증/POS 연동 전 단계의 검증 수단).
+// R1: 자가신고 임의 코드가 아니라 발급된 미사용 코드와 일치할 때만 VERIFIED.
+model CampaignCode {
+  id         String    @id @default(cuid())
+  campaignId String
+  campaign   Campaign  @relation(fields: [campaignId], references: [id])
+  code       String // 정규화된 코드
+  used       Boolean   @default(false)
+  usedAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@unique([campaignId, code])
+  @@index([campaignId])
+}
+
+// ---------- 고객 / 적립 ----------
+model Reviewer {
+  id           String             @id @default(cuid())
+  phone        String             @unique
+  wallet       PointWallet?
+  receipts     Receipt[]
+  transactions PointTransaction[]
+  settlements  Settlement[]
+  createdAt    DateTime           @default(now())
+}
+
+model PointWallet {
+  id         String   @id @default(cuid())
+  reviewerId String   @unique
+  reviewer   Reviewer @relation(fields: [reviewerId], references: [id])
+  balance    Int      @default(0) // 원장 합계 캐시
+}
+
+model Receipt {
+  id         String    @id @default(cuid())
+  businessId String
+  business   Business  @relation(fields: [businessId], references: [id])
+  campaignId String
+  campaign   Campaign  @relation(fields: [campaignId], references: [id])
+  reviewerId String
+  reviewer   Reviewer  @relation(fields: [reviewerId], references: [id])
+  code         String? // 승인번호/식별 코드
+  amount       Int?
+  merchantName String?
+  ocrText      String? // OCR 원문(truncated)
+  source       String    @default("CODE") // CODE | OCR
+  dedupeHash   String    @unique // 동일 영수증 재사용 차단
+  status       String    @default("PENDING") // PENDING | VERIFIED | REJECTED
+  feedback     Feedback?
+  createdAt    DateTime  @default(now())
+
+  @@index([reviewerId])
+  @@index([businessId])
+}
+
+model Feedback {
+  id          String            @id @default(cuid())
+  receiptId   String            @unique // 1 영수증 1 설문
+  receipt     Receipt           @relation(fields: [receiptId], references: [id])
+  rating      Int // 1..5
+  menuIdsJson String            @default("[]") // 선택 메뉴 id 배열(JSON)
+  comment     String?
+  status      String            @default("SUBMITTED")
+  drafts      AiDraft[]
+  earnTx      PointTransaction? // 이 설문이 발생시킨 EARN (1:1)
+  createdAt   DateTime          @default(now())
+}
+
+model AiDraft {
+  id         String   @id @default(cuid())
+  feedbackId String
+  feedback   Feedback @relation(fields: [feedbackId], references: [id])
+  version    Int
+  text       String
+  createdAt  DateTime @default(now())
+
+  @@unique([feedbackId, version])
+}
+
+// append-only 원장. 컴플라이언스 C1: EARN의 유일한 발생원은 Feedback.
+model PointTransaction {
+  id             String    @id @default(cuid())
+  reviewerId     String
+  reviewer       Reviewer  @relation(fields: [reviewerId], references: [id])
+  type           String // EARN | REDEEM | SETTLE | ADJUST
+  amount         Int // EARN 양수, REDEEM/SETTLE 음수
+  feedbackId     String?     @unique
+  feedback       Feedback?   @relation(fields: [feedbackId], references: [id])
+  settlementId   String?
+  settlement     Settlement? @relation(fields: [settlementId], references: [id])
+  idempotencyKey String      @unique // EARN: = receiptId → 1회 보장
+  memo           String?
+  createdAt      DateTime    @default(now())
+
+  @@index([reviewerId, createdAt])
+}
+
+// 정산(출금) 요청/처리
+model Settlement {
+  id           String             @id @default(cuid())
+  reviewerId   String
+  reviewer     Reviewer           @relation(fields: [reviewerId], references: [id])
+  amount       Int // 양수(요청 금액)
+  method       String // 예: BANK
+  payoutInfo   String? // JSON (계좌 등)
+  status       String             @default("REQUESTED") // REQUESTED | APPROVED | PAID | REJECTED
+  transactions PointTransaction[]
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  @@index([reviewerId])
+  @@index([status])
+}
+
+// 사장님 구독(플랫폼 수익)
+model Subscription {
+  id         String   @id @default(cuid())
+  businessId String   @unique
+  business   Business @relation(fields: [businessId], references: [id])
+  plan       String // 예: BASIC | PRO
+  status     String   @default("ACTIVE") // ACTIVE | PAST_DUE | CANCELED
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+// 휴대폰 OTP 인증 챌린지
+model OtpChallenge {
+  id        String   @id @default(cuid())
+  phone     String
+  codeHash  String
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  consumed  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([phone])
+}
