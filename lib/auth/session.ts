@@ -10,8 +10,9 @@ const SECRET = RAW_SECRET ?? "dev-insecure-secret-not-for-production-use-only";
 
 export const REVIEWER_COOKIE = "rv_session";
 export const OWNER_COOKIE = "ow_session";
+export const ADMIN_COOKIE = "ad_session";
 
-type Role = "r" | "o";
+type Role = "r" | "o" | "a";
 
 function signToken(role: Role, id: string): string {
   const value = `${role}:${id}`;
@@ -39,6 +40,7 @@ function verifyToken(role: Role, token: string | undefined): string | null {
 
 export const signReviewerSession = (id: string) => signToken("r", id);
 export const signOwnerSession = (id: string) => signToken("o", id);
+export const signAdminSession = (id: string) => signToken("a", id);
 
 export async function getReviewerId(): Promise<string | null> {
   const store = await cookies();
@@ -50,6 +52,11 @@ export async function getOwnerId(): Promise<string | null> {
   return verifyToken("o", store.get(OWNER_COOKIE)?.value);
 }
 
+export async function getAdminId(): Promise<string | null> {
+  const store = await cookies();
+  return verifyToken("a", store.get(ADMIN_COOKIE)?.value);
+}
+
 const baseCookie = {
   httpOnly: true as const,
   sameSite: "lax" as const,
@@ -59,3 +66,4 @@ const baseCookie = {
 
 export const sessionCookieOptions = { ...baseCookie, maxAge: 60 * 60 * 24 * 30 }; // 고객 30일
 export const ownerCookieOptions = { ...baseCookie, maxAge: 60 * 60 * 12 }; // 사장님 12시간
+export const adminCookieOptions = { ...baseCookie, maxAge: 60 * 60 * 8 }; // 관리자 8시간

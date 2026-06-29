@@ -30,8 +30,15 @@ export function rateLimit(key: string, limit: number, windowMs: number): RateRes
   return { ok: true, remaining: limit - e.count, retryAfterSec: 0 };
 }
 
+// F2: XFF는 클라이언트가 위조 가능 → 신뢰 프록시 홉 수(TRUSTED_PROXY_COUNT)만큼만 신뢰.
+// 미설정(0)이면 XFF를 신뢰하지 않는다(스푸핑으로 레이트리밋 우회 차단).
 export function clientIp(req: Request): string {
+  const hops = Number(process.env.TRUSTED_PROXY_COUNT ?? "0");
   const xff = req.headers.get("x-forwarded-for");
-  if (xff) return xff.split(",")[0].trim();
+  if (xff && hops > 0) {
+    const parts = xff.split(",").map((s) => s.trim()).filter(Boolean);
+    const idx = parts.length - hops - 1;
+    return parts[idx >= 0 ? idx : 0] ?? "unknown";
+  }
   return req.headers.get("x-real-ip") ?? "unknown";
 }

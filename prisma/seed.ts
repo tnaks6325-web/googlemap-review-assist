@@ -12,6 +12,15 @@ const MENUS = [
 ];
 
 async function main() {
+  // 데모 관리자 (정산 승인용) — F3: 비운영에서만 시드. 운영은 별도 프로비저닝.
+  if (process.env.NODE_ENV !== "production") {
+    await prisma.admin.upsert({
+      where: { email: "admin@demo.com" },
+      update: {},
+      create: { email: "admin@demo.com", password: hashPassword("admin1234") },
+    });
+  }
+
   const existing = await prisma.campaign.findUnique({ where: { slug: "demo" } });
   if (existing) {
     console.log("seed: 데모 데이터가 이미 존재합니다. 건너뜁니다.");

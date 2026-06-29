@@ -18,6 +18,14 @@ model Owner {
   createdAt  DateTime   @default(now())
 }
 
+// 운영 관리자(정산 승인·어뷰징 모니터링)
+model Admin {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String // 해시
+  createdAt DateTime @default(now())
+}
+
 model Business {
   id            String     @id @default(cuid())
   ownerId       String
@@ -160,6 +168,7 @@ model Settlement {
   method       String // 예: BANK
   payoutInfo   String? // JSON (계좌 등)
   status       String             @default("REQUESTED") // REQUESTED | APPROVED | PAID | REJECTED
+  processedBy  String? // 처리한 관리자 식별(F1 감사)
   transactions PointTransaction[]
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt

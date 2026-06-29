@@ -82,8 +82,13 @@ export async function requestSettlement(
 /**
  * 관리자: 정산 승인(PAID) 또는 반려(REJECTED).
  * R3: 두 액션 모두 REQUESTED 상태에서만 허용 → 재처리·APPROVED 반려 이중환불 차단.
+ * F1: 처리자(actor)를 settlement.processedBy에 기록(감사).
  */
-export async function processSettlement(settlementId: string, action: "approve" | "reject") {
+export async function processSettlement(
+  settlementId: string,
+  action: "approve" | "reject",
+  actor: string
+) {
   return runMoneyTx(async (tx) => {
     const s = await tx.settlement.findUnique({ where: { id: settlementId } });
     if (!s) throw new SettlementError("NOT_FOUND", "정산 요청을 찾을 수 없어요", 404);
@@ -94,7 +99,7 @@ export async function processSettlement(settlementId: string, action: "approve" 
     if (action === "approve") {
       const updated = await tx.settlement.update({
         where: { id: s.id },
-        data: { status: "PAID" },
+        data: { status: "PAID", processedBy: actor },
       });
       return { settlementId: s.id, status: updated.status };
     }
@@ -116,7 +121,7 @@ export async function processSettlement(settlementId: string, action: "approve" 
     });
     const updated = await tx.settlement.update({
       where: { id: s.id },
-      data: { status: "REJECTED" },
+      data: { status: "REJECTED", processedBy: actor },
     });
     return { settlementId: s.id, status: updated.status };
   });
