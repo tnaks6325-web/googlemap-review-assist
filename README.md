@@ -30,7 +30,10 @@ npm run db:seed   # 데모 데이터(매장/메뉴/캠페인) 시드
 npm run dev       # 개발 서버 (http://localhost:3000)
 npm run build     # 프로덕션 빌드
 npm run start     # 프로덕션 서버
+npm test          # Vitest (단위+통합, test.db 사용)
 ```
+
+CI: 푸시/PR 시 GitHub Actions가 `install → prisma generate → build → test`를 실행([.github/workflows/ci.yml](.github/workflows/ci.yml)).
 
 - 고객 플로우 체험: `http://localhost:3000/r/demo`
 - 컴포넌트 스타일가이드: `http://localhost:3000/`
