@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+// Pretendard self-host (외부 CDN 의존 제거) — @font-face "Pretendard Variable" 제공
+import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
 import "./globals.css";
 
 export const metadata: Metadata = {
