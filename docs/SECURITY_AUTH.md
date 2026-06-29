@@ -127,6 +127,23 @@
 
 이월(다음 라운드): R4 실검증(OCR/발급코드), R5 인프라(Redis 공유 저장소·신뢰 프록시 홉), R10 DB 레벨 append-only.
 
+## 7c. 레드팀 2라운드 (정산/구독 money 경로) — 조치 내역 / 이월
+
+| ID | 심각도 | 내용 | 상태 |
+|---|---|---|---|
+| R1 | CRITICAL | 동시 정산 이중지출(TOCTOU) | ✅ 원자적 조건부 차감(`UPDATE ... WHERE balance>=amt`) + SQLite 단일 커넥션 |
+| R2 | HIGH | 관리자 토큰 비교 타이밍 취약 | ✅ 해시 후 `timingSafeEqual` |
+| R3 | CRITICAL | APPROVED 반려 이중환불·P2002→500 | ✅ 액션별 REQUESTED 상태 가드, P2002→409 |
+| R4 | MEDIUM | 구독 status 클라 설정/해지건 부활 | ✅ status 클라 설정 차단, CANCELED 재활성화 거부 |
+| R5 | MEDIUM | 캐시 자가보정이 음수원장 은폐 | ✅ 드리프트·음수 원장 경고 로깅 |
+| R7 | LOW | 도메인 method 미검증 | ✅ 도메인 내 method 검증 |
+| R8 | LOW | payoutInfo 잘림→깨진 JSON | ✅ 과대 입력 거부(잘림 제거) |
+| R6 | MEDIUM | per-node 인메모리 레이트리밋 | ⏭️ Redis 공유 저장소(인프라 라운드) |
+| R9 | LOW | null-Origin 허용 | ⏭️ Sec-Fetch-Site 등 강화(후속) |
+
+검증: 보류→승인(PAID)/반려(환불) 원장 정합, 잔액초과 차단(R1), 재반려 409(R3), 관리자 토큰 오류 403(R2) 실측.
+운영 권장(이월): R6 공유 레이트리밋, R1을 Postgres에서는 `Serializable`+재시도로 보강, 원장 SUM≥0 DB CHECK.
+
 ## 8. 체크리스트 (구현 시)
 
 - [ ] OTP 코드 해시 저장 + 만료 3분 + 5회 제한

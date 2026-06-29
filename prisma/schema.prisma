@@ -28,6 +28,7 @@ model Business {
   menus         Menu[]
   campaigns     Campaign[]
   receipts      Receipt[]
+  subscription  Subscription?
   createdAt     DateTime   @default(now())
 }
 
@@ -59,6 +60,7 @@ model Reviewer {
   wallet       PointWallet?
   receipts     Receipt[]
   transactions PointTransaction[]
+  settlements  Settlement[]
   createdAt    DateTime           @default(now())
 }
 
@@ -119,13 +121,43 @@ model PointTransaction {
   reviewer       Reviewer  @relation(fields: [reviewerId], references: [id])
   type           String // EARN | REDEEM | SETTLE | ADJUST
   amount         Int // EARN 양수, REDEEM/SETTLE 음수
-  feedbackId     String?   @unique
-  feedback       Feedback? @relation(fields: [feedbackId], references: [id])
-  idempotencyKey String    @unique // EARN: = receiptId → 1회 보장
+  feedbackId     String?     @unique
+  feedback       Feedback?   @relation(fields: [feedbackId], references: [id])
+  settlementId   String?
+  settlement     Settlement? @relation(fields: [settlementId], references: [id])
+  idempotencyKey String      @unique // EARN: = receiptId → 1회 보장
   memo           String?
-  createdAt      DateTime  @default(now())
+  createdAt      DateTime    @default(now())
 
   @@index([reviewerId, createdAt])
+}
+
+// 정산(출금) 요청/처리
+model Settlement {
+  id           String             @id @default(cuid())
+  reviewerId   String
+  reviewer     Reviewer           @relation(fields: [reviewerId], references: [id])
+  amount       Int // 양수(요청 금액)
+  method       String // 예: BANK
+  payoutInfo   String? // JSON (계좌 등)
+  status       String             @default("REQUESTED") // REQUESTED | APPROVED | PAID | REJECTED
+  transactions PointTransaction[]
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  @@index([reviewerId])
+  @@index([status])
+}
+
+// 사장님 구독(플랫폼 수익)
+model Subscription {
+  id         String   @id @default(cuid())
+  businessId String   @unique
+  business   Business @relation(fields: [businessId], references: [id])
+  plan       String // 예: BASIC | PRO
+  status     String   @default("ACTIVE") // ACTIVE | PAST_DUE | CANCELED
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
 
 // 휴대폰 OTP 인증 챌린지

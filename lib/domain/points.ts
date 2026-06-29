@@ -20,7 +20,14 @@ export async function getWalletSummary(reviewerId: string) {
   ]);
 
   const ledgerBalance = agg._sum.amount ?? 0;
+  // R5: 드리프트/음수 원장은 자가보정만 하지 말고 경고로 가시화(모니터링 훅)
+  if (ledgerBalance < 0) {
+    console.error(`[points] 원장 잔액 음수 감지 reviewer=${reviewerId} balance=${ledgerBalance}`);
+  }
   if (wallet && wallet.balance !== ledgerBalance) {
+    console.warn(
+      `[points] 잔액 드리프트 reviewer=${reviewerId} cache=${wallet.balance} ledger=${ledgerBalance}`
+    );
     await prisma.pointWallet.update({
       where: { reviewerId },
       data: { balance: ledgerBalance },

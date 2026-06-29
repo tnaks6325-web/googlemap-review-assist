@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { getBusinessStats } from "@/lib/domain/stats";
 import { Card } from "@/components/ui";
 import { LogoutButton } from "@/components/owner/LogoutButton";
+import { SubscriptionPanel } from "@/components/owner/SubscriptionPanel";
 
 export const runtime = "nodejs";
 
@@ -22,7 +23,7 @@ export default async function OwnerHome() {
 
   const businesses = await prisma.business.findMany({
     where: { ownerId },
-    include: { campaigns: true },
+    include: { campaigns: true, subscription: true },
     orderBy: { createdAt: "asc" },
   });
   const data = await Promise.all(
@@ -58,6 +59,8 @@ export default async function OwnerHome() {
               <Metric label="평균 별점" value={`${stats.avg.toFixed(1)} ★`} />
               <Metric label="캠페인" value={`${b.campaigns.length}개`} />
             </div>
+
+            <SubscriptionPanel businessId={b.id} plan={b.subscription?.plan ?? null} />
 
             <Card>
               <p className="mb-3 text-sm font-semibold text-ink-weak">별점 분포</p>
