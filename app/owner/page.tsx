@@ -57,9 +57,17 @@ export default async function OwnerHome() {
           <section key={b.id} className="mb-10 space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-bold text-ink">{b.name}</h2>
-              <a className="text-sm font-semibold text-brand" href={`/owner/${b.id}`}>
-                관리 →
-              </a>
+              <div className="flex items-center gap-3">
+                <a
+                  className="text-sm text-ink-weak hover:text-ink-sub"
+                  href={`/api/business/${b.id}/feedback/export`}
+                >
+                  피드백 CSV
+                </a>
+                <a className="text-sm font-semibold text-brand" href={`/owner/${b.id}`}>
+                  관리 →
+                </a>
+              </div>
             </div>
 
             <div className="grid grid-cols-3 gap-3">
@@ -68,7 +76,43 @@ export default async function OwnerHome() {
               <Metric label="캠페인" value={`${b.campaigns.length}개`} />
             </div>
 
+            <div className="grid grid-cols-3 gap-3">
+              <Metric
+                label="최근 30일"
+                value={`${stats.comparison.thisCount}건`}
+              />
+              <Metric
+                label="이전 30일 대비"
+                value={`${stats.comparison.thisCount - stats.comparison.prevCount >= 0 ? "+" : ""}${stats.comparison.thisCount - stats.comparison.prevCount}`}
+              />
+              <Metric label="초안 생성률" value={`${stats.draftRate}%`} />
+            </div>
+
             <SubscriptionPanel businessId={b.id} plan={b.subscription?.plan ?? null} />
+
+            <Card>
+              <p className="mb-3 text-sm font-semibold text-ink-weak">별점 추이 (최근 8주)</p>
+              <div className="flex items-end gap-1.5" style={{ height: 96 }}>
+                {stats.trend.map((t, i) => {
+                  const maxCount = Math.max(1, ...stats.trend.map((x) => x.count));
+                  return (
+                    <div key={i} className="flex flex-1 flex-col items-center gap-1">
+                      <div className="flex w-full flex-1 items-end">
+                        <div
+                          className="w-full rounded-t bg-brand"
+                          style={{ height: `${Math.round((t.count / maxCount) * 72)}px` }}
+                          title={`${t.count}건 · 평균 ${t.avg}★`}
+                        />
+                      </div>
+                      <span className="text-[10px] tabular-nums text-ink-weak">
+                        {t.avg ? t.avg.toFixed(1) : "-"}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="mt-1 text-right text-[11px] text-ink-weak">막대=건수, 숫자=평균 별점</p>
+            </Card>
 
             <Card>
               <p className="mb-3 text-sm font-semibold text-ink-weak">별점 분포</p>
@@ -102,6 +146,24 @@ export default async function OwnerHome() {
                     </li>
                   ))}
                 </ul>
+              ) : (
+                <p className="text-sm text-ink-weak">아직 데이터가 없어요</p>
+              )}
+            </Card>
+
+            <Card>
+              <p className="mb-3 text-sm font-semibold text-ink-weak">불만 키워드 (별점 3 이하 소감)</p>
+              {stats.complaintKeywords.length ? (
+                <div className="flex flex-wrap gap-2">
+                  {stats.complaintKeywords.map((k) => (
+                    <span
+                      key={k.word}
+                      className="rounded-full bg-canvas px-3 py-1 text-sm text-ink-sub"
+                    >
+                      {k.word} <span className="tabular-nums text-ink-weak">{k.count}</span>
+                    </span>
+                  ))}
+                </div>
               ) : (
                 <p className="text-sm text-ink-weak">아직 데이터가 없어요</p>
               )}
