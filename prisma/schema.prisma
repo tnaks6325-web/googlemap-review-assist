@@ -1,0 +1,142 @@
+// 로컬 개발: SQLite. 운영: PostgreSQL로 전환(provider/url 교체).
+// SQLite 제약 어댑트: enum → String(주석에 허용값), 배열 → JSON 문자열.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- 사장님 / 매장 ----------
+model Owner {
+  id         String     @id @default(cuid())
+  email      String     @unique
+  password   String // 해시
+  businesses Business[]
+  createdAt  DateTime   @default(now())
+}
+
+model Business {
+  id            String     @id @default(cuid())
+  ownerId       String
+  owner         Owner      @relation(fields: [ownerId], references: [id])
+  name          String
+  address       String?
+  googlePlaceId String?
+  menus         Menu[]
+  campaigns     Campaign[]
+  receipts      Receipt[]
+  createdAt     DateTime   @default(now())
+}
+
+model Menu {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id])
+  name       String
+  category   String?
+
+  @@index([businessId])
+}
+
+model Campaign {
+  id         String    @id @default(cuid())
+  businessId String
+  business   Business  @relation(fields: [businessId], references: [id])
+  slug       String    @unique
+  name       String
+  active     Boolean   @default(true)
+  receipts   Receipt[]
+  createdAt  DateTime  @default(now())
+}
+
+// ---------- 고객 / 적립 ----------
+model Reviewer {
+  id           String             @id @default(cuid())
+  phone        String             @unique
+  wallet       PointWallet?
+  receipts     Receipt[]
+  transactions PointTransaction[]
+  createdAt    DateTime           @default(now())
+}
+
+model PointWallet {
+  id         String   @id @default(cuid())
+  reviewerId String   @unique
+  reviewer   Reviewer @relation(fields: [reviewerId], references: [id])
+  balance    Int      @default(0) // 원장 합계 캐시
+}
+
+model Receipt {
+  id         String    @id @default(cuid())
+  businessId String
+  business   Business  @relation(fields: [businessId], references: [id])
+  campaignId String
+  campaign   Campaign  @relation(fields: [campaignId], references: [id])
+  reviewerId String
+  reviewer   Reviewer  @relation(fields: [reviewerId], references: [id])
+  code       String?
+  amount     Int?
+  dedupeHash String    @unique // 동일 영수증 재사용 차단
+  status     String    @default("PENDING") // PENDING | VERIFIED | REJECTED
+  feedback   Feedback?
+  createdAt  DateTime  @default(now())
+
+  @@index([reviewerId])
+  @@index([businessId])
+}
+
+model Feedback {
+  id          String            @id @default(cuid())
+  receiptId   String            @unique // 1 영수증 1 설문
+  receipt     Receipt           @relation(fields: [receiptId], references: [id])
+  rating      Int // 1..5
+  menuIdsJson String            @default("[]") // 선택 메뉴 id 배열(JSON)
+  comment     String?
+  status      String            @default("SUBMITTED")
+  drafts      AiDraft[]
+  earnTx      PointTransaction? // 이 설문이 발생시킨 EARN (1:1)
+  createdAt   DateTime          @default(now())
+}
+
+model AiDraft {
+  id         String   @id @default(cuid())
+  feedbackId String
+  feedback   Feedback @relation(fields: [feedbackId], references: [id])
+  version    Int
+  text       String
+  createdAt  DateTime @default(now())
+
+  @@unique([feedbackId, version])
+}
+
+// append-only 원장. 컴플라이언스 C1: EARN의 유일한 발생원은 Feedback.
+model PointTransaction {
+  id             String    @id @default(cuid())
+  reviewerId     String
+  reviewer       Reviewer  @relation(fields: [reviewerId], references: [id])
+  type           String // EARN | REDEEM | SETTLE | ADJUST
+  amount         Int // EARN 양수, REDEEM/SETTLE 음수
+  feedbackId     String?   @unique
+  feedback       Feedback? @relation(fields: [feedbackId], references: [id])
+  idempotencyKey String    @unique // EARN: = receiptId → 1회 보장
+  memo           String?
+  createdAt      DateTime  @default(now())
+
+  @@index([reviewerId, createdAt])
+}
+
+// 휴대폰 OTP 인증 챌린지
+model OtpChallenge {
+  id        String   @id @default(cuid())
+  phone     String
+  codeHash  String
+  expiresAt DateTime
+  attempts  Int      @default(0)
+  consumed  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([phone])
+}

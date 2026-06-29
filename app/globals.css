@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+/* Pretendard는 self-host(권장) 또는 next/font/local로 주입.
+   미주입 시 system-ui로 폴백되어 렌더가 외부 네트워크에 의존하지 않음. */
+
+/* 토스 스타일 디자인 토큰 — 무채색 베이스 + 블루 포인트 1색 (보라톤 사용 안 함) */
+@theme {
+  /* Surface / Neutral */
+  --color-canvas: #f2f4f6;
+  --color-surface: #ffffff;
+  --color-surface-alt: #f9fafb;
+  --color-line: #e5e8eb;
+  --color-line-strong: #d1d6db;
+
+  /* Text (ink) */
+  --color-ink: #191f28;
+  --color-ink-sub: #4e5968;
+  --color-ink-weak: #8b95a1;
+
+  /* Brand — Toss-like blue (purple 계열 일절 미사용) */
+  --color-brand: #3182f6;
+  --color-brand-pressed: #2272eb;
+  --color-brand-tint: #e8f3ff;
+
+  /* Semantic */
+  --color-success: #00c896;
+  --color-success-tint: #e7f9f3;
+  --color-danger: #f04452;
+  --color-star: #ffc83c;
+
+  /* Type */
+  --font-sans: "Pretendard Variable", Pretendard, system-ui, -apple-system, sans-serif;
+
+  /* Radius */
+  --radius-field: 12px;
+  --radius-btn: 14px;
+  --radius-card: 16px;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  letter-spacing: -0.01em;
+}
