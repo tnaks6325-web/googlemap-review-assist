@@ -1,16 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import {
-  AmountText,
-  Button,
-  Card,
-  Chip,
-  StarRating,
-  StepBar,
-  TextArea,
-  TextInput,
-} from "@/components/ui";
+import { useEffect, useState } from "react";
+import { Button, Card, Chip, StarRating, StepBar, TextArea, TextInput } from "@/components/ui";
+import { CountUp } from "@/components/ui/CountUp";
+import { translate, type Lang } from "@/lib/i18n/messages";
 
 interface Menu {
   id: string;
@@ -37,6 +30,22 @@ async function post(url: string, body: unknown) {
 }
 
 export function ReviewFlow({ campaignId, businessName, menus }: Props) {
+  const [lang, setLang] = useState<Lang>("ko");
+  useEffect(() => {
+    const stored = localStorage.getItem("lang");
+    if (stored === "ko" || stored === "en") {
+      setLang(stored);
+      document.documentElement.lang = stored; // a11y: 스크린리더 언어 일치
+    }
+  }, []);
+  const t = (k: string, vars?: Record<string, string | number>) => translate(lang, k, vars);
+  const toggleLang = () => {
+    const next: Lang = lang === "ko" ? "en" : "ko";
+    setLang(next);
+    localStorage.setItem("lang", next);
+    document.documentElement.lang = next;
+  };
+
   const [step, setStep] = useState<Step>("phone");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -107,7 +116,7 @@ export function ReviewFlow({ campaignId, businessName, menus }: Props) {
         setReceiptId(d.receiptId);
         setStep("rating");
       } else {
-        setPhotoMsg("사진을 검토 중이에요. 승인되면 적립돼요. 또는 승인번호를 직접 입력해 주세요.");
+        setPhotoMsg(t("photoPending"));
       }
     });
   const submitFeedback = () =>
@@ -144,14 +153,14 @@ export function ReviewFlow({ campaignId, businessName, menus }: Props) {
 
   const stepIndex = FLOW.indexOf(step);
   const phoneOk = phone.replace(/[^0-9]/g, "").length >= 10;
+  const stripNl = (s: string) => s.replace(/\n/g, " ");
 
-  // 마침 화면
   if (finished) {
     return (
       <main className="mx-auto flex min-h-dvh max-w-md flex-col items-center justify-center px-6 text-center">
-        <p className="text-lg font-bold text-ink">감사합니다 🙏</p>
+        <p className="text-lg font-bold text-ink">{t("thanks")}</p>
         <p className="mt-2 text-[15px] text-ink-sub">
-          현재 적립금 <span className="font-semibold text-ink">{balance.toLocaleString("ko-KR")}P</span>
+          {t("currentBalance", { balance: balance.toLocaleString("ko-KR") })}
         </p>
       </main>
     );
@@ -159,19 +168,23 @@ export function ReviewFlow({ campaignId, businessName, menus }: Props) {
 
   return (
     <div className="mx-auto flex min-h-dvh max-w-md flex-col px-5 pb-6 pt-5">
-      {/* 헤더 */}
       <div className="mb-6">
+        <div className="mb-3 flex items-center justify-between">
+          <p className="text-sm text-ink-weak">{businessName}</p>
+          <button onClick={toggleLang} className="text-sm text-ink-sub" aria-label="언어 변경 / Change language">
+            {t("langName")}
+          </button>
+        </div>
         {step !== "done" && <StepBar current={stepIndex + 1} total={FLOW.length} />}
-        <p className="mt-3 text-sm text-ink-weak">{businessName}</p>
       </div>
 
-      {/* 본문 */}
       <div className="flex-1">
         {step === "phone" && (
-          <Step title={"휴대폰 번호를\n입력해 주세요"} desc="적립을 위해 본인 확인이 필요해요.">
+          <Step title={t("phoneTitle")} desc={t("phoneDesc")}>
             <TextInput
               inputMode="numeric"
-              placeholder="010-0000-0000"
+              aria-label={stripNl(t("phoneTitle"))}
+              placeholder={t("phonePlaceholder")}
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
             />
@@ -179,16 +192,18 @@ export function ReviewFlow({ campaignId, businessName, menus }: Props) {
         )}
 
         {step === "otp" && (
-          <Step title={"인증번호를\n입력해 주세요"} desc="문자로 받은 6자리 숫자를 입력하세요.">
+          <Step title={t("otpTitle")} desc={t("otpDesc")}>
             {devCode && (
               <p className="mb-3 rounded-field bg-brand-tint px-3 py-2 text-sm text-brand">
-                개발용 인증번호: <b>{devCode}</b>
+                {t("otpDevCode")}
+                <b>{devCode}</b>
               </p>
             )}
             <TextInput
               inputMode="numeric"
               maxLength={6}
-              placeholder="000000"
+              aria-label={stripNl(t("otpTitle"))}
+              placeholder={t("otpPlaceholder")}
               value={code}
               onChange={(e) => setCode(e.target.value)}
             />
@@ -196,18 +211,20 @@ export function ReviewFlow({ campaignId, businessName, menus }: Props) {
         )}
 
         {step === "receipt" && (
-          <Step title={"영수증을\n인증해 주세요"} desc="영수증에 안내된 인증코드를 입력하세요.">
+          <Step title={t("receiptTitle")} desc={t("receiptDesc")}>
             <TextInput
-              placeholder="인증코드 입력"
+              aria-label={stripNl(t("receiptTitle"))}
+              placeholder={t("receiptPlaceholder")}
               value={receiptCode}
               onChange={(e) => setReceiptCode(e.target.value)}
             />
             <div className="mt-5 border-t border-line pt-4">
-              <p className="mb-1 text-sm text-ink-sub">또는 영수증 사진으로 인증 (베타)</p>
-              <p className="mb-2 text-xs text-ink-weak">사진은 인식을 위해 OCR 서비스로 전송돼요.</p>
+              <p className="mb-1 text-sm text-ink-sub">{t("photoOr")}</p>
+              <p className="mb-2 text-xs text-ink-weak">{t("photoNotice")}</p>
               <input
                 type="file"
                 accept="image/*"
+                aria-label={t("photoSubmit")}
                 onChange={(e) => setPhoto(e.target.files?.[0] ?? null)}
                 className="block w-full text-sm text-ink-sub"
               />
@@ -219,7 +236,7 @@ export function ReviewFlow({ campaignId, businessName, menus }: Props) {
                 disabled={!photo}
                 onClick={submitReceiptPhoto}
               >
-                사진으로 인증
+                {t("photoSubmit")}
               </Button>
               {photoMsg && <p className="mt-2 text-sm text-ink-sub">{photoMsg}</p>}
             </div>
@@ -227,16 +244,18 @@ export function ReviewFlow({ campaignId, businessName, menus }: Props) {
         )}
 
         {step === "rating" && (
-          <Step title={"오늘 방문은\n어떠셨나요?"}>
+          <Step title={t("ratingTitle")}>
             <div className="pt-2">
               <StarRating value={rating} onChange={setRating} size={40} />
-              {rating > 0 && <p className="mt-3 text-[15px] text-ink-sub">{rating}점 선택됨</p>}
+              {rating > 0 && (
+                <p className="mt-3 text-[15px] text-ink-sub">{t("ratingSelected", { n: rating })}</p>
+              )}
             </div>
           </Step>
         )}
 
         {step === "menus" && (
-          <Step title="무엇이 좋았나요?" desc="복수 선택할 수 있어요.">
+          <Step title={t("menusTitle")} desc={t("menusDesc")}>
             <div className="flex flex-wrap gap-2 pt-2">
               {menus.map((m) => (
                 <Chip
@@ -251,9 +270,10 @@ export function ReviewFlow({ campaignId, businessName, menus }: Props) {
         )}
 
         {step === "comment" && (
-          <Step title={"한마디\n남겨주세요"} desc="선택 사항이에요.">
+          <Step title={t("commentTitle")} desc={t("commentDesc")}>
             <TextArea
-              placeholder="예) 반찬이 깔끔하고 양이 많아요"
+              aria-label={stripNl(t("commentTitle"))}
+              placeholder={t("commentPlaceholder")}
               value={comment}
               onChange={(e) => setComment(e.target.value)}
             />
@@ -274,96 +294,94 @@ export function ReviewFlow({ campaignId, businessName, menus }: Props) {
               </svg>
             </div>
             {earned > 0 ? (
-              <AmountText value={earned} sign className="text-[26px]" />
+              <p className="text-[26px] font-bold tabular-nums text-ink" aria-live="polite">
+                +<CountUp value={earned} />
+                <span className="ml-0.5 align-baseline text-[0.6em] font-semibold">P</span>
+              </p>
             ) : (
-              <p className="text-lg font-bold text-ink">이미 참여한 영수증이에요</p>
+              <p className="text-lg font-bold text-ink">{t("alreadyUsed")}</p>
             )}
-            <p className="text-[15px] text-ink-sub">{earned > 0 ? "적립 완료" : ""}</p>
+            <p className="text-[15px] text-ink-sub">{earned > 0 ? t("earnDone") : ""}</p>
             <p className="rounded-card bg-canvas px-4 py-2.5 text-sm text-ink-sub">
-              현재 잔액{" "}
-              <span className="font-semibold text-ink">{balance.toLocaleString("ko-KR")}P</span>
+              {t("balanceNow", { balance: balance.toLocaleString("ko-KR") })}
             </p>
 
             {draft && (
               <div className="w-full space-y-2 pt-3 text-left">
-                <p className="text-sm font-semibold text-ink-weak">리뷰 초안 (직접 수정 가능)</p>
+                <p className="text-sm font-semibold text-ink-weak">{t("draftLabel")}</p>
                 <div className="rounded-card bg-canvas p-4 text-[15px] leading-relaxed text-ink">
                   {draft}
                 </div>
-                {copied && <p className="text-xs text-brand">복사됐어요. 구글맵에 붙여넣기 하세요.</p>}
+                {copied && <p className="text-xs text-brand">{t("copied")}</p>}
               </div>
             )}
           </Card>
         )}
       </div>
 
-      {/* 에러 */}
       {error && <p className="mb-3 text-center text-sm text-danger">{error}</p>}
 
-      {/* 하단 CTA */}
       <div className="space-y-1 pt-4">
         {step === "phone" && (
           <Button fullWidth loading={busy} disabled={!phoneOk} onClick={requestOtp}>
-            인증번호 받기
+            {t("ctaGetOtp")}
           </Button>
         )}
         {step === "otp" && (
           <Button fullWidth loading={busy} disabled={code.length < 6} onClick={verifyOtp}>
-            확인
+            {t("ctaConfirm")}
           </Button>
         )}
         {step === "receipt" && (
           <Button fullWidth loading={busy} disabled={!receiptCode.trim()} onClick={submitReceipt}>
-            확인
+            {t("ctaConfirm")}
           </Button>
         )}
         {step === "rating" && (
           <Button fullWidth disabled={rating === 0} onClick={() => setStep("menus")}>
-            다음
+            {t("ctaNext")}
           </Button>
         )}
         {step === "menus" && (
           <Button fullWidth onClick={() => setStep("comment")}>
-            다음
+            {t("ctaNext")}
           </Button>
         )}
         {step === "comment" && (
           <>
-            <p className="mb-2 text-center text-xs text-ink-weak">제출하면 바로 적립돼요</p>
+            <p className="mb-2 text-center text-xs text-ink-weak">{t("earnHint")}</p>
             <Button fullWidth loading={busy} onClick={submitFeedback}>
-              제출하고 적립받기
+              {t("ctaSubmitEarn")}
             </Button>
           </>
         )}
         {step === "done" && !draft && earned > 0 && (
           <>
-            <p className="mb-2 text-center text-xs text-ink-weak">
-              남긴 내용으로 리뷰 초안을 만들어 드려요
-            </p>
+            <p className="mb-2 text-center text-xs text-ink-weak">{t("draftPrompt")}</p>
             <Button fullWidth loading={busy} onClick={getDraft}>
-              리뷰 초안 받기
+              {t("ctaGetDraft")}
             </Button>
             <Button fullWidth variant="text" onClick={() => setFinished(true)}>
-              그냥 마치기
+              {t("ctaJustFinish")}
             </Button>
           </>
         )}
         {step === "done" && draft && (
           <>
             <Button fullWidth onClick={copyAndOpenMaps}>
-              복사하고 구글맵에서 리뷰 쓰기
+              {t("ctaCopyOpenMaps")}
             </Button>
             <Button fullWidth variant="secondary" loading={busy} onClick={getDraft}>
-              다시 생성
+              {t("ctaRegenerate")}
             </Button>
             <Button fullWidth variant="text" onClick={() => setFinished(true)}>
-              나중에 하기
+              {t("ctaLater")}
             </Button>
           </>
         )}
         {step === "done" && earned === 0 && !draft && (
           <Button fullWidth variant="text" onClick={() => setFinished(true)}>
-            마치기
+            {t("ctaFinish")}
           </Button>
         )}
       </div>

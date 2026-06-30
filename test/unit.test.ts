@@ -3,6 +3,7 @@ import { canonicalizeCode, receiptDedupeHash } from "@/lib/domain/receipts";
 import { parseReceiptText } from "@/lib/ocr/parse";
 import { decideReceiptStatus } from "@/lib/domain/receipt-verify";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
+import { translate, messages } from "@/lib/i18n/messages";
 import type { OcrResult } from "@/lib/ocr/types";
 
 describe("receipt code canonicalization (R3)", () => {
@@ -49,6 +50,19 @@ describe("decideReceiptStatus (fail-closed)", () => {
   });
   it("가맹점 불일치 PENDING", () => {
     expect(decideReceiptStatus(base, "다른가게").status).toBe("PENDING");
+  });
+});
+
+describe("i18n", () => {
+  it("ko/en 사전 키가 일치", () => {
+    expect(Object.keys(messages.ko).sort()).toEqual(Object.keys(messages.en).sort());
+  });
+  it("변수 치환", () => {
+    expect(translate("ko", "balanceNow", { balance: "2,500" })).toContain("2,500");
+    expect(translate("en", "ctaConfirm")).toBe("Confirm");
+  });
+  it("미존재 키는 키 자체 반환", () => {
+    expect(translate("ko", "__missing__")).toBe("__missing__");
   });
 });
 

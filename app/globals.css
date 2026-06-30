@@ -12,10 +12,10 @@
   --color-line: #e5e8eb;
   --color-line-strong: #d1d6db;
 
-  /* Text (ink) */
+  /* Text (ink) — ink-weak는 WCAG AA(4.5:1) 충족하도록 상향(#8b95a1→#6b7684) */
   --color-ink: #191f28;
   --color-ink-sub: #4e5968;
-  --color-ink-weak: #8b95a1;
+  --color-ink-weak: #6b7684;
 
   /* Brand — Toss-like blue (purple 계열 일절 미사용) */
   --color-brand: #3182f6;
@@ -46,4 +46,23 @@ body {
   color: var(--color-ink);
   font-family: var(--font-sans);
   letter-spacing: -0.01em;
+}
+
+/* a11y: 키보드 포커스 가시화(마우스 클릭에는 안 보이게 focus-visible) */
+:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* a11y: 모션 최소화 선호 시 전환/애니메이션 비활성 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }
