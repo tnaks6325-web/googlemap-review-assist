@@ -220,7 +220,12 @@ export function ReviewFlow({ campaignId, businessName, menus }: Props) {
             />
             <div className="mt-5 border-t border-line pt-4">
               <p className="mb-1 text-sm text-ink-sub">{t("photoOr")}</p>
-              <p className="mb-2 text-xs text-ink-weak">{t("photoNotice")}</p>
+              <p className="mb-2 text-xs text-ink-weak">
+                {t("photoNotice")}{" "}
+                <a href="/legal/privacy" className="underline hover:text-ink-sub">
+                  {t("privacyLink")}
+                </a>
+              </p>
               <input
                 type="file"
                 accept="image/*"

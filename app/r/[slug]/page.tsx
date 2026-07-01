@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { ReviewFlow } from "@/components/flow/ReviewFlow";
+import { Footer } from "@/components/Footer";
 
 export const runtime = "nodejs";
 
@@ -24,10 +25,13 @@ export default async function CampaignPage({
   }
 
   return (
-    <ReviewFlow
-      campaignId={campaign.id}
-      businessName={campaign.business.name}
-      menus={campaign.business.menus.map((m) => ({ id: m.id, name: m.name }))}
-    />
+    <>
+      <ReviewFlow
+        campaignId={campaign.id}
+        businessName={campaign.business.name}
+        menus={campaign.business.menus.map((m) => ({ id: m.id, name: m.name }))}
+      />
+      <Footer />
+    </>
   );
 }
