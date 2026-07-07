@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { connection } from "next/server";
 import { CampaignList } from "@/components/campaign/CampaignList";
 import { Footer } from "@/components/Footer";
 import { listPublicCampaigns } from "@/lib/domain/operator-campaigns";
@@ -6,6 +7,7 @@ import { listPublicCampaigns } from "@/lib/domain/operator-campaigns";
 export const runtime = "nodejs";
 
 export default async function CampaignsPage() {
+  await connection();
   const campaigns = await listPublicCampaigns();
 
   return (
