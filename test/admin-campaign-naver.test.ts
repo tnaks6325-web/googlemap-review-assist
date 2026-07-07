@@ -121,6 +121,23 @@ describe("admin campaign naver candidate target", () => {
     expect(score).toBe(100);
   });
 
+  it("scores addresses with an omitted neighborhood as 100 percent when detail matches", () => {
+    const score = scorePlaceCandidate(
+      {
+        name: "블리비의원 건대점",
+        address: "대한민국 서울특별시 광진구 화양동 아차산로 237 삼진빌딩 2층",
+        lat: null,
+        lng: null,
+      },
+      {
+        name: "블리비의원 건대점",
+        address: "서울특별시 광진구 아차산로 237 삼진빌딩 2층",
+      }
+    );
+
+    expect(score).toBe(100);
+  });
+
   it("scores same core address without detail as a practical 90 percent match", () => {
     const score = scorePlaceCandidate(
       {

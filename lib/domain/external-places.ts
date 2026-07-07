@@ -137,13 +137,39 @@ function hasAddressDetail(value?: string | null) {
   return tokens.slice(mainNumberIndex + 1).some((token) => token.length > 0);
 }
 
+function isAddressTokenSubset(a: string[], b: string[]) {
+  if (!a.length || !b.length) return false;
+  const smaller = a.length <= b.length ? a : b;
+  const larger = a.length <= b.length ? b : a;
+  const largerSet = new Set(larger);
+  return smaller.every((token) => largerSet.has(token));
+}
+
+function hasSharedAddressNumber(a: string[], b: string[]) {
+  const bSet = new Set(b);
+  return a.some((token) => /^\d+(?:-\d+)?(?:번지)?$/.test(token) && bSet.has(token));
+}
+
 function highConfidenceAddressScore(baseAddress?: string | null, candidateAddress?: string | null) {
   const base = compactAddress(baseAddress);
   const candidate = compactAddress(candidateAddress);
   if (!base || !candidate) return null;
 
+  const baseHasDetail = hasAddressDetail(baseAddress);
+  const candidateHasDetail = hasAddressDetail(candidateAddress);
+
   if (base === candidate) {
-    return hasAddressDetail(baseAddress) || hasAddressDetail(candidateAddress) ? 100 : 90;
+    return baseHasDetail || candidateHasDetail ? 100 : 90;
+  }
+
+  const baseTokens = addressTokens(baseAddress);
+  const candidateTokens = addressTokens(candidateAddress);
+  if (
+    isAddressTokenSubset(baseTokens, candidateTokens) &&
+    hasSharedAddressNumber(baseTokens, candidateTokens) &&
+    Math.min(baseTokens.length, candidateTokens.length) >= 4
+  ) {
+    return baseHasDetail && candidateHasDetail ? 100 : 90;
   }
 
   const longer = base.length >= candidate.length ? base : candidate;
