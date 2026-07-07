@@ -5,6 +5,7 @@ import {
   naverPlaceSnapshotFromCandidate,
   naverSearchTargetFromCampaign,
 } from "@/lib/domain/admin-campaign-naver";
+import { scorePlaceCandidate } from "@/lib/domain/external-places";
 
 const originalNaverClientId = process.env.NAVER_CLIENT_ID;
 const originalNaverClientSecret = process.env.NAVER_CLIENT_SECRET;
@@ -101,6 +102,41 @@ describe("admin campaign naver candidate target", () => {
         "manual search"
       )
     ).toEqual(["manual search"]);
+  });
+
+  it("scores identical full addresses as a 100 percent place match", () => {
+    const score = scorePlaceCandidate(
+      {
+        name: "하리무드범계본점",
+        address: "대한민국 경기도 안양시 동안구 호계동 1044-7 화성프라자 5층",
+        lat: null,
+        lng: null,
+      },
+      {
+        name: "하리무드 범계본점",
+        address: "경기 안양시 동안구 호계동 1044-7 화성프라자 5층",
+      }
+    );
+
+    expect(score).toBe(100);
+  });
+
+  it("scores same core address without detail as a practical 90 percent match", () => {
+    const score = scorePlaceCandidate(
+      {
+        name: "로우파이브안국",
+        address: "대한민국 서울특별시 종로구 북촌로 20-3 1층",
+        lat: null,
+        lng: null,
+      },
+      {
+        name: "로우파이브 안국",
+        address: "서울 종로구 북촌로 20-3",
+      }
+    );
+
+    expect(score).toBeGreaterThanOrEqual(90);
+    expect(score).toBeLessThan(100);
   });
 
   it("converts a selected Naver candidate into a saveable external place snapshot", () => {

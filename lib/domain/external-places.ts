@@ -90,6 +90,71 @@ function tokenizeAddress(value?: string | null) {
   );
 }
 
+function normalizeAddressText(value?: string | null) {
+  if (!value) return "";
+  return normalizeText(value)
+    .toLowerCase()
+    .replace(/대한민국/g, "")
+    .replace(/서울특별시|서울시/g, "서울")
+    .replace(/부산광역시|부산시/g, "부산")
+    .replace(/대구광역시|대구시/g, "대구")
+    .replace(/인천광역시|인천시/g, "인천")
+    .replace(/광주광역시|광주시/g, "광주")
+    .replace(/대전광역시|대전시/g, "대전")
+    .replace(/울산광역시|울산시/g, "울산")
+    .replace(/세종특별자치시/g, "세종")
+    .replace(/경기도/g, "경기")
+    .replace(/강원특별자치도|강원도/g, "강원")
+    .replace(/충청북도/g, "충북")
+    .replace(/충청남도/g, "충남")
+    .replace(/전라북도|전북특별자치도/g, "전북")
+    .replace(/전라남도/g, "전남")
+    .replace(/경상북도/g, "경북")
+    .replace(/경상남도/g, "경남")
+    .replace(/제주특별자치도/g, "제주")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function compactAddress(value?: string | null) {
+  return normalizeAddressText(value).replace(/[^\p{L}\p{N}-]/gu, "");
+}
+
+function addressTokens(value?: string | null) {
+  return normalizeAddressText(value)
+    .replace(/[^\p{L}\p{N}\s-]/gu, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function hasAddressDetail(value?: string | null) {
+  const tokens = addressTokens(value);
+  if (!tokens.length) return false;
+  if (tokens.some((token) => /\d+(?:층|호|동)$/.test(token) || /^(b|비)?\d+층$/.test(token))) return true;
+
+  const mainNumberIndex = tokens.findIndex((token) => /^\d+(?:-\d+)?(?:번지)?$/.test(token));
+  if (mainNumberIndex < 0) return false;
+  return tokens.slice(mainNumberIndex + 1).some((token) => token.length > 0);
+}
+
+function highConfidenceAddressScore(baseAddress?: string | null, candidateAddress?: string | null) {
+  const base = compactAddress(baseAddress);
+  const candidate = compactAddress(candidateAddress);
+  if (!base || !candidate) return null;
+
+  if (base === candidate) {
+    return hasAddressDetail(baseAddress) || hasAddressDetail(candidateAddress) ? 100 : 90;
+  }
+
+  const longer = base.length >= candidate.length ? base : candidate;
+  const shorter = base.length >= candidate.length ? candidate : base;
+  if (shorter.length >= 10 && (longer.startsWith(shorter) || longer.endsWith(shorter) || longer.includes(shorter))) {
+    return 90;
+  }
+
+  return null;
+}
+
 function jaccard(a: Set<string>, b: Set<string>) {
   if (!a.size || !b.size) return 0;
   let hit = 0;
@@ -156,6 +221,9 @@ export function parseNaverPlaceInput(input: string): ParsedNaverPlaceInput {
 }
 
 export function scorePlaceCandidate(base: PlaceMatchBase, candidate: PlaceCandidate): number {
+  const addressScore = highConfidenceAddressScore(base.address, candidate.address);
+  if (addressScore != null && addressScore >= 90) return addressScore;
+
   const baseName = normalizeForMatch(base.name);
   const candName = normalizeForMatch(candidate.name);
   let score = 0;

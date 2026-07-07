@@ -260,22 +260,32 @@ function cleanNaverTitle(title: string) {
 
 function mapNaverItem(item: Record<string, unknown>, base: PlaceMatchBase): NaverCandidate {
   const title = cleanNaverTitle(String(item.title ?? ""));
+  const lotAddress = String(item.address ?? "").trim() || null;
   const roadAddress = String(item.roadAddress ?? item.address ?? "").trim() || null;
   const mapx = Number(item.mapx);
   const mapy = Number(item.mapy);
+  const matchConfidence = Math.max(
+    scorePlaceCandidate(base, {
+      name: title,
+      address: roadAddress,
+      category: String(item.category ?? ""),
+    }),
+    scorePlaceCandidate(base, {
+      name: title,
+      address: lotAddress,
+      category: String(item.category ?? ""),
+    })
+  );
+
   return {
     title,
     link: String(item.link ?? ""),
     category: String(item.category ?? "").trim() || null,
     roadAddress,
-    address: String(item.address ?? "").trim() || null,
+    address: lotAddress,
     mapx: Number.isFinite(mapx) ? mapx : null,
     mapy: Number.isFinite(mapy) ? mapy : null,
-    matchConfidence: scorePlaceCandidate(base, {
-      name: title,
-      address: roadAddress,
-      category: String(item.category ?? ""),
-    }),
+    matchConfidence,
     rawJson: safeJsonSnapshot(item),
   };
 }
