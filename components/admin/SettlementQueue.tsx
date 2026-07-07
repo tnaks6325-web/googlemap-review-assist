@@ -25,8 +25,8 @@ export function SettlementQueue({ items }: { items: Item[] }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action }),
       });
-      const d = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(d?.error?.message ?? "처리에 실패했어요");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error?.message ?? "처리에 실패했어요");
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "오류가 발생했어요");
@@ -35,25 +35,33 @@ export function SettlementQueue({ items }: { items: Item[] }) {
     }
   };
 
-  if (!items.length) return <p className="text-sm text-ink-weak">대기 중인 정산이 없어요</p>;
+  if (!items.length) return <p className="text-sm text-ink-weak">대기 중인 정산이 없습니다.</p>;
 
   return (
     <div className="space-y-2">
       {error && <p className="text-sm text-danger">{error}</p>}
-      {items.map((i) => (
+      {items.map((item) => (
         <div
-          key={i.id}
+          key={item.id}
           className="flex items-center justify-between rounded-card border border-line bg-surface p-3"
         >
           <div className="text-sm">
-            <span className="font-semibold text-ink">{i.amount.toLocaleString("ko-KR")}P</span>{" "}
-            <span className="text-ink-weak">· {i.phone} · {i.method}</span>
+            <span className="font-semibold text-ink">{item.amount.toLocaleString("ko-KR")}P</span>{" "}
+            <span className="text-ink-weak">· {item.phone} · {item.method}</span>
           </div>
           <div className="flex gap-2">
-            <Button variant="secondary" loading={busy === i.id + "approve"} onClick={() => act(i.id, "approve")}>
-              승인
+            <Button
+              variant="secondary"
+              loading={busy === item.id + "approve"}
+              onClick={() => act(item.id, "approve")}
+            >
+              정산완료
             </Button>
-            <Button variant="text" loading={busy === i.id + "reject"} onClick={() => act(i.id, "reject")}>
+            <Button
+              variant="text"
+              loading={busy === item.id + "reject"}
+              onClick={() => act(item.id, "reject")}
+            >
               반려
             </Button>
           </div>

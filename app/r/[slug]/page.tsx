@@ -1,6 +1,7 @@
-import { prisma } from "@/lib/db";
 import { ReviewFlow } from "@/components/flow/ReviewFlow";
 import { Footer } from "@/components/Footer";
+import { getPublicCampaignDetail, listPublicCampaigns } from "@/lib/domain/operator-campaigns";
+import { getPublicCampaignAvailabilitySummary } from "@/lib/domain/reviewer-campaigns";
 
 export const runtime = "nodejs";
 
@@ -10,10 +11,11 @@ export default async function CampaignPage({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  const campaign = await prisma.campaign.findUnique({
-    where: { slug },
-    include: { business: { include: { menus: true } } },
-  });
+  let campaign = await getPublicCampaignDetail(slug);
+  if (!campaign && slug === "demo") {
+    const fallbackCampaign = (await listPublicCampaigns())[0] ?? null;
+    campaign = fallbackCampaign ? await getPublicCampaignDetail(fallbackCampaign.slug) : null;
+  }
 
   if (!campaign || !campaign.active) {
     return (
@@ -24,12 +26,27 @@ export default async function CampaignPage({
     );
   }
 
+  const summary = await getPublicCampaignAvailabilitySummary();
+
   return (
     <>
       <ReviewFlow
-        campaignId={campaign.id}
-        businessName={campaign.business.name}
-        menus={campaign.business.menus.map((m) => ({ id: m.id, name: m.name }))}
+        initialCampaign={{
+          id: campaign.id,
+          slug: campaign.slug,
+          campaignName: campaign.campaignName,
+          businessName: campaign.businessName,
+          address: campaign.address,
+          category: campaign.category,
+          googleMapsUrl: campaign.googleMapsUrl,
+          rating: campaign.rating,
+          reviewCount: campaign.reviewCount,
+          rewardPoints: campaign.rewardPoints,
+        }}
+        initialAvailableCount={summary.availableCount}
+        initialTotalRewardPoints={summary.totalRewardPoints}
+        initialCategoryCounts={summary.categoryCounts}
+        cooldownDays={summary.cooldownDays}
       />
       <Footer />
     </>

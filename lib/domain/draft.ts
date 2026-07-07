@@ -10,6 +10,17 @@ export interface DraftInput {
   menuCatalog: string[];
 }
 
+export type DraftProvider = "template" | "anthropic";
+
+export interface DraftGenerationResult {
+  text: string;
+  provider: DraftProvider;
+  model: string | null;
+  fallbackFrom?: DraftProvider;
+}
+
+const DEFAULT_ANTHROPIC_MODEL = "claude-haiku-4-5";
+
 const SYSTEM_PROMPT = `당신은 사용자가 직접 작성하려는 가게 리뷰의 '초안'을 다듬어 주는 보조 작가입니다.
 사용자가 실제로 제출한 정보만 사용해 자연스러운 한국어 리뷰 문장으로 정리하세요.
 1. 사용자가 제출한 별점·선택 메뉴·소감에 들어있는 사실만 사용한다.
@@ -33,7 +44,7 @@ function buildUserPrompt(input: DraftInput): string {
 }
 
 /** 키 없을 때의 결정적 폴백 — 제출 데이터만 조합(창작 없음) */
-function localPolish(input: DraftInput): string {
+export function generateTemplateDraft(input: DraftInput): string {
   const parts: string[] = [];
   if (input.selectedMenus.length) {
     parts.push(`${input.selectedMenus.join(", ")} 먹었어요.`);
@@ -50,8 +61,22 @@ function localPolish(input: DraftInput): string {
   return parts.join(" ");
 }
 
-async function generateWithClaude(input: DraftInput): Promise<string> {
-  const model = process.env.AI_MODEL ?? "claude-haiku-4-5";
+function sanitizeDraftText(text: string) {
+  return text
+    .replace(/\s+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+    .slice(0, 1000);
+}
+
+export function selectDraftProvider(env: NodeJS.ProcessEnv = process.env): DraftProvider {
+  if (env.AI_DRAFT_PROVIDER === "template") return "template";
+  if (env.AI_DRAFT_PROVIDER === "anthropic") return env.ANTHROPIC_API_KEY ? "anthropic" : "template";
+  return env.ANTHROPIC_API_KEY ? "anthropic" : "template";
+}
+
+async function generateWithClaude(input: DraftInput): Promise<DraftGenerationResult> {
+  const model = process.env.AI_MODEL ?? DEFAULT_ANTHROPIC_MODEL;
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -71,16 +96,28 @@ async function generateWithClaude(input: DraftInput): Promise<string> {
   const data = await res.json();
   const text: string | undefined = data?.content?.[0]?.text?.trim();
   if (!text) throw new Error("empty draft");
-  return text;
+  return { text: sanitizeDraftText(text), provider: "anthropic", model };
 }
 
-export async function generateDraft(input: DraftInput): Promise<string> {
-  if (process.env.ANTHROPIC_API_KEY) {
+export async function generateDraftResult(input: DraftInput): Promise<DraftGenerationResult> {
+  const provider = selectDraftProvider();
+  if (provider === "anthropic") {
     try {
       return await generateWithClaude(input);
     } catch {
       // 실패 시 폴백 — 적립/설문에는 영향 없음 (가용성)
+      return {
+        text: generateTemplateDraft(input),
+        provider: "template",
+        model: null,
+        fallbackFrom: "anthropic",
+      };
     }
   }
-  return localPolish(input);
+
+  return { text: generateTemplateDraft(input), provider: "template", model: null };
+}
+
+export async function generateDraft(input: DraftInput): Promise<string> {
+  return (await generateDraftResult(input)).text;
 }

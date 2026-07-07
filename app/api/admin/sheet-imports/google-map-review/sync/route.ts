@@ -1,0 +1,180 @@
+import { ok, err } from "@/lib/http";
+import { getAdminId } from "@/lib/auth/session";
+import { checkOrigin } from "@/lib/auth/origin";
+import { clientIp, rateLimit } from "@/lib/rate-limit";
+import { resolveGooglePlace } from "@/lib/domain/external-place-providers";
+import { syncGoogleMapReviewCampaignRows } from "@/lib/domain/google-sheet-campaign-sync";
+import {
+  applyResolvedGooglePlaceNameToSheetRow,
+  googlePlaceInputForSheetRow,
+  parseGoogleMapReviewSheet,
+  summarizeSheetImportRows,
+  type SheetImportDryRunRow,
+  type SheetImportPlacePreview,
+} from "@/lib/domain/google-sheet-import";
+import {
+  GoogleSheetsApiError,
+  GoogleSheetsConfigError,
+  readGoogleSheetValues,
+} from "@/lib/google-sheets";
+
+export const runtime = "nodejs";
+
+const HOUR = 60 * 60 * 1000;
+const PLACE_PREVIEW_LIMIT = 12;
+
+function googlePlaceErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  if (/401|403/.test(message)) return "Google Places API 키 또는 API 제한 설정을 확인해 주세요";
+  if (/429/.test(message)) return "Google Places API 할당량을 확인해 주세요";
+  if (/unsupported google/.test(message)) return "Google Maps 링크 형식을 확인해 주세요";
+  return "Google Places 확인에 실패했습니다";
+}
+
+function skippedGooglePlacePreview(input: string, message: string): SheetImportPlacePreview {
+  return {
+    status: "SKIPPED",
+    providerConfigured: Boolean(process.env.GOOGLE_PLACES_API_KEY),
+    input,
+    placeId: null,
+    name: null,
+    address: null,
+    url: null,
+    rating: null,
+    reviewCount: null,
+    matchConfidence: null,
+    message,
+  };
+}
+
+function failedGooglePlacePreview(input: string, message: string): SheetImportPlacePreview {
+  return {
+    status: "FAILED",
+    providerConfigured: Boolean(process.env.GOOGLE_PLACES_API_KEY),
+    input,
+    placeId: null,
+    name: null,
+    address: null,
+    url: null,
+    rating: null,
+    reviewCount: null,
+    matchConfidence: null,
+    message,
+  };
+}
+
+function isResolvedGooglePlace(place: { externalId: string | null; name: string }) {
+  return Boolean(place.externalId && !place.externalId.startsWith("google:") && place.name.trim());
+}
+
+async function addGooglePlacePreviews(rows: SheetImportDryRunRow[], limit = PLACE_PREVIEW_LIMIT) {
+  let previewCount = 0;
+
+  const enriched: SheetImportDryRunRow[] = [];
+  for (const row of rows) {
+    const input = googlePlaceInputForSheetRow(row);
+    if (!input || row.status !== "READY") {
+      enriched.push(row);
+      continue;
+    }
+
+    if (previewCount >= limit) {
+      enriched.push({
+        ...row,
+        googlePlace: skippedGooglePlacePreview(input, `상위 ${limit}개 행만 Places 미리보기를 실행합니다`),
+      });
+      continue;
+    }
+
+    previewCount += 1;
+    try {
+      const result = await resolveGooglePlace(input);
+      const { place, providerConfigured } = result;
+      const resolved = providerConfigured && isResolvedGooglePlace(place);
+      const message = providerConfigured
+        ? resolved
+          ? null
+          : "Google Places에서 확정 후보를 찾지 못해 입력값 기준으로 표시합니다"
+        : "GOOGLE_PLACES_API_KEY가 설정되지 않아 입력값 기준으로만 표시합니다";
+      const warning = message ? [message] : [];
+      const namedRow = applyResolvedGooglePlaceNameToSheetRow(row, place, providerConfigured);
+      const nameErrors = namedRow.businessName.trim() ? [] : ["업체명을 Google Place URL로 확인하지 못했습니다"];
+
+      enriched.push({
+        ...namedRow,
+        status: nameErrors.length ? "ERROR" : namedRow.status,
+        errors: [...namedRow.errors, ...nameErrors],
+        warnings: [...namedRow.warnings, ...warning],
+        googlePlace: {
+          status: resolved ? "RESOLVED" : "MANUAL",
+          providerConfigured,
+          input,
+          placeId: place.externalId,
+          name: place.name || null,
+          address: place.address,
+          url: place.url,
+          rating: place.rating,
+          reviewCount: place.reviewCount,
+          matchConfidence: place.matchConfidence,
+          message,
+        },
+      });
+    } catch (error) {
+      const message = googlePlaceErrorMessage(error);
+      enriched.push({
+        ...row,
+        warnings: [...row.warnings, message],
+        googlePlace: failedGooglePlacePreview(input, message),
+      });
+    }
+  }
+
+  return enriched;
+}
+
+export async function POST(req: Request) {
+  if (!checkOrigin(req)) return err("BAD_ORIGIN", "요청 출처가 올바르지 않아요", 403);
+
+  const adminId = await getAdminId();
+  if (!adminId) return err("UNAUTHORIZED", "관리자 로그인이 필요해요", 401);
+
+  const ip = clientIp(req);
+  if (!rateLimit(`admin:sheet-import:${adminId}:${ip}`, 20, HOUR).ok) {
+    return err("RATE_LIMITED", "잠시 후 다시 시도해 주세요", 429);
+  }
+
+  const body = await req.json().catch(() => null);
+  const dryRun = body?.dryRun !== false;
+
+  const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID ?? "";
+  const range = process.env.GOOGLE_SHEETS_RANGE ?? "'광고요청시트'!A:U";
+
+  try {
+    const sheet = await readGoogleSheetValues(spreadsheetId, range);
+    const dryRunResult = parseGoogleMapReviewSheet(sheet.values);
+    const rows = await addGooglePlacePreviews(
+      dryRunResult.rows,
+      dryRun ? PLACE_PREVIEW_LIMIT : Number.POSITIVE_INFINITY
+    );
+    const sync = dryRun ? null : await syncGoogleMapReviewCampaignRows(rows);
+    return ok({
+      dryRun,
+      source: {
+        spreadsheetId,
+        range: sheet.range,
+      },
+      ...dryRunResult,
+      summary: summarizeSheetImportRows(rows),
+      rows,
+      sync,
+    });
+  } catch (e) {
+    if (e instanceof GoogleSheetsConfigError) {
+      return err("SHEETS_CONFIG_MISSING", "Google Sheets 환경변수가 설정되지 않았어요", 500);
+    }
+    if (e instanceof GoogleSheetsApiError) {
+      return err("SHEETS_READ_FAILED", "Google Sheet를 읽지 못했어요. API 활성화와 시트 공유 권한을 확인해 주세요", 502);
+    }
+    return err("SHEETS_IMPORT_FAILED", "시트 검사 중 문제가 생겼어요", 500);
+  }
+}

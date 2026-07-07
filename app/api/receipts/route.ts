@@ -3,12 +3,14 @@ import { prisma } from "@/lib/db";
 import { ok, err } from "@/lib/http";
 import { getReviewerId } from "@/lib/auth/session";
 import { receiptDedupeHash, canonicalizeCode } from "@/lib/domain/receipts";
+import { createDevNoReceipt, DevReceiptError } from "@/lib/domain/dev-receipts";
 import { checkOrigin } from "@/lib/auth/origin";
 
 export const runtime = "nodejs";
 
 const DAY = 24 * 60 * 60 * 1000;
 const DAILY_CAP = 3;
+const devReceiptBypassEnabled = () => process.env.NODE_ENV !== "production" && process.env.RECEIPT_DEV_BYPASS !== "0";
 
 export async function POST(req: Request) {
   if (!checkOrigin(req)) return err("BAD_ORIGIN", "요청 출처가 올바르지 않아요", 403);
@@ -18,9 +20,22 @@ export async function POST(req: Request) {
 
   const body = await req.json().catch(() => null);
   const campaignId = String(body?.campaignId ?? "");
+  const noReceipt = body?.noReceipt === true;
   const canonical = canonicalizeCode(String(body?.code ?? ""));
-  if (!campaignId || canonical.length < 4 || canonical.length > 40) {
+  if (!campaignId || (!noReceipt && (canonical.length < 4 || canonical.length > 40))) {
     return err("INVALID_INPUT", "영수증 정보를 확인해 주세요");
+  }
+  if (noReceipt && !devReceiptBypassEnabled()) {
+    return err("RECEIPT_REQUIRED", "영수증 인증이 필요해요", 403);
+  }
+  if (noReceipt) {
+    try {
+      const receipt = await createDevNoReceipt(campaignId, reviewerId);
+      return ok({ receiptId: receipt.id, status: receipt.status, devBypass: true });
+    } catch (e) {
+      if (e instanceof DevReceiptError) return err(e.code, e.message, e.status);
+      throw e;
+    }
   }
 
   const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });

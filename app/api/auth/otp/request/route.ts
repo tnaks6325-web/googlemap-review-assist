@@ -7,7 +7,9 @@ import { checkOrigin } from "@/lib/auth/origin";
 export const runtime = "nodejs";
 
 const HOUR = 60 * 60 * 1000;
+const DEV_OTP_CODE = "000000";
 const normalizePhone = (p: string) => p.replace(/[^0-9]/g, "");
+const devOtpEnabled = () => process.env.NODE_ENV !== "production" && process.env.OTP_DEV_BYPASS !== "0";
 
 export async function POST(req: Request) {
   if (!checkOrigin(req)) return err("BAD_ORIGIN", "요청 출처가 올바르지 않아요", 403);
@@ -29,7 +31,7 @@ export async function POST(req: Request) {
     return err("RATE_LIMITED", `${intervalR.retryAfterSec}초 후 다시 받아주세요`, 429);
   }
 
-  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const code = devOtpEnabled() ? DEV_OTP_CODE : String(Math.floor(100000 + Math.random() * 900000));
   const challenge = await prisma.otpChallenge.create({
     data: {
       phone,
@@ -39,8 +41,8 @@ export async function POST(req: Request) {
   });
 
   const payload: Record<string, unknown> = { requestId: challenge.id, expiresIn: 180 };
-  // R6: 명시적 옵트인(OTP_DEV_ECHO=1) + 비운영일 때만 코드 노출. 기본은 절대 노출 안 함.
-  if (process.env.NODE_ENV !== "production" && process.env.OTP_DEV_ECHO === "1") {
+  // 실제 SMS 연동 전 로컬/테스트 진행용. 운영에서는 절대 노출하지 않는다.
+  if (devOtpEnabled() || (process.env.NODE_ENV !== "production" && process.env.OTP_DEV_ECHO === "1")) {
     payload.devCode = code;
   }
   return ok(payload);

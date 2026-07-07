@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>리뷰어 캠페인 목록형 플로우 PRD / Wireframe</title>
+  <style>
+    :root {
+      --canvas: #f2f4f6;
+      --surface: #fff;
+      --surface-alt: #f9fafb;
+      --line: #e5e8eb;
+      --line-strong: #d1d6db;
+      --ink: #191f28;
+      --ink-sub: #4e5968;
+      --ink-weak: #6b7684;
+      --brand: #3182f6;
+      --brand-pressed: #2272eb;
+      --brand-tint: #e8f3ff;
+      --success: #00c896;
+      --danger: #f04452;
+      --star: #ffc83c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--canvas);
+      color: var(--ink);
+      font-family: Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }
+    a { color: inherit; text-decoration: none; }
+    .page { max-width: 1180px; margin: 0 auto; padding: 28px 20px 56px; }
+    .topbar {
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      margin-bottom: 20px;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; }
+    .brand-mark {
+      width: 34px; height: 34px; border-radius: 10px; background: var(--brand);
+      display: grid; place-items: center; color: #fff; font-weight: 900;
+    }
+    .pill {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-height: 30px; padding: 0 10px; border-radius: 999px;
+      background: var(--brand-tint); color: var(--brand); font-size: 13px; font-weight: 700;
+      white-space: nowrap;
+    }
+    .hero {
+      background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
+      padding: 22px; box-shadow: 0 1px 2px rgba(0,0,0,.04);
+      display: grid; grid-template-columns: 1.1fr .9fr; gap: 20px; align-items: start;
+    }
+    h1 { margin: 0; font-size: 28px; line-height: 1.25; }
+    h2 { margin: 0 0 10px; font-size: 20px; }
+    h3 { margin: 0 0 8px; font-size: 16px; }
+    p { margin: 0; }
+    .sub { color: var(--ink-sub); font-size: 15px; line-height: 1.6; }
+    .muted { color: var(--ink-weak); }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+    .card {
+      background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
+      padding: 18px; box-shadow: 0 1px 2px rgba(0,0,0,.04);
+    }
+    .metric-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
+    .metric { background: var(--surface-alt); border-radius: 14px; padding: 12px; }
+    .metric b { display: block; margin-top: 4px; font-size: 20px; }
+    .flow { display: grid; gap: 8px; margin-top: 14px; }
+    .flow-step {
+      display: grid; grid-template-columns: 30px 1fr; gap: 10px; align-items: start;
+      padding: 10px; background: var(--surface-alt); border-radius: 12px;
+    }
+    .num {
+      width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
+      background: var(--brand); color: #fff; font-weight: 800; font-size: 13px;
+    }
+    .app-shell {
+      margin-top: 20px; background: var(--surface); border: 1px solid var(--line);
+      border-radius: 18px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,.04);
+    }
+    .app-head {
+      min-height: 64px; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 0 18px; border-bottom: 1px solid var(--line); background: #fff;
+    }
+    .tabs { display: flex; gap: 6px; }
+    .tab { padding: 9px 12px; border-radius: 10px; color: var(--ink-sub); font-size: 14px; font-weight: 700; }
+    .tab.active { background: var(--brand-tint); color: var(--brand); }
+    .app-body { display: grid; grid-template-columns: minmax(0, 1.35fr) 360px; gap: 0; }
+    .list-pane { padding: 18px; border-right: 1px solid var(--line); }
+    .detail-pane { padding: 18px; background: var(--surface-alt); }
+    .filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+    .filter {
+      height: 36px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line);
+      display: inline-flex; align-items: center; background: #fff; font-size: 13px; color: var(--ink-sub);
+    }
+    table { width: 100%; border-collapse: separate; border-spacing: 0 8px; }
+    th {
+      padding: 0 12px 4px; text-align: left; color: var(--ink-weak); font-size: 12px; font-weight: 700;
+    }
+    td {
+      background: #fff; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+      padding: 12px; vertical-align: middle; font-size: 14px;
+    }
+    td:first-child { border-left: 1px solid var(--line); border-radius: 12px 0 0 12px; }
+    td:last-child { border-right: 1px solid var(--line); border-radius: 0 12px 12px 0; }
+    tr.selected td { border-color: var(--brand); background: #fbfdff; }
+    .place { font-weight: 800; }
+    .addr { margin-top: 4px; color: var(--ink-weak); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
+    .status { font-size: 12px; font-weight: 800; color: var(--success); }
+    .reward { font-weight: 800; }
+    .btn {
+      height: 44px; border: 0; border-radius: 12px; background: var(--brand); color: #fff;
+      font-weight: 800; padding: 0 14px; cursor: default; display: inline-flex; align-items: center; justify-content: center;
+    }
+    .btn.full { width: 100%; }
+    .btn.secondary { background: var(--brand-tint); color: var(--brand); }
+    .btn.ghost { background: #fff; color: var(--ink-sub); border: 1px solid var(--line); }
+    .detail-card {
+      background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 16px; margin-bottom: 12px;
+    }
+    .review-box {
+      min-height: 138px; padding: 14px; border-radius: 14px; background: var(--canvas);
+      color: var(--ink); line-height: 1.65; font-size: 14px;
+    }
+    .actions { display: grid; gap: 8px; margin-top: 12px; }
+    .notice {
+      margin-top: 10px; padding: 10px 12px; border-radius: 12px; background: #fff7e6;
+      color: #7a4b00; font-size: 12px; line-height: 1.5;
+    }
+    .phone-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 16px; }
+    .phone {
+      background: #101828; border-radius: 26px; padding: 10px; box-shadow: 0 16px 40px rgba(25,31,40,.22);
+    }
+    .phone-screen {
+      min-height: 560px; border-radius: 20px; background: var(--canvas); overflow: hidden;
+      display: flex; flex-direction: column;
+    }
+    .mobile-head { padding: 18px 18px 10px; background: var(--canvas); }
+    .mobile-body { padding: 0 14px 16px; display: grid; gap: 10px; }
+    .mobile-card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+    .mobile-table-row {
+      display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center;
+      border-bottom: 1px solid var(--line); padding: 10px 0;
+    }
+    .mobile-table-row:last-child { border-bottom: 0; }
+    .copy-toast {
+      background: var(--ink); color: #fff; border-radius: 999px; padding: 9px 12px;
+      text-align: center; font-size: 12px; font-weight: 700;
+    }
+    .spec {
+      margin-top: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+    }
+    ul { margin: 10px 0 0; padding-left: 18px; color: var(--ink-sub); line-height: 1.65; font-size: 14px; }
+    .api-list code {
+      display: block; background: var(--surface-alt); border: 1px solid var(--line);
+      border-radius: 10px; padding: 9px 10px; margin-top: 8px; font-size: 12px; color: var(--ink-sub);
+      white-space: normal;
+    }
+    @media (max-width: 960px) {
+      .hero, .grid, .app-body, .spec, .phone-row { grid-template-columns: 1fr; }
+      .list-pane { border-right: 0; border-bottom: 1px solid var(--line); }
+      .detail-pane { background: #fff; }
+      .table-wrap { overflow-x: auto; }
+      table { min-width: 760px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="topbar">
+      <div class="brand"><div class="brand-mark">R</div><span>Reviewer Campaign Hub</span></div>
+      <span class="pill">PRD + HTML Wireframe v1</span>
+    </header>
+
+    <section class="hero">
+      <div>
+        <h1>리뷰어는 설문 단계를 거치지 않고, 참여 가능한 캠페인을 고른 뒤 원고를 복사하고 Google Maps로 이동한다.</h1>
+        <p class="sub" style="margin-top:12px">
+          기존 `/r/[slug]` 단계형 흐름에서 영수증 인증, 별점, 좋았던 점 선택, 한마디 입력 단계를 제거한다.
+          로그인한 리뷰어의 첫 화면은 현재 진행 중인 캠페인 테이블이며, 핵심 행동은 `원고 생성/복사`와 `Google Maps 랜딩`이다.
+        </p>
+        <div class="metric-grid">
+          <div class="metric"><span class="muted">삭제 단계</span><b>4개</b></div>
+          <div class="metric"><span class="muted">핵심 화면</span><b>2개</b></div>
+          <div class="metric"><span class="muted">주요 CTA</span><b>2개</b></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>유저 플로우</h2>
+        <div class="flow">
+          <div class="flow-step"><div class="num">1</div><div><b>리뷰어 로그인</b><p class="sub">휴대폰 OTP 또는 개발용 우회 후 세션 생성.</p></div></div>
+          <div class="flow-step"><div class="num">2</div><div><b>캠페인 목록 확인</b><p class="sub">참여 가능 캠페인을 테이블로 비교한다.</p></div></div>
+          <div class="flow-step"><div class="num">3</div><div><b>캠페인 선택</b><p class="sub">행 클릭 시 우측 상세 패널 또는 모바일 상세 화면 진입.</p></div></div>
+          <div class="flow-step"><div class="num">4</div><div><b>원고 생성 및 복사</b><p class="sub">캠페인 가이드 기반 초안 생성 후 단말기 클립보드에 복사.</p></div></div>
+          <div class="flow-step"><div class="num">5</div><div><b>Google Maps 이동</b><p class="sub">랜딩 버튼으로 해당 캠페인의 정확한 Google Maps URL 오픈.</p></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="app-shell" aria-label="desktop wireframe">
+      <div class="app-head">
+        <div>
+          <b>참여 가능한 캠페인</b>
+          <p class="muted" style="font-size:13px;margin-top:3px">현재 진행 중이고 오늘 참여 가능한 캠페인만 표시</p>
+        </div>
+        <div class="tabs">
+          <span class="tab active">전체</span>
+          <span class="tab">근처</span>
+          <span class="tab">고보상</span>
+          <span class="tab">참여내역</span>
+        </div>
+      </div>
+      <div class="app-body">
+        <section class="list-pane">
+          <h2>캠페인 테이블</h2>
+          <p class="sub">리뷰어는 보상, 위치, 잔여 수량, 마감 시간을 비교하고 캠페인을 선택한다.</p>
+          <div class="filters">
+            <span class="filter">지역: 전체</span>
+            <span class="filter">카테고리: 음식점</span>
+            <span class="filter">참여 가능만</span>
+            <span class="filter">정렬: 마감 임박순</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>상태</th>
+                  <th>캠페인</th>
+                  <th>지역</th>
+                  <th>보상</th>
+                  <th>잔여</th>
+                  <th>액션</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="selected">
+                  <td><span class="status">참여 가능</span></td>
+                  <td><div class="place">안국 그래인스쿠키 북촌점</div><div class="addr">서울 종로구 북촌로11나길 1</div></td>
+                  <td>종로구</td>
+                  <td><span class="reward">500P</span></td>
+                  <td>20건</td>
+                  <td><span class="btn secondary">선택됨</span></td>
+                </tr>
+                <tr>
+                  <td><span class="status">참여 가능</span></td>
+                  <td><div class="place">하리무드 범계본점</div><div class="addr">경기 안양시 동안구 화성프라자 5층</div></td>
+                  <td>안양시</td>
+                  <td><span class="reward">500P</span></td>
+                  <td>24건</td>
+                  <td><span class="btn ghost">선택</span></td>
+                </tr>
+                <tr>
+                  <td><span class="status">참여 가능</span></td>
+                  <td><div class="place">로우파이브안국</div><div class="addr">서울 종로구 재동 60</div></td>
+                  <td>종로구</td>
+                  <td><span class="reward">500P</span></td>
+                  <td>15건</td>
+                  <td><span class="btn ghost">선택</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <aside class="detail-pane">
+          <div class="detail-card">
+            <span class="pill">선택한 캠페인</span>
+            <h2 style="margin-top:12px">안국 그래인스쿠키 북촌점</h2>
+            <p class="sub">서울 종로구 북촌로11나길 1 · 베이커리</p>
+            <div class="metric-grid" style="grid-template-columns:repeat(2,1fr)">
+              <div class="metric"><span class="muted">보상</span><b>500P</b></div>
+              <div class="metric"><span class="muted">잔여</span><b>20건</b></div>
+            </div>
+            <div class="notice">실제 방문 경험을 바탕으로 리뷰어가 직접 수정/게시해야 한다. 플랫폼은 Google 리뷰 자동 게시를 하지 않는다.</div>
+          </div>
+          <div class="detail-card">
+            <h3>생성된 원고</h3>
+            <div class="review-box">
+              북촌 산책 중 들르기 좋은 쿠키 매장이었어요. 매장이 깔끔하고 포장도 정돈되어 있어 선물용으로 고르기 편했습니다. 쿠키 식감과 맛도 만족스러워서 근처에 오면 다시 방문하고 싶어요.
+            </div>
+            <div class="actions">
+              <span class="btn full">원고 생성하고 클립보드에 복사</span>
+              <span class="btn secondary full">Google Maps 리뷰 작성 화면 열기</span>
+              <span class="btn ghost full">등록 완료 신고</span>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <section class="phone-row" aria-label="mobile wireframe">
+      <div class="phone">
+        <div class="phone-screen">
+          <div class="mobile-head">
+            <p class="muted">리뷰 캠페인</p>
+            <h2>참여 가능한 캠페인</h2>
+          </div>
+          <div class="mobile-body">
+            <div class="mobile-card">
+              <div class="mobile-table-row"><div><b>안국 그래인스쿠키 북촌점</b><p class="muted">종로구 · 500P · 20건</p></div><span class="pill">선택</span></div>
+              <div class="mobile-table-row"><div><b>하리무드 범계본점</b><p class="muted">안양시 · 500P · 24건</p></div><span class="pill">선택</span></div>
+              <div class="mobile-table-row"><div><b>로우파이브안국</b><p class="muted">종로구 · 500P · 15건</p></div><span class="pill">선택</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="phone">
+        <div class="phone-screen">
+          <div class="mobile-head">
+            <p class="muted">캠페인 상세</p>
+            <h2>안국 그래인스쿠키 북촌점</h2>
+            <p class="sub">서울 종로구 북촌로11나길 1</p>
+          </div>
+          <div class="mobile-body">
+            <div class="mobile-card"><b>참여 조건</b><p class="sub">방문 후 Google Maps에서 직접 리뷰를 등록합니다.</p></div>
+            <div class="mobile-card">
+              <b>원고 준비</b>
+              <p class="sub" style="margin-top:8px">캠페인 가이드와 매장 정보를 바탕으로 원고를 생성합니다.</p>
+              <div class="actions"><span class="btn full">원고 생성</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="phone">
+        <div class="phone-screen">
+          <div class="mobile-head">
+            <p class="muted">원고 생성 완료</p>
+            <h2>클립보드에 복사됨</h2>
+          </div>
+          <div class="mobile-body">
+            <div class="copy-toast">원고가 복사되었습니다</div>
+            <div class="mobile-card">
+              <div class="review-box" style="min-height:190px">북촌 산책 중 들르기 좋은 쿠키 매장이었어요. 매장이 깔끔하고 포장도 정돈되어 있어 선물용으로 고르기 편했습니다.</div>
+            </div>
+            <span class="btn full">Google Maps로 이동</span>
+            <span class="btn ghost full">등록 완료 신고</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="spec">
+      <div class="card">
+        <h2>PRD 핵심 요구사항</h2>
+        <ul>
+          <li>로그인 후 첫 화면은 캠페인 목록 테이블이다.</li>
+          <li>삭제 대상: 영수증 인증, 별점 체크, 좋았던 점 선택, 한마디 입력 단계.</li>
+          <li>캠페인 행 클릭 시 상세 패널 또는 상세 화면으로 이동한다.</li>
+          <li>원고 생성 버튼은 초안 생성과 클립보드 복사를 한 번에 수행한다.</li>
+          <li>Google Maps 랜딩 버튼은 저장된 정확한 캠페인 Google Maps URL을 연다.</li>
+          <li>정산/운영 추적을 위해 원고 생성, 지도 열기, 등록 완료 신고 상태를 분리 기록한다.</li>
+        </ul>
+      </div>
+      <div class="card api-list">
+        <h2>API / 데이터 노트</h2>
+        <code>GET /api/reviewer/campaigns?available=true</code>
+        <code>GET /api/reviewer/campaigns/{campaignId}</code>
+        <code>POST /api/reviewer/campaigns/{campaignId}/drafts</code>
+        <code>POST /api/reviewer/campaigns/{campaignId}/events { type: "DRAFT_COPIED" | "MAP_OPENED" | "COMPLETION_REPORTED" }</code>
+        <code>PATCH /api/reviewer/participations/{id} { status }</code>
+      </div>
+      <div class="card">
+        <h2>상태 모델</h2>
+        <ul>
+          <li><b>AVAILABLE</b>: 참여 가능</li>
+          <li><b>DRAFT_COPIED</b>: 원고 생성 및 복사 완료</li>
+          <li><b>MAP_OPENED</b>: Google Maps 랜딩 완료</li>
+          <li><b>REPORTED</b>: 리뷰어가 등록 완료 신고</li>
+          <li><b>REVIEWING</b>: 운영자 검수 중</li>
+          <li><b>SETTLED</b>: 정산 가능 또는 정산 완료</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h2>수용 기준</h2>
+        <ul>
+          <li>리뷰어가 `/r/demo` 같은 단일 캠페인 단계 화면이 아니라 목록 화면에서 시작한다.</li>
+          <li>테이블에서 진행 중/참여 가능/잔여 수량/보상/지역을 한눈에 비교할 수 있다.</li>
+          <li>원고 생성 성공 시 클립보드 복사 성공 메시지를 표시한다.</li>
+          <li>Google Maps 이동은 새 브라우저 탭 또는 현재 모바일 브라우저 랜딩으로 동작한다.</li>
+          <li>Google 리뷰 자동 게시, 별점 강제, 특정 긍정 문구 강제는 하지 않는다.</li>
+        </ul>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

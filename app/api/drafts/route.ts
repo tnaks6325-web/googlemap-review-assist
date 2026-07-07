@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db";
 import { ok, err } from "@/lib/http";
 import { getReviewerId } from "@/lib/auth/session";
-import { generateDraft } from "@/lib/domain/draft";
+import { generateDraftResult } from "@/lib/domain/draft";
 import { checkOrigin } from "@/lib/auth/origin";
 
 export const runtime = "nodejs";
@@ -29,7 +29,7 @@ export async function POST(req: Request) {
   const selectedIds: string[] = JSON.parse(feedback.menuIdsJson || "[]");
   const selectedMenus = menus.filter((m) => selectedIds.includes(m.id)).map((m) => m.name);
 
-  const text = await generateDraft({
+  const draftResult = await generateDraftResult({
     businessName: feedback.receipt.business.name,
     rating: feedback.rating,
     selectedMenus,
@@ -38,6 +38,13 @@ export async function POST(req: Request) {
   });
 
   const version = feedback.drafts.reduce((max, d) => Math.max(max, d.version), 0) + 1;
-  const draft = await prisma.aiDraft.create({ data: { feedbackId, version, text } });
-  return ok({ draftId: draft.id, version, text });
+  const draft = await prisma.aiDraft.create({ data: { feedbackId, version, text: draftResult.text } });
+  return ok({
+    draftId: draft.id,
+    version,
+    text: draftResult.text,
+    provider: draftResult.provider,
+    model: draftResult.model,
+    fallbackFrom: draftResult.fallbackFrom ?? null,
+  });
 }

@@ -18,8 +18,8 @@ export function CountUp({
       typeof window !== "undefined" &&
       window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     if (reduce || value <= 0) {
-      setN(value);
-      return;
+      const raf = requestAnimationFrame(() => setN(value));
+      return () => cancelAnimationFrame(raf);
     }
     let raf = 0;
     const start = performance.now();

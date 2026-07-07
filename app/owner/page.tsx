@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { getOwnerId } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
 import { getBusinessStats } from "@/lib/domain/stats";
@@ -35,9 +36,9 @@ export default async function OwnerHome() {
       <header className="mb-8 flex items-center justify-between">
         <h1 className="text-[22px] font-bold text-ink">사장님 대시보드</h1>
         <div className="flex items-center gap-4">
-          <a href="/owner/new" className="text-sm font-semibold text-brand">
+          <Link href="/owner/new" className="text-sm font-semibold text-brand">
             + 매장 등록
-          </a>
+          </Link>
           <LogoutButton />
         </div>
       </header>
@@ -45,9 +46,9 @@ export default async function OwnerHome() {
       {data.length === 0 && (
         <p className="text-[15px] text-ink-sub">
           등록된 매장이 없어요.{" "}
-          <a href="/owner/new" className="text-brand">
+          <Link href="/owner/new" className="text-brand">
             매장 등록하기
-          </a>
+          </Link>
         </p>
       )}
 

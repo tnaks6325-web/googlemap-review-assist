@@ -8,8 +8,13 @@ import { rateLimit, clientIp } from "@/lib/rate-limit";
 export const runtime = "nodejs";
 
 const HOUR = 60 * 60 * 1000;
+const DEV_ADMIN_ID = "dev-admin";
 // F6: 미존재 계정에도 동일 비용(scrypt)을 들여 타이밍 열거 차단
 const DUMMY_HASH = hashPassword("invalid-account-placeholder");
+
+function adminDevBypassEnabled() {
+  return process.env.NODE_ENV !== "production" && process.env.ADMIN_DEV_BYPASS !== "0";
+}
 
 export async function POST(req: Request) {
   if (!checkOrigin(req)) return err("BAD_ORIGIN", "요청 출처가 올바르지 않아요", 403);
@@ -19,6 +24,16 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json().catch(() => null);
+  if (body?.devBypass === true) {
+    if (!adminDevBypassEnabled()) {
+      return err("DEV_BYPASS_DISABLED", "관리자 계정 로그인이 필요해요", 403);
+    }
+
+    const res = ok({ adminId: DEV_ADMIN_ID, devBypass: true });
+    res.cookies.set(ADMIN_COOKIE, signAdminSession(DEV_ADMIN_ID), adminCookieOptions);
+    return res;
+  }
+
   const email = String(body?.email ?? "").trim().toLowerCase();
   const password = String(body?.password ?? "");
 

@@ -1,61 +1,35 @@
-"use client";
+import Link from "next/link";
+import { Card } from "@/components/ui";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { Button, TextInput } from "@/components/ui";
-
-export default function NewBusinessPage() {
-  const router = useRouter();
-  const [name, setName] = useState("");
-  const [address, setAddress] = useState("");
-  const [placeId, setPlaceId] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const submit = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/business", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name, address, googlePlaceId: placeId }),
-      });
-      const d = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(d?.error?.message ?? "등록에 실패했어요");
-      router.replace(`/owner/${d.businessId}`);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "오류가 발생했어요");
-    } finally {
-      setBusy(false);
-    }
-  };
-
+export default function DeprecatedOwnerNewPage() {
   return (
     <main className="mx-auto max-w-md px-5 py-8">
-      <h1 className="text-[22px] font-bold text-ink">매장 등록</h1>
-      <p className="mt-1 text-[15px] text-ink-sub">상호와 구글맵 정보를 입력하세요.</p>
+      <Card className="space-y-5">
+        <div>
+          <p className="text-sm font-semibold text-brand">구조가 변경됐어요</p>
+          <h1 className="mt-2 text-[24px] font-bold leading-snug text-ink">
+            사장님 매장 등록 화면은 사용하지 않습니다
+          </h1>
+          <p className="mt-3 text-[15px] leading-6 text-ink-sub">
+            이 플랫폼은 운영자가 Google Sheet 접수건을 캠페인으로 만들고, 리뷰어가 진행 중인 캠페인에 참여하는 구조입니다.
+          </p>
+        </div>
 
-      <div className="mt-6 space-y-3">
-        <TextInput placeholder="상호 (예: 온기담은식당)" value={name} onChange={(e) => setName(e.target.value)} />
-        <TextInput placeholder="주소 (선택)" value={address} onChange={(e) => setAddress(e.target.value)} />
-        <TextInput
-          placeholder="구글 Place ID (선택)"
-          value={placeId}
-          onChange={(e) => setPlaceId(e.target.value)}
-        />
-      </div>
-
-      {error && <p className="mt-3 text-sm text-danger">{error}</p>}
-
-      <div className="mt-6 flex gap-2">
-        <Button fullWidth loading={busy} disabled={!name.trim()} onClick={submit}>
-          등록하기
-        </Button>
-        <Button variant="text" onClick={() => router.push("/owner")}>
-          취소
-        </Button>
-      </div>
+        <div className="space-y-2">
+          <Link
+            href="/campaigns"
+            className="inline-flex h-[52px] w-full items-center justify-center rounded-btn bg-brand px-5 text-base font-medium text-white transition hover:bg-brand-pressed active:scale-[0.98]"
+          >
+            리뷰어 캠페인 보기
+          </Link>
+          <Link
+            href="/admin/campaigns"
+            className="inline-flex h-[52px] w-full items-center justify-center rounded-btn bg-brand-tint px-5 text-base font-medium text-brand transition hover:brightness-95 active:scale-[0.98]"
+          >
+            운영자 캠페인 관리
+          </Link>
+        </div>
+      </Card>
     </main>
   );
 }

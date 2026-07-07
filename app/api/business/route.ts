@@ -3,6 +3,9 @@ import { ok, err } from "@/lib/http";
 import { getOwnerId } from "@/lib/auth/session";
 import { checkOrigin } from "@/lib/auth/origin";
 import { rateLimit } from "@/lib/rate-limit";
+import { parseNaverPlaceInput, safeJsonSnapshot } from "@/lib/domain/external-places";
+import { resolveGooglePlace, type ExternalPlaceSnapshot } from "@/lib/domain/external-place-providers";
+import { saveExternalPlace } from "@/lib/domain/external-place-save";
 
 export const runtime = "nodejs";
 
@@ -21,9 +24,36 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json().catch(() => null);
-  const name = String(body?.name ?? "").trim();
-  const address = body?.address ? String(body.address).trim().slice(0, 200) : null;
-  const googlePlaceId = body?.googlePlaceId ? String(body.googlePlaceId).trim().slice(0, 200) : null;
+  const googlePlaceUrl = body?.googlePlaceUrl ? String(body.googlePlaceUrl).trim().slice(0, 500) : "";
+  let googlePlace: ExternalPlaceSnapshot | null = null;
+  if (googlePlaceUrl) {
+    try {
+      googlePlace = (await resolveGooglePlace(googlePlaceUrl)).place;
+    } catch {
+      return err("GOOGLE_PLACE_LOOKUP_FAILED", "구글 플레이스 정보를 확인하지 못했어요", 502);
+    }
+  }
+
+  const name = String(body?.name ?? googlePlace?.name ?? "").trim();
+  const address = body?.address
+    ? String(body.address).trim().slice(0, 200)
+    : googlePlace?.address
+      ? googlePlace.address.slice(0, 200)
+      : null;
+  const googlePlaceId = body?.googlePlaceId
+    ? String(body.googlePlaceId).trim().slice(0, 200)
+    : googlePlace?.externalId && !googlePlace.externalId.includes(":")
+      ? googlePlace.externalId.slice(0, 200)
+      : null;
+  const naverPlaceUrl = body?.naverPlaceUrl ? String(body.naverPlaceUrl).trim().slice(0, 500) : "";
+  let parsedNaver: ReturnType<typeof parseNaverPlaceInput> | null = null;
+  if (naverPlaceUrl) {
+    try {
+      parsedNaver = parseNaverPlaceInput(naverPlaceUrl);
+    } catch {
+      return err("INVALID_NAVER_URL", "네이버 플레이스 URL 형식이 올바르지 않아요");
+    }
+  }
   if (name.length < 1 || name.length > 60) return err("INVALID_INPUT", "상호를 입력해 주세요");
   // R6: Place ID 형식 검증(스푸핑/오용 방지)
   if (googlePlaceId && !PLACE_RE.test(googlePlaceId)) {
@@ -36,6 +66,25 @@ export async function POST(req: Request) {
   const business = await prisma.business.create({
     data: { ownerId, name, address, googlePlaceId },
   });
+  if (googlePlace) await saveExternalPlace(business.id, googlePlace);
+  if (parsedNaver) {
+    await saveExternalPlace(business.id, {
+      platform: "NAVER",
+      externalId: parsedNaver.externalId ?? null,
+      url: parsedNaver.url ?? null,
+      name,
+      address,
+      phone: null,
+      category: null,
+      lat: null,
+      lng: null,
+      rating: null,
+      reviewCount: null,
+      receiptReviewCount: null,
+      matchConfidence: parsedNaver.externalId ? 80 : 60,
+      rawJson: safeJsonSnapshot({ parsedNaver }),
+    });
+  }
   return ok({ businessId: business.id });
 }
 

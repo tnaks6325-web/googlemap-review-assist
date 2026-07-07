@@ -11,25 +11,24 @@ const DAILY_LIMIT = 3;
 const METHODS = new Set(["BANK"]);
 
 export async function POST(req: Request) {
-  if (!checkOrigin(req)) return err("BAD_ORIGIN", "요청 출처가 올바르지 않아요", 403);
+  if (!checkOrigin(req)) return err("BAD_ORIGIN", "요청 출처가 올바르지 않습니다", 403);
   const reviewerId = await getReviewerId();
   if (!reviewerId) return err("UNAUTHORIZED", "로그인이 필요해요", 401);
 
-  // R6: 정산 요청 일일 한도를 DB 기반으로(멀티 노드/재시작에 견고)
   const todays = await prisma.settlement.count({
     where: { reviewerId, createdAt: { gte: new Date(Date.now() - DAY) } },
   });
   if (todays >= DAILY_LIMIT) {
-    return err("RATE_LIMITED", "오늘 정산 요청 한도를 초과했어요", 429);
+    return err("RATE_LIMITED", "오늘 정산 신청 한도를 초과했어요", 429);
   }
 
   const body = await req.json().catch(() => null);
   const amount = Number(body?.amount);
   const method = String(body?.method ?? "BANK");
-  if (!METHODS.has(method)) return err("INVALID_METHOD", "지원하지 않는 정산 수단이에요");
+  if (!METHODS.has(method)) return err("INVALID_METHOD", "지원하지 않는 정산 수단입니다");
 
   try {
-    const result = await requestSettlement(reviewerId, amount, method, body?.payoutInfo);
+    const result = await requestSettlement(reviewerId, amount, method);
     return ok(result);
   } catch (e) {
     if (e instanceof SettlementError) return err(e.code, e.message, e.status);
@@ -45,7 +44,14 @@ export async function GET() {
     where: { reviewerId },
     orderBy: { createdAt: "desc" },
     take: 50,
-    select: { id: true, amount: true, method: true, status: true, createdAt: true },
+    select: {
+      id: true,
+      amount: true,
+      method: true,
+      status: true,
+      createdAt: true,
+      updatedAt: true,
+    },
   });
   return ok({ items });
 }

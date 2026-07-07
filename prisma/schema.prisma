@@ -27,17 +27,83 @@ model Admin {
 }
 
 model Business {
-  id            String     @id @default(cuid())
-  ownerId       String
-  owner         Owner      @relation(fields: [ownerId], references: [id])
-  name          String
-  address       String?
-  googlePlaceId String?
-  menus         Menu[]
-  campaigns     Campaign[]
-  receipts      Receipt[]
-  subscription  Subscription?
-  createdAt     DateTime   @default(now())
+  id               String            @id @default(cuid())
+  ownerId          String
+  owner            Owner             @relation(fields: [ownerId], references: [id])
+  name             String
+  address          String?
+  googlePlaceId    String?
+  menus            Menu[]
+  campaigns        Campaign[]
+  receipts         Receipt[]
+  externalPlaces   ExternalPlace[]
+  externalReviews  ExternalReview[]
+  externalSyncLogs ExternalSyncLog[]
+  subscription     Subscription?
+  createdAt        DateTime          @default(now())
+}
+
+// 외부 플랫폼 플레이스 스냅샷. 분석/연결 전용이며 AI 초안 입력으로 사용하지 않는다.
+model ExternalPlace {
+  id                 String           @id @default(cuid())
+  businessId         String
+  business           Business         @relation(fields: [businessId], references: [id])
+  platform           String // GOOGLE | NAVER
+  externalId         String?
+  url                String?
+  name               String
+  address            String?
+  phone              String?
+  category           String?
+  lat                Float?
+  lng                Float?
+  rating             Float?
+  reviewCount        Int?
+  receiptReviewCount Int?
+  matchStatus        String           @default("LINKED") // LINKED | NEEDS_REVIEW | FAILED
+  matchConfidence    Int?
+  rawJson            String?
+  syncedAt           DateTime?
+  createdAt          DateTime         @default(now())
+  reviews            ExternalReview[]
+
+  @@unique([businessId, platform])
+  @@index([platform])
+}
+
+// 외부 리뷰는 사장님 분석 전용. 보상/AI 초안/고객 리뷰 생성과 연결하지 않는다.
+model ExternalReview {
+  id               String         @id @default(cuid())
+  businessId       String
+  business         Business       @relation(fields: [businessId], references: [id])
+  externalPlaceId  String?
+  externalPlace    ExternalPlace? @relation(fields: [externalPlaceId], references: [id])
+  platform         String // GOOGLE | NAVER
+  reviewType       String         @default("UNKNOWN") // GENERAL | RECEIPT | BOOKING | ORDER | UNKNOWN
+  rating           Int?
+  content          String?
+  authorMasked     String?
+  publishedAt      DateTime?
+  externalReviewId String?
+  reviewHash       String         @unique
+  rawJson          String?
+  syncedAt         DateTime?
+  createdAt        DateTime       @default(now())
+
+  @@index([businessId])
+  @@index([externalPlaceId])
+}
+
+model ExternalSyncLog {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id])
+  platform   String // GOOGLE | NAVER
+  status     String // SUCCESS | FAILED
+  message    String?
+  createdAt  DateTime @default(now())
+
+  @@index([businessId, platform])
 }
 
 model Menu {
@@ -51,10 +117,10 @@ model Menu {
 }
 
 model Campaign {
-  id         String    @id @default(cuid())
+  id         String         @id @default(cuid())
   businessId String
-  business   Business  @relation(fields: [businessId], references: [id])
-  slug       String    @unique
+  business   Business       @relation(fields: [businessId], references: [id])
+  slug       String         @unique
   name       String
   active     Boolean        @default(true)
   receipts   Receipt[]
@@ -79,13 +145,19 @@ model CampaignCode {
 
 // ---------- 고객 / 적립 ----------
 model Reviewer {
-  id           String             @id @default(cuid())
-  phone        String             @unique
-  wallet       PointWallet?
-  receipts     Receipt[]
-  transactions PointTransaction[]
-  settlements  Settlement[]
-  createdAt    DateTime           @default(now())
+  id            String                  @id @default(cuid())
+  phone         String?                 @unique
+  googleSub     String?                 @unique
+  email         String?
+  name          String?
+  avatarUrl     String?
+  wallet        PointWallet?
+  receipts      Receipt[]
+  transactions  PointTransaction[]
+  settlements   Settlement[]
+  payoutAccount ReviewerPayoutAccount?
+  notifications ReviewerNotification[]
+  createdAt     DateTime                @default(now())
 }
 
 model PointWallet {
@@ -96,25 +168,41 @@ model PointWallet {
 }
 
 model Receipt {
-  id         String    @id @default(cuid())
-  businessId String
-  business   Business  @relation(fields: [businessId], references: [id])
-  campaignId String
-  campaign   Campaign  @relation(fields: [campaignId], references: [id])
-  reviewerId String
-  reviewer   Reviewer  @relation(fields: [reviewerId], references: [id])
+  id           String    @id @default(cuid())
+  businessId   String
+  business     Business  @relation(fields: [businessId], references: [id])
+  campaignId   String
+  campaign     Campaign  @relation(fields: [campaignId], references: [id])
+  reviewerId   String
+  reviewer     Reviewer  @relation(fields: [reviewerId], references: [id])
   code         String? // 승인번호/식별 코드
   amount       Int?
   merchantName String?
   ocrText      String? // OCR 원문(truncated)
-  source       String    @default("CODE") // CODE | OCR
+  reviewDraftText       String?
+  reviewProofImageUrl   String?
+  reviewProofMimeType   String?
+  reviewProofOriginalName String?
+  reviewProofSubmittedAt DateTime?
+  reviewProofExtractedText String?
+  reviewProofSimilarity Float?
+  reviewProofAnalysisStatus String?
+  reviewProofAnalysisReason String?
+  reviewProofAnalysisProvider String?
+  reviewProofAnalysisJson String?
+  reviewReviewedAt      DateTime?
+  reviewReviewedBy      String?
+  reviewReviewNote      String?
+  source       String    @default("CODE") // CODE | OCR | CAMPAIGN_ASSIGNMENT
   dedupeHash   String    @unique // 동일 영수증 재사용 차단
-  status       String    @default("PENDING") // PENDING | VERIFIED | REJECTED
+  status       String    @default("PENDING") // PENDING | VERIFIED | ASSIGNED | REVIEW_SUBMITTED | COMPLETED | REJECTED
   feedback     Feedback?
   createdAt    DateTime  @default(now())
 
   @@index([reviewerId])
   @@index([businessId])
+  @@index([campaignId, status])
+  @@index([status])
 }
 
 model Feedback {
@@ -141,18 +229,18 @@ model AiDraft {
   @@unique([feedbackId, version])
 }
 
-// append-only 원장. 컴플라이언스 C1: EARN의 유일한 발생원은 Feedback.
+// append-only 원장. EARN은 Feedback 또는 승인된 캠페인 검수에서만 발생한다.
 model PointTransaction {
-  id             String    @id @default(cuid())
+  id             String      @id @default(cuid())
   reviewerId     String
-  reviewer       Reviewer  @relation(fields: [reviewerId], references: [id])
+  reviewer       Reviewer    @relation(fields: [reviewerId], references: [id])
   type           String // EARN | REDEEM | SETTLE | ADJUST
   amount         Int // EARN 양수, REDEEM/SETTLE 음수
   feedbackId     String?     @unique
   feedback       Feedback?   @relation(fields: [feedbackId], references: [id])
   settlementId   String?
   settlement     Settlement? @relation(fields: [settlementId], references: [id])
-  idempotencyKey String      @unique // EARN: = receiptId → 1회 보장
+    idempotencyKey String      @unique // EARN/SETTLE 등 상태 전이별 1회 보장
   memo           String?
   createdAt      DateTime    @default(now())
 
@@ -175,6 +263,32 @@ model Settlement {
 
   @@index([reviewerId])
   @@index([status])
+}
+
+model ReviewerPayoutAccount {
+  id               String   @id @default(cuid())
+  reviewerId       String   @unique
+  reviewer         Reviewer @relation(fields: [reviewerId], references: [id])
+  bankName         String
+  accountNumberEnc String
+  accountLast4     String
+  accountHolder    String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model ReviewerNotification {
+  id           String    @id @default(cuid())
+  reviewerId   String
+  reviewer     Reviewer  @relation(fields: [reviewerId], references: [id])
+  type         String
+  title        String
+  body         String
+  metadataJson String?
+  readAt       DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([reviewerId, createdAt])
 }
 
 // 사장님 구독(플랫폼 수익)
