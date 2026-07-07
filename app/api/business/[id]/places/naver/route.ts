@@ -13,11 +13,18 @@ function placeFromCandidate(raw: unknown, businessName: string): ExternalPlaceSn
   const title = String(c.title ?? "").trim().slice(0, 120);
   if (!title) return null;
   const link = String(c.link ?? "").trim();
-  const parsed = link ? parseNaverPlaceInput(link) : { kind: "TEXT" as const };
+  let parsed: ReturnType<typeof parseNaverPlaceInput> | null = null;
+  if (link) {
+    try {
+      parsed = parseNaverPlaceInput(link);
+    } catch {
+      parsed = null;
+    }
+  }
   return {
     platform: "NAVER",
-    externalId: parsed.externalId ?? null,
-    url: parsed.url ?? (link || null),
+    externalId: parsed?.externalId ?? null,
+    url: parsed?.url ?? null,
     name: title || businessName,
     address: String(c.roadAddress ?? c.address ?? "").trim().slice(0, 240) || null,
     phone: null,

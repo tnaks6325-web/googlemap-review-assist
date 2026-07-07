@@ -43,7 +43,7 @@ export interface ExternalReviewImport {
 
 const GOOGLE_PLACE_ID_RE = /^[A-Za-z0-9_-]{8,256}$/;
 const ALLOWED_GOOGLE_HOSTS = ["google.com", "google.co.kr", "maps.google.com", "maps.app.goo.gl", "share.google", "goo.gl"];
-const ALLOWED_NAVER_HOSTS = ["naver.com", "map.naver.com", "place.naver.com", "m.place.naver.com", "naver.me"];
+const ALLOWED_NAVER_SMARTPLACE_HOSTS = ["map.naver.com", "place.naver.com", "m.place.naver.com"];
 const REVIEW_TYPES = new Set<ExternalReviewType>(["GENERAL", "RECEIPT", "BOOKING", "ORDER", "UNKNOWN"]);
 
 function allowedHost(hostname: string, allowed: string[]) {
@@ -235,7 +235,7 @@ export function parseNaverPlaceInput(input: string): ParsedNaverPlaceInput {
 
   const url = parseUrl(raw);
   if (!url) return { kind: "TEXT", textQuery: raw.slice(0, 200) };
-  if (!allowedHost(url.hostname, ALLOWED_NAVER_HOSTS)) throw new Error("unsupported naver host");
+  if (!allowedHost(url.hostname, ALLOWED_NAVER_SMARTPLACE_HOSTS)) throw new Error("unsupported naver smartplace host");
   if (url.protocol !== "https:") throw new Error("unsupported naver protocol");
 
   const pathId =
@@ -243,7 +243,8 @@ export function parseNaverPlaceInput(input: string): ParsedNaverPlaceInput {
     url.pathname.match(/\/restaurant\/(\d+)/)?.[1] ||
     url.searchParams.get("id") ||
     url.searchParams.get("placeId");
-  return { kind: "URL", externalId: pathId ?? undefined, url: url.toString() };
+  if (!pathId) throw new Error("missing naver smartplace id");
+  return { kind: "URL", externalId: pathId, url: url.toString() };
 }
 
 export function scorePlaceCandidate(base: PlaceMatchBase, candidate: PlaceCandidate): number {

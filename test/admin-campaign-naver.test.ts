@@ -5,6 +5,7 @@ import {
   naverPlaceSnapshotFromCandidate,
   naverSearchTargetFromCampaign,
 } from "@/lib/domain/admin-campaign-naver";
+import { findNaverCandidates } from "@/lib/domain/external-place-providers";
 import { scorePlaceCandidate } from "@/lib/domain/external-places";
 
 const originalNaverClientId = process.env.NAVER_CLIENT_ID;
@@ -195,6 +196,56 @@ describe("admin campaign naver candidate target", () => {
       url: null,
       name: "Search Result Place",
       matchConfidence: 70,
+    });
+  });
+
+  it("does not persist Naver blog links as SmartPlace URLs", () => {
+    const place = naverPlaceSnapshotFromCandidate(
+      {
+        title: "Harimood Beomgye",
+        link: "https://blog.naver.com/some-blog-post",
+        matchConfidence: 100,
+      },
+      "Fallback Business"
+    );
+
+    expect(place).toMatchObject({
+      platform: "NAVER",
+      externalId: null,
+      url: null,
+      name: "Harimood Beomgye",
+      matchConfidence: 100,
+    });
+  });
+
+  it("removes non-SmartPlace links from Naver Local Search candidates", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        responseJson({
+          items: [
+            {
+              title: "Harimood Beomgye",
+              link: "https://blog.naver.com/some-blog-post",
+              category: "Restaurant",
+              roadAddress: "Gyeonggi Anyang",
+            },
+          ],
+        })
+      )
+    );
+
+    const result = await findNaverCandidates({
+      name: "Harimood Beomgye",
+      address: "Gyeonggi Anyang",
+      lat: null,
+      lng: null,
+    });
+
+    expect(result.providerConfigured).toBe(true);
+    expect(result.candidates[0]).toMatchObject({
+      title: "Harimood Beomgye",
+      link: "",
     });
   });
 

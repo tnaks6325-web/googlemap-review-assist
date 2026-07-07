@@ -3,6 +3,7 @@ import {
   type ParsedGooglePlaceInput,
   type PlaceMatchBase,
   parseGooglePlaceInput,
+  parseNaverPlaceInput,
   safeJsonSnapshot,
   scorePlaceCandidate,
 } from "@/lib/domain/external-places";
@@ -258,6 +259,16 @@ function cleanNaverTitle(title: string) {
   return title.replace(/<b>/g, "").replace(/<\/b>/g, "").replace(/&amp;/g, "&").trim();
 }
 
+function smartPlaceLink(rawLink: unknown) {
+  const link = String(rawLink ?? "").trim();
+  if (!link) return "";
+  try {
+    return parseNaverPlaceInput(link).url ?? "";
+  } catch {
+    return "";
+  }
+}
+
 function mapNaverItem(item: Record<string, unknown>, base: PlaceMatchBase): NaverCandidate {
   const title = cleanNaverTitle(String(item.title ?? ""));
   const lotAddress = String(item.address ?? "").trim() || null;
@@ -279,7 +290,7 @@ function mapNaverItem(item: Record<string, unknown>, base: PlaceMatchBase): Nave
 
   return {
     title,
-    link: String(item.link ?? ""),
+    link: smartPlaceLink(item.link),
     category: String(item.category ?? "").trim() || null,
     roadAddress,
     address: lotAddress,

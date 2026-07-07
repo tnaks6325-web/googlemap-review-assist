@@ -105,6 +105,10 @@ describe("외부 플레이스 입력 파싱", () => {
       externalId: "1234567890",
     });
   });
+
+  it("rejects Naver blog URLs for SmartPlace mapping", () => {
+    expect(() => parseNaverPlaceInput("https://blog.naver.com/example-post")).toThrow("unsupported naver smartplace host");
+  });
 });
 
 describe("공개 구글 플레이스 프리뷰 API", () => {

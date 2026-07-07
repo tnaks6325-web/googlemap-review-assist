@@ -40,8 +40,27 @@ function googlePlaceLink(place: SheetImportPlacePreview) {
   return /^https?:\/\//i.test(place.input) ? place.input : null;
 }
 
+function safeNaverSmartPlaceUrl(rawUrl: string | null | undefined) {
+  if (!rawUrl) return null;
+  try {
+    const url = new URL(rawUrl);
+    const host = url.hostname.toLowerCase();
+    const isSmartPlaceHost =
+      host === "map.naver.com" || host === "place.naver.com" || host === "m.place.naver.com" || host.endsWith(".place.naver.com");
+    const hasPlaceId =
+      /\/(?:p\/)?(?:entry\/)?place\/\d+/.test(url.pathname) ||
+      /\/restaurant\/\d+/.test(url.pathname) ||
+      url.searchParams.has("id") ||
+      url.searchParams.has("placeId");
+    return url.protocol === "https:" && isSmartPlaceHost && hasPlaceId ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 function naverPlaceLink(place: SheetImportNaverPlacePreview) {
-  if (place.url) return place.url;
+  const url = safeNaverSmartPlaceUrl(place.url);
+  if (url) return url;
   if (place.placeId) return `https://map.naver.com/p/entry/place/${encodeURIComponent(place.placeId)}`;
 
   const query = [place.name, place.address, place.query].filter(Boolean).join(" ").trim();

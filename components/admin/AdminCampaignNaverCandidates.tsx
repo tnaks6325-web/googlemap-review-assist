@@ -25,7 +25,15 @@ function safeExternalUrl(url: string | null | undefined) {
   if (!url) return null;
   try {
     const parsed = new URL(url);
-    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.toString() : null;
+    const host = parsed.hostname.toLowerCase();
+    const isSmartPlaceHost =
+      host === "map.naver.com" || host === "place.naver.com" || host === "m.place.naver.com" || host.endsWith(".place.naver.com");
+    const hasPlaceId =
+      /\/(?:p\/)?(?:entry\/)?place\/\d+/.test(parsed.pathname) ||
+      /\/restaurant\/\d+/.test(parsed.pathname) ||
+      parsed.searchParams.has("id") ||
+      parsed.searchParams.has("placeId");
+    return parsed.protocol === "https:" && isSmartPlaceHost && hasPlaceId ? parsed.toString() : null;
   } catch {
     return null;
   }
