@@ -2,6 +2,7 @@ import { ok, err } from "@/lib/http";
 import { getAdminId } from "@/lib/auth/session";
 import { checkOrigin } from "@/lib/auth/origin";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
+import { findBestNaverPlaceSnapshotForCampaign } from "@/lib/domain/admin-campaign-naver";
 import { resolveGooglePlace } from "@/lib/domain/external-place-providers";
 import { syncGoogleMapReviewCampaignRows } from "@/lib/domain/google-sheet-campaign-sync";
 import {
@@ -9,6 +10,7 @@ import {
   googlePlaceInputForSheetRow,
   parseGoogleMapReviewSheet,
   summarizeSheetImportRows,
+  type SheetImportNaverPlacePreview,
   type SheetImportDryRunRow,
   type SheetImportPlacePreview,
 } from "@/lib/domain/google-sheet-import";
@@ -22,6 +24,7 @@ export const runtime = "nodejs";
 
 const HOUR = 60 * 60 * 1000;
 const PLACE_PREVIEW_LIMIT = 12;
+const STRONG_NAVER_MATCH_CONFIDENCE = 75;
 
 function googlePlaceErrorMessage(error: unknown) {
   const message = error instanceof Error ? error.message : "";
@@ -65,6 +68,61 @@ function failedGooglePlacePreview(input: string, message: string): SheetImportPl
 
 function isResolvedGooglePlace(place: { externalId: string | null; name: string }) {
   return Boolean(place.externalId && !place.externalId.startsWith("google:") && place.name.trim());
+}
+
+function skippedNaverPlacePreview(query: string, message: string): SheetImportNaverPlacePreview {
+  return {
+    status: "SKIPPED",
+    providerConfigured: Boolean(process.env.NAVER_CLIENT_ID && process.env.NAVER_CLIENT_SECRET),
+    query,
+    candidateCount: 0,
+    placeId: null,
+    name: null,
+    address: null,
+    category: null,
+    url: null,
+    matchConfidence: null,
+    message,
+  };
+}
+
+function failedNaverPlacePreview(query: string, message: string): SheetImportNaverPlacePreview {
+  return {
+    status: "FAILED",
+    providerConfigured: Boolean(process.env.NAVER_CLIENT_ID && process.env.NAVER_CLIENT_SECRET),
+    query,
+    candidateCount: 0,
+    placeId: null,
+    name: null,
+    address: null,
+    category: null,
+    url: null,
+    matchConfidence: null,
+    message,
+  };
+}
+
+function naverPreviewSourceForRow(row: SheetImportDryRunRow) {
+  const googlePlace =
+    row.googlePlace &&
+    row.googlePlace.status !== "FAILED" &&
+    row.googlePlace.status !== "SKIPPED" &&
+    row.googlePlace.name
+      ? {
+          name: row.googlePlace.name,
+          address: row.googlePlace.address,
+          lat: null,
+          lng: null,
+        }
+      : null;
+  const name = googlePlace?.name || row.businessName || row.searchKeyword;
+  const address = googlePlace?.address ?? null;
+
+  return {
+    name,
+    address,
+    externalPlaces: googlePlace ? [googlePlace] : [],
+  };
 }
 
 async function addGooglePlacePreviews(rows: SheetImportDryRunRow[], limit = PLACE_PREVIEW_LIMIT) {
@@ -132,6 +190,95 @@ async function addGooglePlacePreviews(rows: SheetImportDryRunRow[], limit = PLAC
   return enriched;
 }
 
+async function addNaverPlacePreviews(rows: SheetImportDryRunRow[], limit = PLACE_PREVIEW_LIMIT) {
+  let previewCount = 0;
+  const enriched: SheetImportDryRunRow[] = [];
+
+  for (const row of rows) {
+    const source = naverPreviewSourceForRow(row);
+    const query = [source.name, source.address].filter(Boolean).join(" ").slice(0, 120);
+
+    if (row.status !== "READY" || !source.name) {
+      enriched.push(row);
+      continue;
+    }
+
+    if (previewCount >= limit) {
+      enriched.push({
+        ...row,
+        naverPlace: skippedNaverPlacePreview(query, `상위 ${limit}개 행만 네이버 후보를 미리 확인합니다.`),
+      });
+      continue;
+    }
+
+    previewCount += 1;
+    try {
+      const result = await findBestNaverPlaceSnapshotForCampaign({
+        business: source,
+      });
+
+      if (!result.providerConfigured) {
+        enriched.push({
+          ...row,
+          naverPlace: skippedNaverPlacePreview(result.query || query, "NAVER_CLIENT_ID/SECRET이 설정되지 않았습니다."),
+        });
+        continue;
+      }
+
+      if (!result.place) {
+        enriched.push({
+          ...row,
+          naverPlace: {
+            status: "NEEDS_REVIEW",
+            providerConfigured: true,
+            query: result.query || query,
+            candidateCount: result.candidateCount,
+            placeId: null,
+            name: null,
+            address: null,
+            category: null,
+            url: null,
+            matchConfidence: null,
+            message: "네이버 지역검색에서 충분히 일치하는 후보를 찾지 못했습니다.",
+          },
+        });
+        continue;
+      }
+
+      const confidence = result.place.matchConfidence;
+      enriched.push({
+        ...row,
+        naverPlace: {
+          status:
+            confidence != null && confidence >= STRONG_NAVER_MATCH_CONFIDENCE
+              ? "FOUND"
+              : "NEEDS_REVIEW",
+          providerConfigured: true,
+          query: result.query || query,
+          candidateCount: result.candidateCount,
+          placeId: result.place.externalId,
+          name: result.place.name,
+          address: result.place.address,
+          category: result.place.category,
+          url: result.place.url,
+          matchConfidence: confidence,
+          message:
+            confidence != null && confidence >= STRONG_NAVER_MATCH_CONFIDENCE
+              ? null
+              : "후보는 찾았지만 관리자가 일치 여부를 확인해야 합니다.",
+        },
+      });
+    } catch {
+      enriched.push({
+        ...row,
+        naverPlace: failedNaverPlacePreview(query, "네이버 지역검색 확인에 실패했습니다."),
+      });
+    }
+  }
+
+  return enriched;
+}
+
 export async function POST(req: Request) {
   if (!checkOrigin(req)) return err("BAD_ORIGIN", "요청 출처가 올바르지 않아요", 403);
 
@@ -152,10 +299,11 @@ export async function POST(req: Request) {
   try {
     const sheet = await readGoogleSheetValues(spreadsheetId, range);
     const dryRunResult = parseGoogleMapReviewSheet(sheet.values);
-    const rows = await addGooglePlacePreviews(
+    const googleRows = await addGooglePlacePreviews(
       dryRunResult.rows,
       dryRun ? PLACE_PREVIEW_LIMIT : Number.POSITIVE_INFINITY
     );
+    const rows = dryRun ? await addNaverPlacePreviews(googleRows, PLACE_PREVIEW_LIMIT) : googleRows;
     const sync = dryRun ? null : await syncGoogleMapReviewCampaignRows(rows);
     return ok({
       dryRun,

@@ -3,6 +3,7 @@ import type { ExternalPlaceSnapshot } from "@/lib/domain/external-place-provider
 
 export type SheetImportRowStatus = "READY" | "ERROR";
 export type SheetImportPlacePreviewStatus = "RESOLVED" | "MANUAL" | "FAILED" | "SKIPPED";
+export type SheetImportNaverPlacePreviewStatus = "FOUND" | "NEEDS_REVIEW" | "FAILED" | "SKIPPED";
 
 export interface SheetImportPlacePreview {
   status: SheetImportPlacePreviewStatus;
@@ -14,6 +15,20 @@ export interface SheetImportPlacePreview {
   url: string | null;
   rating: number | null;
   reviewCount: number | null;
+  matchConfidence: number | null;
+  message: string | null;
+}
+
+export interface SheetImportNaverPlacePreview {
+  status: SheetImportNaverPlacePreviewStatus;
+  providerConfigured: boolean;
+  query: string;
+  candidateCount: number;
+  placeId: string | null;
+  name: string | null;
+  address: string | null;
+  category: string | null;
+  url: string | null;
   matchConfidence: number | null;
   message: string | null;
 }
@@ -35,6 +50,7 @@ export interface SheetImportDryRunRow {
   errors: string[];
   warnings: string[];
   googlePlace?: SheetImportPlacePreview;
+  naverPlace?: SheetImportNaverPlacePreview;
 }
 
 export interface SheetImportDryRunSummary {

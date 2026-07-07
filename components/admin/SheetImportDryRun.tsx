@@ -5,6 +5,7 @@ import { Button } from "@/components/ui";
 import type {
   SheetImportDryRunRow,
   SheetImportDryRunSummary,
+  SheetImportNaverPlacePreview,
   SheetImportPlacePreview,
 } from "@/lib/domain/google-sheet-import";
 
@@ -61,6 +62,34 @@ function GooglePlacePreview({ place }: { place: SheetImportPlacePreview }) {
   );
 }
 
+function NaverPlacePreview({ place }: { place: SheetImportNaverPlacePreview }) {
+  const isFound = place.status === "FOUND";
+  const isFailed = place.status === "FAILED";
+  const label = isFound ? "Naver 확인" : isFailed ? "Naver 실패" : "Naver 후보 확인";
+  const tone = isFound ? "text-success" : isFailed ? "text-danger" : "text-ink-sub";
+  const meta = [
+    place.matchConfidence != null ? `일치 ${place.matchConfidence}%` : null,
+    place.category,
+    place.address,
+  ].filter(Boolean);
+
+  return (
+    <div className="mt-2 rounded-card bg-canvas px-3 py-2 text-xs">
+      <div className="flex items-center justify-between gap-2">
+        <p className={`shrink-0 font-semibold ${tone}`}>{label}</p>
+        <p className="min-w-0 flex-1 truncate font-medium text-ink">{place.name || place.query || "-"}</p>
+        {place.url && (
+          <a className="shrink-0 font-semibold text-primary" href={place.url} rel="noreferrer" target="_blank">
+            지도
+          </a>
+        )}
+      </div>
+      {meta.length > 0 && <p className="mt-1 truncate text-ink-sub">{meta.join(" · ")}</p>}
+      {place.message && <p className="mt-1 truncate text-ink-weak">{place.message}</p>}
+    </div>
+  );
+}
+
 function RowStatus({ row }: { row: SheetImportDryRunRow }) {
   const isReady = row.status === "READY";
   const visibleErrors = row.errors.slice(0, 1);
@@ -101,6 +130,7 @@ function RowStatus({ row }: { row: SheetImportDryRunRow }) {
         </ul>
       )}
       {row.googlePlace && <GooglePlacePreview place={row.googlePlace} />}
+      {row.naverPlace && <NaverPlacePreview place={row.naverPlace} />}
     </div>
   );
 }
