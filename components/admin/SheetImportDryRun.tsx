@@ -35,29 +35,55 @@ function Metric({ label, value }: { label: string; value: string | number }) {
   );
 }
 
+function googlePlaceLink(place: SheetImportPlacePreview) {
+  if (place.url) return place.url;
+  return /^https?:\/\//i.test(place.input) ? place.input : null;
+}
+
+function naverPlaceLink(place: SheetImportNaverPlacePreview) {
+  if (place.url) return place.url;
+  if (place.placeId) return `https://map.naver.com/p/entry/place/${encodeURIComponent(place.placeId)}`;
+
+  const query = [place.name, place.address, place.query].filter(Boolean).join(" ").trim();
+  return query ? `https://map.naver.com/p/search/${encodeURIComponent(query)}` : null;
+}
+
 function GooglePlacePreview({ place }: { place: SheetImportPlacePreview }) {
   const isResolved = place.status === "RESOLVED";
   const isFailed = place.status === "FAILED";
   const label = isResolved ? "Google 확인" : isFailed ? "Google 실패" : "수동 확인";
   const tone = isResolved ? "text-success" : isFailed ? "text-danger" : "text-ink-sub";
+  const link = googlePlaceLink(place);
+  const ratingSummary = [
+    place.rating != null ? `${place.rating.toFixed(1)}점` : null,
+    place.reviewCount != null ? `리뷰 ${place.reviewCount.toLocaleString()}개` : null,
+  ].filter(Boolean);
 
   return (
     <div className="mt-2 rounded-card bg-canvas px-3 py-2 text-xs">
       <div className="flex items-center justify-between gap-2">
-        <p className={`shrink-0 font-semibold ${tone}`}>{label}</p>
-        <p className="min-w-0 flex-1 truncate font-medium text-ink">{place.name || "-"}</p>
-        {place.url && (
-          <a className="shrink-0 font-semibold text-primary" href={place.url} rel="noreferrer" target="_blank">
+        {link ? (
+          <a className={`shrink-0 font-semibold ${tone}`} href={link} rel="noreferrer" target="_blank">
+            {label}
+          </a>
+        ) : (
+          <p className={`shrink-0 font-semibold ${tone}`}>{label}</p>
+        )}
+        {link ? (
+          <a className="min-w-0 flex-1 truncate font-medium text-ink hover:text-primary" href={link} rel="noreferrer" target="_blank">
+            {place.name || "-"}
+          </a>
+        ) : (
+          <p className="min-w-0 flex-1 truncate font-medium text-ink">{place.name || "-"}</p>
+        )}
+        {link && (
+          <a className="shrink-0 font-semibold text-primary" href={link} rel="noreferrer" target="_blank">
             지도
           </a>
         )}
       </div>
-      {(place.rating != null || place.reviewCount != null) && (
-        <p className="mt-1 truncate text-ink-sub">
-          {place.rating != null ? `${place.rating.toFixed(1)}점` : "평점 없음"}
-          {place.reviewCount != null ? ` · 리뷰 ${place.reviewCount.toLocaleString()}개` : ""}
-        </p>
-      )}
+      {ratingSummary.length > 0 && <p className="mt-1 truncate text-ink-sub">{ratingSummary.join(" · ")}</p>}
+      {place.address && <p className="mt-1 truncate text-ink-sub">{place.address}</p>}
     </div>
   );
 }
@@ -67,24 +93,42 @@ function NaverPlacePreview({ place }: { place: SheetImportNaverPlacePreview }) {
   const isFailed = place.status === "FAILED";
   const label = isFound ? "Naver 확인" : isFailed ? "Naver 실패" : "Naver 후보 확인";
   const tone = isFound ? "text-success" : isFailed ? "text-danger" : "text-ink-sub";
-  const meta = [
-    place.matchConfidence != null ? `일치 ${place.matchConfidence}%` : null,
-    place.category,
-    place.address,
-  ].filter(Boolean);
+  const link = naverPlaceLink(place);
+  const confidenceText = place.matchConfidence != null ? `일치 ${place.matchConfidence}%` : null;
+  const confidenceTone =
+    place.matchConfidence != null && place.matchConfidence >= 70 ? "font-semibold text-success" : "text-ink-sub";
+  const meta = [place.category, place.address].filter(Boolean);
 
   return (
     <div className="mt-2 rounded-card bg-canvas px-3 py-2 text-xs">
       <div className="flex items-center justify-between gap-2">
-        <p className={`shrink-0 font-semibold ${tone}`}>{label}</p>
-        <p className="min-w-0 flex-1 truncate font-medium text-ink">{place.name || place.query || "-"}</p>
-        {place.url && (
-          <a className="shrink-0 font-semibold text-primary" href={place.url} rel="noreferrer" target="_blank">
+        {link ? (
+          <a className={`shrink-0 font-semibold ${tone}`} href={link} rel="noreferrer" target="_blank">
+            {label}
+          </a>
+        ) : (
+          <p className={`shrink-0 font-semibold ${tone}`}>{label}</p>
+        )}
+        {link ? (
+          <a className="min-w-0 flex-1 truncate font-medium text-ink hover:text-primary" href={link} rel="noreferrer" target="_blank">
+            {place.name || place.query || "-"}
+          </a>
+        ) : (
+          <p className="min-w-0 flex-1 truncate font-medium text-ink">{place.name || place.query || "-"}</p>
+        )}
+        {link && (
+          <a className="shrink-0 font-semibold text-primary" href={link} rel="noreferrer" target="_blank">
             지도
           </a>
         )}
       </div>
-      {meta.length > 0 && <p className="mt-1 truncate text-ink-sub">{meta.join(" · ")}</p>}
+      {(confidenceText || meta.length > 0) && (
+        <p className="mt-1 truncate text-ink-sub">
+          {confidenceText && <span className={confidenceTone}>{confidenceText}</span>}
+          {confidenceText && meta.length > 0 ? " · " : ""}
+          {meta.join(" · ")}
+        </p>
+      )}
       {place.message && <p className="mt-1 truncate text-ink-weak">{place.message}</p>}
     </div>
   );
