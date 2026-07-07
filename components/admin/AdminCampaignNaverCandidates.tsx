@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui";
+import { safeNaverSmartPlaceUrl } from "@/lib/domain/naver-smartplace-link";
 import type { NaverCandidate } from "@/lib/domain/external-place-providers";
 import type { AdminConnectedNaverPlace } from "@/lib/domain/operator-campaigns";
 
@@ -19,24 +20,6 @@ interface ErrorResult {
 
 interface SaveResult {
   place: AdminConnectedNaverPlace;
-}
-
-function safeExternalUrl(url: string | null | undefined) {
-  if (!url) return null;
-  try {
-    const parsed = new URL(url);
-    const host = parsed.hostname.toLowerCase();
-    const isSmartPlaceHost =
-      host === "map.naver.com" || host === "place.naver.com" || host === "m.place.naver.com" || host.endsWith(".place.naver.com");
-    const hasPlaceId =
-      /\/(?:p\/)?(?:entry\/)?place\/\d+/.test(parsed.pathname) ||
-      /\/restaurant\/\d+/.test(parsed.pathname) ||
-      parsed.searchParams.has("id") ||
-      parsed.searchParams.has("placeId");
-    return parsed.protocol === "https:" && isSmartPlaceHost && hasPlaceId ? parsed.toString() : null;
-  } catch {
-    return null;
-  }
 }
 
 function isSamePlace(place: AdminConnectedNaverPlace | null, candidate: NaverCandidate, link: string | null) {
@@ -123,7 +106,7 @@ export function AdminCampaignNaverCandidates({
     }
   };
 
-  const connectedUrl = safeExternalUrl(connectedPlace?.url);
+  const connectedUrl = safeNaverSmartPlaceUrl(connectedPlace?.url);
 
   return (
     <div className="rounded-card border border-line bg-canvas p-3">
@@ -198,7 +181,7 @@ export function AdminCampaignNaverCandidates({
 
               {result.candidates.length ? (
                 result.candidates.map((candidate, index) => {
-                  const link = safeExternalUrl(candidate.link);
+                  const link = safeNaverSmartPlaceUrl(candidate.link);
                   const saved = isSamePlace(connectedPlace, candidate, link);
                   const canConfirmSaved = saved && connectedPlace?.matchStatus === "NEEDS_REVIEW";
                   return (
