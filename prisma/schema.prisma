@@ -125,7 +125,31 @@ model Campaign {
   active     Boolean        @default(true)
   receipts   Receipt[]
   codes      CampaignCode[]
+  blogReferences CampaignBlogReference[]
   createdAt  DateTime       @default(now())
+}
+
+model CampaignBlogReference {
+  id          String   @id @default(cuid())
+  campaignId  String
+  campaign    Campaign @relation(fields: [campaignId], references: [id])
+  source      String   @default("NAVER_BLOG_SEARCH")
+  searchQuery String
+  title       String
+  description String?
+  link        String
+  bloggerName String?
+  bloggerLink String?
+  postdate    String?
+  publishedAt DateTime?
+  rawJson      String?
+  status       String   @default("ACTIVE")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([campaignId, link])
+  @@index([campaignId, status])
+  @@index([campaignId, createdAt])
 }
 
 // 업체가 발급한 1회용 인증 코드(영수증/POS 연동 전 단계의 검증 수단).
@@ -180,6 +204,12 @@ model Receipt {
   merchantName String?
   ocrText      String? // OCR 원문(truncated)
   reviewDraftText       String?
+  reviewDraftProvider   String?
+  reviewDraftModel      String?
+  reviewDraftSourceGroupsJson String?
+  reviewDraftContextHash String?
+  reviewDraftGeneratedAt DateTime?
+  reviewDraftVersion    Int       @default(0)
   reviewProofImageUrl   String?
   reviewProofMimeType   String?
   reviewProofOriginalName String?

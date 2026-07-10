@@ -289,6 +289,7 @@ export async function getReviewerCampaignProofContext(
   return {
     assignmentId: receipt.id,
     businessName: googlePlace?.name ?? receipt.business.name,
+    reviewDraftText: receipt.reviewDraftText?.trim() ?? null,
   };
 }
 
@@ -394,8 +395,8 @@ export async function submitReviewerCampaignProof(
   if (!input.screenshotUrl || !input.screenshotMimeType || !input.screenshotOriginalName) {
     throw new ReviewerCampaignError("INVALID_PROOF", "구글맵 리뷰 캡처본을 첨부해 주세요");
   }
-  const draftText = input.draftText.trim();
-  if (draftText.length < 10) {
+  const clientDraftText = input.draftText.trim();
+  if (clientDraftText.length < 0) {
     throw new ReviewerCampaignError("INVALID_DRAFT", "생성된 리뷰 원고를 확인해 주세요");
   }
 
@@ -422,6 +423,11 @@ export async function submitReviewerCampaignProof(
     }
     if (![REVIEWER_ASSIGNMENT_STATUS_ASSIGNED, "VERIFIED"].includes(receipt.status)) {
       throw new ReviewerCampaignError("BAD_ASSIGNMENT_STATE", "검수 요청할 수 없는 참여 상태예요", 409);
+    }
+
+    const draftText = receipt.reviewDraftText?.trim() ?? "";
+    if (draftText.length < 10) {
+      throw new ReviewerCampaignError("MISSING_REVIEW_DRAFT", "서버에 저장된 리뷰 원고가 없습니다.", 409);
     }
 
     const analysis = input.analysis;

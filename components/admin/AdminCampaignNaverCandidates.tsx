@@ -53,6 +53,8 @@ export function AdminCampaignNaverCandidates({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [savingIndex, setSavingIndex] = useState<number | null>(null);
+  const [manualUrl, setManualUrl] = useState("");
+  const [manualSaving, setManualSaving] = useState(false);
 
   const loadCandidates = async () => {
     if (!hasGooglePlace) {
@@ -106,6 +108,35 @@ export function AdminCampaignNaverCandidates({
     }
   };
 
+  const saveManualUrl = async () => {
+    const naverUrl = manualUrl.trim();
+    if (!naverUrl) {
+      setError("네이버 스마트플레이스 상세 URL을 입력해 주세요.");
+      return;
+    }
+
+    setManualSaving(true);
+    setError(null);
+
+    try {
+      const res = await fetch(`/api/admin/campaigns/${campaignId}/naver-place`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ naverUrl }),
+      });
+      const data = (await res.json().catch(() => null)) as (SaveResult & ErrorResult) | null;
+      if (!res.ok) throw new Error(data?.error?.message || "네이버 상세 URL을 저장하지 못했습니다.");
+      if (!data?.place) throw new Error("네이버 저장 응답이 비어 있습니다.");
+      setConnectedPlace(data.place);
+      setManualUrl("");
+      setEditing(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "네이버 상세 URL을 저장하지 못했습니다.");
+    } finally {
+      setManualSaving(false);
+    }
+  };
+
   const connectedUrl = safeNaverSmartPlaceUrl(connectedPlace?.url);
 
   return (
@@ -154,6 +185,31 @@ export function AdminCampaignNaverCandidates({
               : "Google Place가 연결된 캠페인만 네이버 후보를 자동 연결할 수 있습니다."}
           </p>
         )}
+      </div>
+
+      <div className="mt-3 rounded-card border border-line bg-surface p-3">
+        <p className="text-xs font-semibold text-ink">관리자 보정</p>
+        <p className="mt-1 text-xs text-ink-weak">
+          네이버 스마트플레이스 상세 화면의 공유 링크를 붙여넣으면 해당 Place ID로 확정 저장합니다.
+        </p>
+        <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+          <input
+            value={manualUrl}
+            onChange={(event) => setManualUrl(event.target.value)}
+            placeholder="https://pcmap.place.naver.com/restaurant/..."
+            className="h-10 min-w-0 flex-1 rounded-btn border border-line bg-canvas px-3 text-sm text-ink outline-none focus:border-brand"
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            loading={manualSaving}
+            disabled={manualSaving || savingIndex !== null}
+            onClick={saveManualUrl}
+            className="h-10 shrink-0 px-3 text-xs"
+          >
+            상세 URL 저장
+          </Button>
+        </div>
       </div>
 
       {error ? <p className="mt-3 text-sm text-danger">{error}</p> : null}

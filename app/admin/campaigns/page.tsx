@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { AdminCampaignBlogReferences } from "@/components/admin/AdminCampaignBlogReferences";
 import { AdminCampaignNaverCandidates } from "@/components/admin/AdminCampaignNaverCandidates";
 import { AdminLogout } from "@/components/admin/AdminLogout";
 import { SheetImportDryRun } from "@/components/admin/SheetImportDryRun";
@@ -100,10 +101,25 @@ export default async function AdminCampaignsPage() {
                   <SmallMetric label="지급" value={`${campaign.paidPointAmount.toLocaleString("ko-KR")}P`} />
                   <SmallMetric label="코드" value={`${campaign.issuedCodeCount}개`} />
                 </div>
+                <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-5">
+                  <SmallMetric
+                    label="원고자료"
+                    value={`${campaign.draftSourceGroupCount}/4${campaign.canGenerateReviewDraft ? "" : " 부족"}`}
+                  />
+                  <SmallMetric label="Google" value={campaign.draftSourceGroups.googlePlace ? "연결" : "미연결"} />
+                  <SmallMetric label="Naver" value={campaign.draftSourceGroups.naverPlace ? "연결" : "미연결"} />
+                  <SmallMetric label="블로그 참고" value={`${campaign.blogReferenceCount}건`} />
+                  <SmallMetric label="리뷰 참고" value={`${campaign.reviewReferenceCount}건`} />
+                </div>
                 <AdminCampaignNaverCandidates
                   campaignId={campaign.id}
                   initialPlace={campaign.naverPlace}
                   hasGooglePlace={campaign.hasGooglePlace}
+                />
+                <AdminCampaignBlogReferences
+                  campaignId={campaign.id}
+                  initialReferences={campaign.blogReferences}
+                  initialCount={campaign.blogReferenceCount}
                 />
               </Card>
             ))}
