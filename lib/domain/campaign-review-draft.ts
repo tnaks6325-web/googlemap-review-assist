@@ -139,6 +139,32 @@ function normalizeGeneratedDraft(text: string) {
   );
 }
 
+function limitSentenceCount(text: string, maxSentences = 3) {
+  let sentenceCount = 0;
+  for (const match of text.matchAll(/[.!?\u2026\u3002\uFF01\uFF1F]+/gu)) {
+    sentenceCount += 1;
+    if (sentenceCount === maxSentences) {
+      return text.slice(0, (match.index ?? 0) + match[0].length).trim();
+    }
+  }
+  return text;
+}
+
+function ensureTerminalPunctuation(text: string, maxNonSpace: number) {
+  const trimmed = text.trim();
+  if (!trimmed || /[.!?\u2026\u3002\uFF01\uFF1F]$/u.test(trimmed)) return trimmed;
+  if (nonSpaceLength(trimmed) < maxNonSpace) return `${trimmed}.`;
+
+  const chars = Array.from(trimmed);
+  for (let index = chars.length - 1; index >= 0; index -= 1) {
+    if (!/\s/u.test(chars[index])) {
+      chars[index] = ".";
+      return chars.join("");
+    }
+  }
+  return trimmed;
+}
+
 function clampToNonSpaceLimit(text: string, maxNonSpace = 200) {
   let result = "";
   let count = 0;
@@ -148,11 +174,11 @@ function clampToNonSpaceLimit(text: string, maxNonSpace = 200) {
     result += char;
     count += adds;
   }
-  return result.trim().replace(/[,.!?;:，。！？、]+$/u, "") + ".";
+  return ensureTerminalPunctuation(result, maxNonSpace);
 }
 
 function ensureDraftLength(text: string, context: DraftContext) {
-  let draft = normalizeGeneratedDraft(text);
+  let draft = limitSentenceCount(normalizeGeneratedDraft(text));
   if (nonSpaceLength(draft) < 30) {
     const menuHint = context.menus[0] ? `${context.menus[0]} 같은 메뉴와 ` : "";
     draft = `${context.businessName}은 ${menuHint}매장 분위기를 함께 즐기기 좋은 곳이에요. 다음에도 편하게 찾고 싶은 방문 후기였습니다.`;
@@ -160,6 +186,7 @@ function ensureDraftLength(text: string, context: DraftContext) {
   if (nonSpaceLength(draft) > 200) {
     draft = clampToNonSpaceLimit(draft, 200);
   }
+  draft = ensureTerminalPunctuation(draft, 200);
   const length = nonSpaceLength(draft);
   if (length < 30 || length > 200) {
     throw new CampaignReviewDraftError(

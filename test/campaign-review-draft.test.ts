@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma } from "@/lib/db";
 import {
   generateCampaignReviewDraftForAssignment,
@@ -124,8 +124,10 @@ describe("campaign review draft generator", () => {
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     if (originalProvider == null) delete process.env.REVIEW_DRAFT_PROVIDER;
     else process.env.REVIEW_DRAFT_PROVIDER = originalProvider;
+    delete process.env.GEMINI_API_KEY;
   });
 
   it("blocks draft generation when fewer than two source groups are available", async () => {
@@ -173,5 +175,59 @@ describe("campaign review draft generator", () => {
       code: "REGENERATION_LIMIT_EXCEEDED",
       status: 429,
     });
+  });
+
+  it("keeps Gemini output within 200 non-space characters without failing at the boundary", async () => {
+    const { reviewer, receipt } = await createAssignment({ googlePlace: true, naverPlace: true });
+    process.env.REVIEW_DRAFT_PROVIDER = "gemini";
+    process.env.GEMINI_API_KEY = "test-gemini-api-key";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            candidates: [{ content: { parts: [{ text: "가".repeat(201) }] } }],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      ),
+    );
+
+    const result = await generateCampaignReviewDraftForAssignment(reviewer.id, receipt.id);
+
+    expect(nonSpaceLength(result.text)).toBeLessThanOrEqual(200);
+    expect(result.provider).toBe("gemini");
+  });
+
+  it("limits Gemini output to three sentences", async () => {
+    const { reviewer, receipt } = await createAssignment({ googlePlace: true, naverPlace: true });
+    process.env.REVIEW_DRAFT_PROVIDER = "gemini";
+    process.env.GEMINI_API_KEY = "test-gemini-api-key";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            candidates: [
+              {
+                content: {
+                  parts: [
+                    {
+                      text:
+                        "분위기가 편안해서 식사 시간을 즐기기 좋았습니다. 메뉴 구성이 알차서 만족스러웠어요. 직원분들도 친절해서 편하게 이용했습니다. 다음에도 다시 방문하고 싶어요.",
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      ),
+    );
+
+    const result = await generateCampaignReviewDraftForAssignment(reviewer.id, receipt.id);
+
+    expect(result.text.match(/[.!?]+/g)?.length ?? 0).toBeLessThanOrEqual(3);
   });
 });
