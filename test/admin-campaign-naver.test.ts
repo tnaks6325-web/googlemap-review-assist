@@ -3,6 +3,7 @@ import {
   findBestNaverPlaceSnapshotForCampaign,
   naverCandidateSearchQueries,
   naverPlaceSnapshotFromCandidate,
+  naverPlaceSnapshotFromManualUrl,
   naverSearchTargetFromCampaign,
 } from "@/lib/domain/admin-campaign-naver";
 import { findNaverCandidates } from "@/lib/domain/external-place-providers";
@@ -180,6 +181,27 @@ describe("admin campaign naver candidate target", () => {
     });
   });
 
+  it("canonicalizes Naver search-result URLs before saving candidate snapshots", () => {
+    const place = naverPlaceSnapshotFromCandidate(
+      {
+        title: "<b>Grains Cookies Bukchon</b>",
+        link: "https://map.naver.com/p/search/grains/place/1234567890",
+        category: "Bakery",
+        roadAddress: "Seoul Jongno-gu 1",
+        matchConfidence: 95,
+      },
+      "Fallback Business"
+    );
+
+    expect(place).toMatchObject({
+      platform: "NAVER",
+      externalId: "1234567890",
+      url: "https://map.naver.com/p/entry/place/1234567890",
+      name: "Grains Cookies Bukchon",
+      matchConfidence: 95,
+    });
+  });
+
   it("does not persist non-Naver candidate links as place URLs", () => {
     const place = naverPlaceSnapshotFromCandidate(
       {
@@ -216,6 +238,37 @@ describe("admin campaign naver candidate target", () => {
       name: "Harimood Beomgye",
       matchConfidence: 100,
     });
+  });
+
+  it("builds a corrected Naver snapshot from a copied SmartPlace detail URL", () => {
+    const place = naverPlaceSnapshotFromManualUrl("https://pcmap.place.naver.com/restaurant/2059222523/home?entry=bmp", {
+      businessName: "Fallback Business",
+      businessAddress: "Fallback Address",
+      existingPlace: {
+        name: "Grains Cookies Bukchon",
+        address: "Seoul Jongno-gu Bukchon-ro 11-gil 1",
+        category: "Bakery",
+      },
+    });
+
+    expect(place).toMatchObject({
+      platform: "NAVER",
+      externalId: "2059222523",
+      url: "https://map.naver.com/p/entry/place/2059222523",
+      name: "Grains Cookies Bukchon",
+      address: "Seoul Jongno-gu Bukchon-ro 11-gil 1",
+      category: "Bakery",
+      matchConfidence: 100,
+    });
+  });
+
+  it("rejects non-SmartPlace manual Naver URLs", () => {
+    const place = naverPlaceSnapshotFromManualUrl("https://blog.naver.com/example-post", {
+      businessName: "Fallback Business",
+      businessAddress: "Fallback Address",
+    });
+
+    expect(place).toBeNull();
   });
 
   it("removes non-SmartPlace links from Naver Local Search candidates", async () => {

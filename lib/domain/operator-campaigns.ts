@@ -1,4 +1,9 @@
 import { prisma } from "@/lib/db";
+import {
+  toAdminCampaignBlogReference,
+  type AdminCampaignBlogReference,
+} from "@/lib/domain/campaign-blog-references";
+import { summarizeCampaignReviewDraftSources } from "@/lib/domain/campaign-review-draft";
 
 export interface PublicCampaignCard {
   id: string;
@@ -39,6 +44,17 @@ export interface AdminCampaignRow extends PublicCampaignCard {
   paidPointAmount: number;
   menuCount: number;
   issuedCodeCount: number;
+  blogReferenceCount: number;
+  reviewReferenceCount: number;
+  draftSourceGroupCount: number;
+  canGenerateReviewDraft: boolean;
+  draftSourceGroups: {
+    googlePlace: boolean;
+    googleReviews: boolean;
+    naverPlace: boolean;
+    naverReferences: boolean;
+  };
+  blogReferences: AdminCampaignBlogReference[];
   hasGooglePlace: boolean;
   naverPlace: AdminConnectedNaverPlace | null;
 }
@@ -83,11 +99,21 @@ async function fetchCampaigns(includeInactive = false) {
           externalPlaces: {
             where: { platform: { in: ["GOOGLE", "NAVER"] } },
           },
+          externalReviews: {
+            where: { content: { not: null } },
+            select: { id: true, platform: true },
+            take: 50,
+          },
           _count: { select: { menus: true } },
         },
       },
       receipts: { select: { id: true, source: true, status: true } },
-      _count: { select: { codes: true } },
+      blogReferences: {
+        where: { status: "ACTIVE" },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+      },
+      _count: { select: { codes: true, blogReferences: true } },
     },
   });
 }
@@ -174,11 +200,17 @@ export async function getPublicCampaignDetail(slug: string): Promise<PublicCampa
             where: { platform: "GOOGLE" },
             take: 1,
           },
+          externalReviews: {
+            where: { content: { not: null } },
+            select: { id: true, platform: true },
+            take: 0,
+          },
           _count: { select: { menus: true } },
         },
       },
       receipts: { select: { id: true, source: true, status: true } },
-      _count: { select: { codes: true } },
+      blogReferences: { take: 0 },
+      _count: { select: { codes: true, blogReferences: true } },
     },
   });
   if (!campaign) return null;
@@ -225,6 +257,20 @@ export async function listAdminCampaigns(): Promise<AdminCampaignRow[]> {
       0,
     );
     const stats = campaignParticipationStats(campaign, paidPointAmount);
+    const googlePlace = campaign.business.externalPlaces.find((place) => place.platform === "GOOGLE") ?? null;
+    const naverPlace = campaign.business.externalPlaces.find((place) => place.platform === "NAVER") ?? null;
+    const googleReviewCount = campaign.business.externalReviews.filter(
+      (review) => review.platform === "GOOGLE",
+    ).length;
+    const naverReviewCount = campaign.business.externalReviews.filter(
+      (review) => review.platform === "NAVER",
+    ).length;
+    const draftSummary = summarizeCampaignReviewDraftSources({
+      googlePlace,
+      googleReviewCount,
+      naverPlace,
+      naverReferenceCount: campaign._count.blogReferences + naverReviewCount,
+    });
     return {
       ...toPublicCampaign(campaign, stats),
       active: campaign.active,
@@ -232,7 +278,13 @@ export async function listAdminCampaigns(): Promise<AdminCampaignRow[]> {
       paidPointAmount: stats.paidPointAmount,
       menuCount: campaign.business._count.menus,
       issuedCodeCount: campaign._count.codes,
-      hasGooglePlace: campaign.business.externalPlaces.some((place) => place.platform === "GOOGLE"),
+      blogReferenceCount: campaign._count.blogReferences,
+      reviewReferenceCount: draftSummary.reviewReferenceCount,
+      draftSourceGroupCount: draftSummary.sourceGroupCount,
+      canGenerateReviewDraft: draftSummary.canGenerateReviewDraft,
+      draftSourceGroups: draftSummary.sourceGroups,
+      blogReferences: campaign.blogReferences.map(toAdminCampaignBlogReference),
+      hasGooglePlace: Boolean(googlePlace),
       naverPlace: toAdminNaverPlace(campaign),
     };
   });

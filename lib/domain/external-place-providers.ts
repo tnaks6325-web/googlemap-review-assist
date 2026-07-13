@@ -3,10 +3,10 @@ import {
   type ParsedGooglePlaceInput,
   type PlaceMatchBase,
   parseGooglePlaceInput,
-  parseNaverPlaceInput,
   safeJsonSnapshot,
   scorePlaceCandidate,
 } from "@/lib/domain/external-places";
+import { safeNaverSmartPlaceUrl } from "@/lib/domain/naver-smartplace-link";
 
 export interface ExternalPlaceSnapshot {
   platform: ExternalPlatform;
@@ -262,11 +262,7 @@ function cleanNaverTitle(title: string) {
 function smartPlaceLink(rawLink: unknown) {
   const link = String(rawLink ?? "").trim();
   if (!link) return "";
-  try {
-    return parseNaverPlaceInput(link).url ?? "";
-  } catch {
-    return "";
-  }
+  return safeNaverSmartPlaceUrl(link) ?? "";
 }
 
 function mapNaverItem(item: Record<string, unknown>, base: PlaceMatchBase): NaverCandidate {

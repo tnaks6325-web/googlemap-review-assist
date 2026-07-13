@@ -69,19 +69,22 @@ export async function POST(req: Request) {
   try {
     const form = await req.formData();
     const assignmentId = String(form.get("assignmentId") ?? "");
-    const draftText = String(form.get("draftText") ?? "");
     const screenshot = form.get("screenshot");
     if (!(screenshot instanceof File)) {
       return err("MISSING_SCREENSHOT", "구글맵 리뷰 캡처본을 첨부해 주세요", 400);
     }
 
     const proofContext = await getReviewerCampaignProofContext(reviewerId, assignmentId);
+    const expectedDraftText = proofContext.reviewDraftText;
+    if (!expectedDraftText) {
+      return err("MISSING_REVIEW_DRAFT", "저장된 리뷰 원고가 없습니다. 원고를 먼저 생성해 주세요.", 409);
+    }
     const imageBytes = new Uint8Array(await screenshot.arrayBuffer());
     const screenshotUrl = await saveScreenshot(screenshot, assignmentId, imageBytes);
     let analysis: ReviewProofAnalysis;
     try {
       analysis = await analyzeReviewProof({
-        draftText,
+        draftText: expectedDraftText,
         imageBytes,
         mimeType: screenshot.type,
         expectedPlaceName: proofContext.businessName,
@@ -101,7 +104,7 @@ export async function POST(req: Request) {
       screenshotUrl,
       screenshotMimeType: screenshot.type,
       screenshotOriginalName: screenshot.name || "review-proof",
-      draftText,
+      draftText: expectedDraftText,
       analysis,
     });
     return ok(result);

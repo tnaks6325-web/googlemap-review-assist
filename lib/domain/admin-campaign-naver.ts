@@ -1,6 +1,7 @@
 import { findNaverCandidates, type ExternalPlaceSnapshot, type NaverCandidate } from "@/lib/domain/external-place-providers";
 import type { PlaceMatchBase } from "@/lib/domain/external-places";
 import { parseNaverPlaceInput, safeJsonSnapshot } from "@/lib/domain/external-places";
+import { safeNaverSmartPlaceUrl } from "@/lib/domain/naver-smartplace-link";
 
 export interface AdminCampaignNaverSource {
   business: {
@@ -69,6 +70,7 @@ export function naverPlaceSnapshotFromCandidate(
 
   const link = cleanCandidateText(candidate.link, 500);
   let parsed: ReturnType<typeof parseNaverPlaceInput> | null = null;
+  const smartPlaceUrl = safeNaverSmartPlaceUrl(link);
   if (link) {
     try {
       parsed = parseNaverPlaceInput(link);
@@ -80,7 +82,7 @@ export function naverPlaceSnapshotFromCandidate(
   return {
     platform: "NAVER",
     externalId: parsed?.externalId ?? null,
-    url: parsed?.url ?? null,
+    url: smartPlaceUrl,
     name: title || businessName,
     address: cleanCandidateText(candidate.roadAddress ?? candidate.address, 240) || null,
     phone: null,
@@ -92,6 +94,49 @@ export function naverPlaceSnapshotFromCandidate(
     receiptReviewCount: null,
     matchConfidence: candidateConfidence(candidate.matchConfidence),
     rawJson: candidate.rawJson ? String(candidate.rawJson).slice(0, 8000) : safeJsonSnapshot(candidate),
+  };
+}
+
+export function naverPlaceSnapshotFromManualUrl(
+  rawUrl: string,
+  source: {
+    businessName: string;
+    businessAddress?: string | null;
+    existingPlace?: {
+      name?: string | null;
+      address?: string | null;
+      category?: string | null;
+    } | null;
+  }
+): ExternalPlaceSnapshot | null {
+  const url = cleanCandidateText(rawUrl, 800);
+  if (!url) return null;
+
+  let parsed: ReturnType<typeof parseNaverPlaceInput>;
+  try {
+    parsed = parseNaverPlaceInput(url);
+  } catch {
+    return null;
+  }
+
+  const smartPlaceUrl = safeNaverSmartPlaceUrl(url);
+  if (!parsed.externalId || !smartPlaceUrl) return null;
+
+  return {
+    platform: "NAVER",
+    externalId: parsed.externalId,
+    url: smartPlaceUrl,
+    name: cleanCandidateText(source.existingPlace?.name, 120) || source.businessName,
+    address: cleanCandidateText(source.existingPlace?.address ?? source.businessAddress, 240) || null,
+    phone: null,
+    category: cleanCandidateText(source.existingPlace?.category, 120) || null,
+    lat: null,
+    lng: null,
+    rating: null,
+    reviewCount: null,
+    receiptReviewCount: null,
+    matchConfidence: 100,
+    rawJson: safeJsonSnapshot({ source: "ADMIN_MANUAL_NAVER_PLACE_URL", inputUrl: url, parsed }),
   };
 }
 

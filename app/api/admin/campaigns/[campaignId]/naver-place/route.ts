@@ -1,7 +1,7 @@
 import { getAdminId } from "@/lib/auth/session";
 import { checkOrigin } from "@/lib/auth/origin";
 import { prisma } from "@/lib/db";
-import { naverPlaceSnapshotFromCandidate } from "@/lib/domain/admin-campaign-naver";
+import { naverPlaceSnapshotFromCandidate, naverPlaceSnapshotFromManualUrl } from "@/lib/domain/admin-campaign-naver";
 import { saveExternalPlace } from "@/lib/domain/external-place-save";
 import { ok, err } from "@/lib/http";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
@@ -44,12 +44,28 @@ export async function PUT(req: Request, { params }: { params: Promise<{ campaign
   const { campaignId } = await params;
   const campaign = await prisma.campaign.findUnique({
     where: { id: campaignId },
-    include: { business: true },
+    include: {
+      business: {
+        include: {
+          externalPlaces: {
+            where: { platform: "NAVER" },
+            take: 1,
+          },
+        },
+      },
+    },
   });
   if (!campaign) return err("CAMPAIGN_NOT_FOUND", "캠페인을 찾을 수 없어요", 404);
 
   const body = await req.json().catch(() => null);
-  const place = naverPlaceSnapshotFromCandidate(body?.candidate, campaign.business.name);
+  const manualUrl = typeof body?.naverUrl === "string" ? body.naverUrl : "";
+  const place = manualUrl
+    ? naverPlaceSnapshotFromManualUrl(manualUrl, {
+        businessName: campaign.business.name,
+        businessAddress: campaign.business.address,
+        existingPlace: campaign.business.externalPlaces[0] ?? null,
+      })
+    : naverPlaceSnapshotFromCandidate(body?.candidate, campaign.business.name);
   if (!place) return err("INVALID_INPUT", "저장할 네이버 플레이스 후보가 올바르지 않아요", 400);
 
   const saved = await saveExternalPlace(campaign.businessId, place);

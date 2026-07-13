@@ -101,6 +101,11 @@ describe("reviewer campaign availability", () => {
     const reviewer = await createReviewer();
     await createCampaign(`google-place-complete-${uniq()}`);
     const assigned = await assignReviewerCampaign(reviewer.id);
+    const storedDraftText = "테스트 매장을 방문했고 전반적으로 만족스러운 시간을 보냈습니다.";
+    await prisma.receipt.update({
+      where: { id: assigned.assignmentId! },
+      data: { reviewDraftText: storedDraftText, reviewDraftVersion: 1 },
+    });
 
     const submitted = await submitReviewerCampaignProof(reviewer.id, assigned.assignmentId!, {
       screenshotUrl: "/uploads/review-proofs/test.png",
@@ -159,6 +164,11 @@ describe("reviewer campaign availability", () => {
     const assigned = await assignReviewerCampaign(reviewer.id);
     const draftText = "테스트 매장에 방문했고 만족스러운 시간을 보냈습니다.";
 
+    await prisma.receipt.update({
+      where: { id: assigned.assignmentId! },
+      data: { reviewDraftText: draftText, reviewDraftVersion: 1 },
+    });
+
     const submitted = await submitReviewerCampaignProof(reviewer.id, assigned.assignmentId!, {
       screenshotUrl: "/uploads/review-proofs/auto.png",
       screenshotMimeType: "image/png",
@@ -196,6 +206,7 @@ describe("reviewer campaign availability", () => {
 
   it("groups eligible campaigns by Google place category", async () => {
     const reviewer = await createReviewer();
+    await prisma.campaign.updateMany({ data: { active: false } });
     await createCampaign(`google-place-food-a-${uniq()}`, "음식점");
     await createCampaign(`google-place-food-b-${uniq()}`, "음식점>한식");
     await createCampaign(`google-place-cafe-${uniq()}`, "카페");

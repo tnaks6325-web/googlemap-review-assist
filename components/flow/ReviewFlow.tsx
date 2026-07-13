@@ -53,6 +53,7 @@ function formatPoints(points: number) {
   return points.toLocaleString("ko-KR");
 }
 
+/*
 function buildCampaignDraft(campaign: AssignedCampaign) {
   const category = campaign.category ? `${campaign.category} 매장` : "매장";
   return [
@@ -62,6 +63,7 @@ function buildCampaignDraft(campaign: AssignedCampaign) {
   ].join(" ");
 }
 
+*/
 interface AvailabilityResponse {
   availableCount: number;
   totalRewardPoints: number;
@@ -90,6 +92,16 @@ interface CompleteResponse {
   } | null;
 }
 
+interface DraftResponse {
+  assignmentId: string;
+  text: string;
+  provider: string;
+  model: string;
+  sourceGroupCount: number;
+  version: number;
+  reused: boolean;
+}
+
 interface CategoryCount {
   category: string;
   count: number;
@@ -116,6 +128,7 @@ export function ReviewFlow({
   const [assignedCampaign, setAssignedCampaign] = useState<AssignedCampaign | null>(null);
   const [assignmentId, setAssignmentId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
+  const [draftMeta, setDraftMeta] = useState<DraftResponse | null>(null);
   const [copied, setCopied] = useState(false);
   const [completion, setCompletion] = useState<CompleteResponse | null>(null);
   const [screenshot, setScreenshot] = useState<File | null>(null);
@@ -185,6 +198,8 @@ export function ReviewFlow({
       applyAvailability(data);
       setAssignmentId(data.assignmentId);
       setAssignedCampaign(data.assignedCampaign);
+      setDraft("");
+      setDraftMeta(null);
       setCompletion(null);
       if (!data.assignedCampaign) {
         setError("지금 참여 가능한 캠페인이 없어요");
@@ -199,13 +214,24 @@ export function ReviewFlow({
     window.setTimeout(() => setCopied(false), 1800);
   };
 
-  const generateDraft = () =>
+  const requestDraft = (regenerate = false) =>
     run(async () => {
-      const text = buildCampaignDraft(currentCampaign);
-      setDraft(text);
-      await copyText(text);
+      if (!assignmentId) {
+        setError("참여 정보를 확인해 주세요.");
+        return;
+      }
+      const data = await postJson<DraftResponse>("/api/reviewer/campaigns/draft", {
+        assignmentId,
+        regenerate,
+      });
+      setDraft(data.text);
+      setDraftMeta(data);
+      setScreenshot(null);
+      await copyText(data.text);
       setStep("draft");
     });
+
+  const generateDraft = () => requestDraft(false);
 
   const completeAssignment = () =>
     run(async () => {
@@ -236,6 +262,7 @@ export function ReviewFlow({
       setAssignedCampaign(null);
       setAssignmentId(null);
       setDraft("");
+      setDraftMeta(null);
       setScreenshot(null);
       setCompletion(null);
       await loadAvailability();
@@ -343,6 +370,11 @@ export function ReviewFlow({
             <Card className="mt-4 space-y-2">
               <p className="text-sm font-semibold text-ink-weak">복사된 원고</p>
               <p className="text-[15px] leading-7 text-ink">{draft}</p>
+              {draftMeta && (
+                <p className="text-xs text-ink-weak">
+                  원고자료 {draftMeta.sourceGroupCount}/4 · 생성 {draftMeta.version}/3회
+                </p>
+              )}
               {copied && <p className="text-xs font-medium text-brand">클립보드에 복사했어요.</p>}
             </Card>
           </Step>
@@ -477,6 +509,15 @@ export function ReviewFlow({
             <ReviewProofGuide />
             <Button fullWidth loading={busy} disabled={!screenshot} onClick={completeAssignment}>
               캡처 제출하고 검수 요청
+            </Button>
+            <Button
+              fullWidth
+              variant="secondary"
+              loading={busy}
+              disabled={(draftMeta?.version ?? 0) >= 3}
+              onClick={() => requestDraft(true)}
+            >
+              원고 다시 생성
             </Button>
             <Button fullWidth variant="secondary" loading={busy} onClick={() => copyText(draft)}>
               원고 다시 복사

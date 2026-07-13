@@ -235,16 +235,28 @@ export function parseNaverPlaceInput(input: string): ParsedNaverPlaceInput {
 
   const url = parseUrl(raw);
   if (!url) return { kind: "TEXT", textQuery: raw.slice(0, 200) };
+  const pathId = naverSmartPlaceIdFromUrl(raw);
+  if (!pathId) throw new Error("missing naver smartplace id");
+  return { kind: "URL", externalId: pathId, url: url.toString() };
+}
+
+export function naverSmartPlaceIdFromUrl(input: string): string | null {
+  const url = parseUrl(input.trim());
+  if (!url) return null;
   if (!allowedHost(url.hostname, ALLOWED_NAVER_SMARTPLACE_HOSTS)) throw new Error("unsupported naver smartplace host");
   if (url.protocol !== "https:") throw new Error("unsupported naver protocol");
 
-  const pathId =
-    url.pathname.match(/\/(?:p\/)?(?:entry\/)?place\/(\d+)/)?.[1] ||
-    url.pathname.match(/\/restaurant\/(\d+)/)?.[1] ||
-    url.searchParams.get("id") ||
-    url.searchParams.get("placeId");
-  if (!pathId) throw new Error("missing naver smartplace id");
-  return { kind: "URL", externalId: pathId, url: url.toString() };
+  const pathId = url.pathname.match(/\/place\/(\d+)(?:\/|$)/)?.[1] || url.pathname.match(/\/restaurant\/(\d+)(?:\/|$)/)?.[1];
+  if (pathId) return pathId;
+
+  for (const key of ["id", "placeId", "pinId"]) {
+    const value = url.searchParams.get(key);
+    if (value && /^\d+$/.test(value)) return value;
+  }
+
+  const destination = url.searchParams.get("destination");
+  const destinationId = destination?.match(/(?:place|restaurant)[,:](\d+)/)?.[1] || destination?.match(/^\d+$/)?.[0];
+  return destinationId ?? null;
 }
 
 export function scorePlaceCandidate(base: PlaceMatchBase, candidate: PlaceCandidate): number {
