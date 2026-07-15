@@ -236,9 +236,10 @@ function completionIdempotencyKey(assignmentId: string) {
 }
 
 async function completedAssignmentResult(db: DbClient, reviewerId: string, assignmentId: string) {
-  const [tx, wallet] = await Promise.all([
+  const [tx, wallet, receipt] = await Promise.all([
     db.pointTransaction.findUnique({ where: { idempotencyKey: completionIdempotencyKey(assignmentId) } }),
     db.pointWallet.findUnique({ where: { reviewerId } }),
+    db.receipt.findUnique({ where: { id: assignmentId }, select: { reviewProofImageUrl: true } }),
   ]);
   return {
     assignmentId,
@@ -247,6 +248,7 @@ async function completedAssignmentResult(db: DbClient, reviewerId: string, assig
     balance: wallet?.balance ?? 0,
     alreadyCompleted: true,
     paidAmount: tx?.amount ?? 0,
+    hasProofImage: Boolean(receipt?.reviewProofImageUrl),
   };
 }
 
@@ -347,6 +349,7 @@ async function approveCampaignAssignment(
     balance: wallet.balance,
     alreadyCompleted: false,
     paidAmount: DEFAULT_REWARD_POINTS,
+    hasProofImage: Boolean(receipt.reviewProofImageUrl),
   };
 }
 
@@ -418,7 +421,7 @@ export async function submitReviewerCampaignProof(
         earned: 0,
         balance: await reviewerBalance(tx, reviewerId),
         pendingApproval: true,
-        proofImageUrl: receipt.reviewProofImageUrl,
+        hasProofImage: Boolean(receipt.reviewProofImageUrl),
       };
     }
     if (![REVIEWER_ASSIGNMENT_STATUS_ASSIGNED, "VERIFIED"].includes(receipt.status)) {
@@ -496,7 +499,7 @@ export async function submitReviewerCampaignProof(
         earned: 0,
         balance: await reviewerBalance(tx, reviewerId),
         pendingApproval: false,
-        proofImageUrl: updated.reviewProofImageUrl,
+        hasProofImage: Boolean(updated.reviewProofImageUrl),
         analysis,
       };
     }
@@ -507,7 +510,7 @@ export async function submitReviewerCampaignProof(
       earned: 0,
       balance: await reviewerBalance(tx, reviewerId),
       pendingApproval: true,
-      proofImageUrl: updated.reviewProofImageUrl,
+      hasProofImage: Boolean(updated.reviewProofImageUrl),
       analysis: analysis ?? null,
     };
   });
@@ -600,7 +603,7 @@ export async function rejectReviewerCampaignProof(
       earned: 0,
       balance: await reviewerBalance(tx, receipt.reviewerId),
       pendingApproval: false,
-      proofImageUrl: updated.reviewProofImageUrl,
+      hasProofImage: Boolean(updated.reviewProofImageUrl),
     };
   });
 }

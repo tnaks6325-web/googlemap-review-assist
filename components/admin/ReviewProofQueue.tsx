@@ -19,7 +19,7 @@ interface ReviewProofItem {
   campaignName: string;
   rewardPoints: number;
   draftText: string | null;
-  proofImageUrl: string | null;
+  hasProofImage: boolean;
   proofOriginalName: string | null;
   extractedText: string | null;
   analysisStatus: string | null;
@@ -143,14 +143,14 @@ export function ReviewProofQueue({ items }: { items: ReviewProofItem[] }) {
             </div>
             <div className="mt-3 grid gap-3 sm:grid-cols-[180px_1fr]">
               <a
-                href={item.proofImageUrl ?? "#"}
-                target="_blank"
-                rel="noreferrer"
+                href={item.hasProofImage ? `/api/admin/review-proofs/${item.id}` : "#"}
+                target={item.hasProofImage ? "_blank" : undefined}
+                rel={item.hasProofImage ? "noreferrer" : undefined}
                 className="block overflow-hidden rounded-card border border-line bg-canvas"
               >
-                {item.proofImageUrl ? (
+                {item.hasProofImage ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={item.proofImageUrl} alt="제출된 구글맵 리뷰 캡처" className="h-44 w-full object-cover" />
+                  <img src={`/api/admin/review-proofs/${item.id}`} alt="제출된 구글맵 리뷰 캡처" className="h-44 w-full object-cover" />
                 ) : (
                   <div className="flex h-44 items-center justify-center text-sm text-ink-weak">캡처 없음</div>
                 )}

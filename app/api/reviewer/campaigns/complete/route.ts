@@ -1,6 +1,3 @@
-import { randomUUID } from "crypto";
-import { mkdir, writeFile } from "fs/promises";
-import path from "path";
 import { checkOrigin } from "@/lib/auth/origin";
 import { getReviewerId } from "@/lib/auth/session";
 import {
@@ -10,68 +7,27 @@ import {
 } from "@/lib/domain/reviewer-campaigns";
 import { analyzeReviewProof, type ReviewProofAnalysis } from "@/lib/domain/review-proof-analysis";
 import { err, ok } from "@/lib/http";
+import {
+  ReviewProofStorageError,
+  uploadReviewProof,
+  validateReviewProofImage,
+} from "@/lib/review-proof-storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const MAX_SCREENSHOT_BYTES = 8 * 1024 * 1024;
-const ALLOWED_TYPES: Record<string, string> = {
-  "image/jpeg": "jpg",
-  "image/png": "png",
-  "image/webp": "webp",
-};
-
-function sniffImage(bytes: Uint8Array) {
-  if (bytes.length < 12) return false;
-  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return true;
-  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return true;
-  if (
-    bytes[0] === 0x52 &&
-    bytes[1] === 0x49 &&
-    bytes[2] === 0x46 &&
-    bytes[3] === 0x46 &&
-    bytes[8] === 0x57 &&
-    bytes[9] === 0x45 &&
-    bytes[10] === 0x42 &&
-    bytes[11] === 0x50
-  ) {
-    return true;
-  }
-  return false;
-}
-
-async function saveScreenshot(file: File, assignmentId: string, bytes: Uint8Array) {
-  const ext = ALLOWED_TYPES[file.type];
-  if (!ext) {
-    throw new ReviewerCampaignError("INVALID_FILE_TYPE", "JPG, PNG, WEBP 캡처 이미지만 업로드할 수 있어요");
-  }
-  if (file.size <= 0 || file.size > MAX_SCREENSHOT_BYTES) {
-    throw new ReviewerCampaignError("FILE_TOO_LARGE", "캡처 이미지는 8MB 이하로 업로드해 주세요");
-  }
-  if (!sniffImage(bytes)) {
-    throw new ReviewerCampaignError("INVALID_IMAGE", "이미지 파일만 업로드할 수 있어요");
-  }
-
-  const safeAssignmentId = assignmentId.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80) || "assignment";
-  const filename = `${safeAssignmentId}-${randomUUID()}.${ext}`;
-  const uploadDir = path.join(process.cwd(), "public", "uploads", "review-proofs");
-  await mkdir(uploadDir, { recursive: true });
-  await writeFile(path.join(uploadDir, filename), Buffer.from(bytes));
-  return `/uploads/review-proofs/${filename}`;
-}
-
 export async function POST(req: Request) {
-  if (!checkOrigin(req)) return err("BAD_ORIGIN", "요청 출처가 올바르지 않아요", 403);
+  if (!checkOrigin(req)) return err("BAD_ORIGIN", "요청 출처가 올바르지 않습니다.", 403);
 
   const reviewerId = await getReviewerId();
-  if (!reviewerId) return err("UNAUTHORIZED", "로그인이 필요해요", 401);
+  if (!reviewerId) return err("UNAUTHORIZED", "로그인이 필요해요.", 401);
 
   try {
     const form = await req.formData();
     const assignmentId = String(form.get("assignmentId") ?? "");
     const screenshot = form.get("screenshot");
     if (!(screenshot instanceof File)) {
-      return err("MISSING_SCREENSHOT", "구글맵 리뷰 캡처본을 첨부해 주세요", 400);
+      return err("MISSING_SCREENSHOT", "구글맵 리뷰 캡처본을 첨부해 주세요.", 400);
     }
 
     const proofContext = await getReviewerCampaignProofContext(reviewerId, assignmentId);
@@ -79,14 +35,21 @@ export async function POST(req: Request) {
     if (!expectedDraftText) {
       return err("MISSING_REVIEW_DRAFT", "저장된 리뷰 원고가 없습니다. 원고를 먼저 생성해 주세요.", 409);
     }
+
     const imageBytes = new Uint8Array(await screenshot.arrayBuffer());
-    const screenshotUrl = await saveScreenshot(screenshot, assignmentId, imageBytes);
+    const image = validateReviewProofImage(screenshot, imageBytes);
+    const screenshotUrl = await uploadReviewProof({
+      assignmentId,
+      bytes: imageBytes,
+      mimeType: image.mimeType,
+    });
+
     let analysis: ReviewProofAnalysis;
     try {
       analysis = await analyzeReviewProof({
         draftText: expectedDraftText,
         imageBytes,
-        mimeType: screenshot.type,
+        mimeType: image.mimeType,
         expectedPlaceName: proofContext.businessName,
         mockText: typeof form.get("mockOcrText") === "string" ? String(form.get("mockOcrText")) : undefined,
       });
@@ -100,18 +63,18 @@ export async function POST(req: Request) {
         confidence: 0,
       };
     }
+
     const result = await submitReviewerCampaignProof(reviewerId, assignmentId, {
       screenshotUrl,
-      screenshotMimeType: screenshot.type,
+      screenshotMimeType: image.mimeType,
       screenshotOriginalName: screenshot.name || "review-proof",
       draftText: expectedDraftText,
       analysis,
     });
     return ok(result);
   } catch (e) {
-    if (e instanceof ReviewerCampaignError) {
-      return err(e.code, e.message, e.status);
-    }
-    return err("COMPLETE_FAILED", "완료 신고를 처리하지 못했어요", 500);
+    if (e instanceof ReviewProofStorageError) return err(e.code, e.message, e.status);
+    if (e instanceof ReviewerCampaignError) return err(e.code, e.message, e.status);
+    return err("COMPLETE_FAILED", "완료 신고를 처리하지 못했어요.", 500);
   }
 }
