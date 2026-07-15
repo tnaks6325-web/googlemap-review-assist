@@ -241,9 +241,12 @@ async function googleTextSearch(textQuery: string, key: string) {
   return data.places?.[0] ?? null;
 }
 
-export async function resolveGooglePlace(urlOrPlaceId: string): Promise<GoogleResolveResult> {
+export async function resolveGooglePlace(
+  urlOrPlaceId: string,
+  apiKeyOverride?: string | null
+): Promise<GoogleResolveResult> {
   const parsed = await normalizeGoogleLandingInput(parseGooglePlaceInput(urlOrPlaceId));
-  const key = process.env.GOOGLE_PLACES_API_KEY;
+  const key = apiKeyOverride === undefined ? process.env.GOOGLE_PLACES_API_KEY : apiKeyOverride;
   if (!key) return { place: manualGooglePlace(parsed), providerConfigured: false };
 
   const data = parsed.placeId

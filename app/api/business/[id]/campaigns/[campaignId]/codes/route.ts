@@ -31,7 +31,7 @@ export async function POST(
   if (g.error) return g.error;
 
   // R2: 발급 레이트리밋 + 캠페인당 누적 코드 상한
-  if (!rateLimit(`owner:codes:${g.ownerId}`, 20, HOUR).ok) {
+  if (!(await rateLimit(`owner:codes:${g.ownerId}`, 20, HOUR)).ok) {
     return err("RATE_LIMITED", "잠시 후 다시 시도해 주세요", 429);
   }
 

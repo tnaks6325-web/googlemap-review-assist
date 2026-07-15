@@ -26,7 +26,7 @@ export async function POST(req: Request) {
   if (!checkOrigin(req)) return err("BAD_ORIGIN", "요청 출처가 올바르지 않습니다", 403);
 
   const ip = clientIp(req);
-  if (!rateLimit(`google-auth:ip:${ip}`, 30, HOUR).ok) {
+  if (!(await rateLimit(`google-auth:ip:${ip}`, 30, HOUR)).ok) {
     return err("RATE_LIMITED", "요청이 많아요. 잠시 후 다시 시도해 주세요", 429);
   }
 

@@ -52,6 +52,7 @@ export interface ReviewerCampaignProofInput {
   screenshotOriginalName: string;
   draftText: string;
   analysis?: ReviewProofAnalysis;
+  reprocess?: boolean;
 }
 
 type DbClient = PrismaClient | Prisma.TransactionClient;
@@ -504,7 +505,7 @@ export async function submitReviewerCampaignProof(
     if (receipt.status === REVIEWER_ASSIGNMENT_STATUS_COMPLETED) {
       return completedAssignmentResult(tx, reviewerId, receipt.id);
     }
-    if (receipt.status === REVIEWER_ASSIGNMENT_STATUS_REVIEW_SUBMITTED) {
+    if (receipt.status === REVIEWER_ASSIGNMENT_STATUS_REVIEW_SUBMITTED && !input.reprocess) {
       return {
         assignmentId: receipt.id,
         status: REVIEWER_ASSIGNMENT_STATUS_REVIEW_SUBMITTED,
@@ -514,7 +515,13 @@ export async function submitReviewerCampaignProof(
         hasProofImage: Boolean(receipt.reviewProofImageUrl),
       };
     }
-    if (![REVIEWER_ASSIGNMENT_STATUS_ASSIGNED, "VERIFIED"].includes(receipt.status)) {
+    if (
+      ![
+        REVIEWER_ASSIGNMENT_STATUS_ASSIGNED,
+        "VERIFIED",
+        REVIEWER_ASSIGNMENT_STATUS_REVIEW_SUBMITTED,
+      ].includes(receipt.status)
+    ) {
       throw new ReviewerCampaignError("BAD_ASSIGNMENT_STATE", "검수 요청할 수 없는 참여 상태예요", 409);
     }
 

@@ -37,7 +37,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ campaign
   if (!adminId) return err("UNAUTHORIZED", "관리자 로그인이 필요해요", 401);
 
   const ip = clientIp(req);
-  if (!rateLimit(`admin:naver-place:${adminId}:${ip}`, 60, HOUR).ok) {
+  if (!(await rateLimit(`admin:naver-place:${adminId}:${ip}`, 60, HOUR)).ok) {
     return err("RATE_LIMITED", "잠시 후 다시 시도해 주세요", 429);
   }
 

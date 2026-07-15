@@ -18,11 +18,11 @@ export async function POST(req: Request) {
   const password = String(body?.password ?? "");
 
   // 계정+IP 시도 제한 (무차별 대입 완화)
-  if (!rateLimit(`owner:login:ip:${ip}`, 20, 60 * 60 * 1000).ok) {
+  if (!(await rateLimit(`owner:login:ip:${ip}`, 20, 60 * 60 * 1000)).ok) {
     return err("RATE_LIMITED", "잠시 후 다시 시도해 주세요", 429);
   }
   // F2: 계정별 throttle(소스 IP 무관)
-  if (!rateLimit(`owner:login:acct:${email}`, 10, 60 * 60 * 1000).ok) {
+  if (!(await rateLimit(`owner:login:acct:${email}`, 10, 60 * 60 * 1000)).ok) {
     return err("RATE_LIMITED", "잠시 후 다시 시도해 주세요", 429);
   }
 

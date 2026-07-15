@@ -1,8 +1,5 @@
-// 고정 윈도우 카운터 레이트리밋 (개발/단일 노드용).
-// 운영(서버리스/멀티 노드)에서는 Redis 등 공유 저장소로 교체해야 한다.
-
 type Entry = { count: number; resetAt: number };
-const store = new Map<string, Entry>();
+const developmentStore = new Map<string, Entry>();
 
 export interface RateResult {
   ok: boolean;
@@ -10,35 +7,82 @@ export interface RateResult {
   retryAfterSec: number;
 }
 
-export function rateLimit(key: string, limit: number, windowMs: number): RateResult {
-  const now = Date.now();
-
-  // 가끔 만료 항목 정리(메모리 누수 방지)
-  if (store.size > 5000) {
-    for (const [k, v] of store) if (v.resetAt <= now) store.delete(k);
+export class RateLimitStorageError extends Error {
+  constructor() {
+    super("Rate limit storage is unavailable.");
+    this.name = "RateLimitStorageError";
   }
-
-  const e = store.get(key);
-  if (!e || e.resetAt <= now) {
-    store.set(key, { count: 1, resetAt: now + windowMs });
-    return { ok: true, remaining: limit - 1, retryAfterSec: 0 };
-  }
-  if (e.count >= limit) {
-    return { ok: false, remaining: 0, retryAfterSec: Math.ceil((e.resetAt - now) / 1000) };
-  }
-  e.count += 1;
-  return { ok: true, remaining: limit - e.count, retryAfterSec: 0 };
 }
 
-// F2: XFF는 클라이언트가 위조 가능 → 신뢰 프록시 홉 수(TRUSTED_PROXY_COUNT)만큼만 신뢰.
-// 미설정(0)이면 XFF를 신뢰하지 않는다(스푸핑으로 레이트리밋 우회 차단).
+function consumeDevelopmentRateLimit(key: string, limit: number, windowMs: number): RateResult {
+  const now = Date.now();
+  if (developmentStore.size > 5000) {
+    for (const [storedKey, entry] of developmentStore) {
+      if (entry.resetAt <= now) developmentStore.delete(storedKey);
+    }
+  }
+
+  const entry = developmentStore.get(key);
+  if (!entry || entry.resetAt <= now) {
+    developmentStore.set(key, { count: 1, resetAt: now + windowMs });
+    return { ok: true, remaining: Math.max(0, limit - 1), retryAfterSec: 0 };
+  }
+  if (entry.count >= limit) {
+    return { ok: false, remaining: 0, retryAfterSec: Math.ceil((entry.resetAt - now) / 1000) };
+  }
+  entry.count += 1;
+  return { ok: true, remaining: Math.max(0, limit - entry.count), retryAfterSec: 0 };
+}
+
+async function consumeDatabaseRateLimit(key: string, limit: number, windowMs: number): Promise<RateResult> {
+  const { prisma } = await import("@/lib/db");
+  const now = new Date();
+  const nextResetAt = new Date(now.getTime() + windowMs);
+
+  await prisma.rateLimitBucket.upsert({
+    where: { key },
+    create: { key, count: 0, resetAt: now },
+    update: {},
+  });
+  await prisma.rateLimitBucket.updateMany({
+    where: { key, resetAt: { lte: now } },
+    data: { count: 0, resetAt: nextResetAt },
+  });
+  const claimed = await prisma.rateLimitBucket.updateMany({
+    where: { key, resetAt: { gt: now }, count: { lt: limit } },
+    data: { count: { increment: 1 } },
+  });
+  const bucket = await prisma.rateLimitBucket.findUnique({ where: { key } });
+  if (!bucket) throw new RateLimitStorageError();
+
+  const retryAfterSec = Math.max(1, Math.ceil((bucket.resetAt.getTime() - now.getTime()) / 1000));
+  if (claimed.count === 0) return { ok: false, remaining: 0, retryAfterSec };
+  return { ok: true, remaining: Math.max(0, limit - bucket.count), retryAfterSec: 0 };
+}
+
+/**
+ * Uses the database in every deployed environment so separate serverless instances
+ * share one quota. Development falls back to memory when the local schema has not
+ * yet been pushed.
+ */
+export async function rateLimit(key: string, limit: number, windowMs: number): Promise<RateResult> {
+  try {
+    return await consumeDatabaseRateLimit(key, limit, windowMs);
+  } catch (error) {
+    if (process.env.NODE_ENV !== "production") {
+      return consumeDevelopmentRateLimit(key, limit, windowMs);
+    }
+    throw new RateLimitStorageError();
+  }
+}
+
 export function clientIp(req: Request): string {
   const hops = Number(process.env.TRUSTED_PROXY_COUNT ?? "0");
   const xff = req.headers.get("x-forwarded-for");
   if (xff && hops > 0) {
-    const parts = xff.split(",").map((s) => s.trim()).filter(Boolean);
-    const idx = parts.length - hops - 1;
-    return parts[idx >= 0 ? idx : 0] ?? "unknown";
+    const parts = xff.split(",").map((value) => value.trim()).filter(Boolean);
+    const index = parts.length - hops - 1;
+    return parts[index >= 0 ? index : 0] ?? "unknown";
   }
   return req.headers.get("x-real-ip") ?? "unknown";
 }

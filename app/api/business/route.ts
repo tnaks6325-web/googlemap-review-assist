@@ -19,7 +19,7 @@ export async function POST(req: Request) {
   if (!ownerId) return err("UNAUTHORIZED", "로그인이 필요해요", 401);
 
   // R3: 생성 레이트리밋 + 소유자당 매장 수 상한
-  if (!rateLimit(`owner:biz:${ownerId}`, 10, HOUR).ok) {
+  if (!(await rateLimit(`owner:biz:${ownerId}`, 10, HOUR)).ok) {
     return err("RATE_LIMITED", "잠시 후 다시 시도해 주세요", 429);
   }
 

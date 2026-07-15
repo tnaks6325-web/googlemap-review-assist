@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { retryExternalOperation } from "@/lib/resilience";
 
 export const REVIEW_DRAFT_MIN_SOURCE_GROUPS = 2;
 export const REVIEW_DRAFT_MAX_REGENERATIONS = 3;
@@ -393,9 +394,10 @@ async function geminiDraft(context: DraftContext, model: string, apiKey: string)
     renderPromptContext(context),
   ].join("\n");
 
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
-    {
+  const request = async () => {
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+      {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -406,20 +408,26 @@ async function geminiDraft(context: DraftContext, model: string, apiKey: string)
         },
       }),
       signal: AbortSignal.timeout(12000),
-    },
-  );
+      },
+    );
 
-  const data = (await res.json().catch(() => ({}))) as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-    error?: { message?: string };
+    const data = (await res.json().catch(() => ({}))) as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      error?: { message?: string };
+    };
+    if (!res.ok) {
+      const error = Object.assign(new Error(data.error?.message ?? `Gemini request failed: ${res.status}`), {
+        status: res.status,
+      });
+      throw error;
+    }
+
+    const text = data.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join(" ").trim() ?? "";
+    if (!text) throw new Error("Gemini returned empty draft");
+    return ensureDraftLength(text, context);
   };
-  if (!res.ok) {
-    throw new Error(data.error?.message ?? `Gemini request failed: ${res.status}`);
-  }
 
-  const text = data.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join(" ").trim() ?? "";
-  if (!text) throw new Error("Gemini returned empty draft");
-  return ensureDraftLength(text, context);
+  return retryExternalOperation(request, { attempts: 3, baseDelayMs: 300, maxDelayMs: 1_200 });
 }
 
 async function generateDraftText(context: DraftContext) {

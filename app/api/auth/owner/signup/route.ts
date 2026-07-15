@@ -12,7 +12,7 @@ const emailRe = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 export async function POST(req: Request) {
   if (!checkOrigin(req)) return err("BAD_ORIGIN", "요청 출처가 올바르지 않아요", 403);
   const ip = clientIp(req);
-  if (!rateLimit(`owner:signup:ip:${ip}`, 10, 60 * 60 * 1000).ok) {
+  if (!(await rateLimit(`owner:signup:ip:${ip}`, 10, 60 * 60 * 1000)).ok) {
     return err("RATE_LIMITED", "잠시 후 다시 시도해 주세요", 429);
   }
 

@@ -230,9 +230,37 @@ model Receipt {
   createdAt    DateTime  @default(now())
 
   @@index([reviewerId])
+  @@index([reviewerId, createdAt])
   @@index([businessId])
   @@index([campaignId, status])
   @@index([status])
+}
+
+model RateLimitBucket {
+  key       String   @id
+  count     Int      @default(0)
+  resetAt   DateTime
+  updatedAt DateTime @updatedAt
+
+  @@index([resetAt])
+}
+
+model OperationalJob {
+  id          String   @id @default(cuid())
+  type        String
+  status      String   @default("PENDING")
+  dedupeKey   String   @unique
+  payloadJson String
+  attempts    Int      @default(0)
+  maxAttempts Int      @default(4)
+  runAt       DateTime @default(now())
+  lockedAt    DateTime?
+  lastError   String?
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([status, runAt])
 }
 
 model Feedback {

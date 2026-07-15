@@ -15,7 +15,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const { ownerId, business } = await getOwnedBusiness(id);
   if (!ownerId) return err("UNAUTHORIZED", "로그인이 필요해요", 401);
   if (!business) return err("FORBIDDEN", "권한이 없어요", 403);
-  if (!rateLimit(`owner:naver-candidates:${ownerId}`, 40, HOUR).ok) {
+  if (!(await rateLimit(`owner:naver-candidates:${ownerId}`, 40, HOUR)).ok) {
     return err("RATE_LIMITED", "잠시 후 다시 시도해 주세요", 429);
   }
 

@@ -31,7 +31,7 @@ export async function POST(req: Request) {
   if (!checkOrigin(req)) return err("BAD_ORIGIN", "요청 출처가 올바르지 않아요", 403);
 
   const ip = clientIp(req);
-  if (!rateLimit(`otp:verify:ip:${ip}`, 30, HOUR).ok) {
+  if (!(await rateLimit(`otp:verify:ip:${ip}`, 30, HOUR)).ok) {
     return err("RATE_LIMITED", "요청이 많아요. 잠시 후 다시 시도해 주세요", 429);
   }
 
@@ -49,7 +49,7 @@ export async function POST(req: Request) {
   }
 
   // R5: IP와 무관한 번호 단위 검증 시도 카운터 (XFF 스푸핑·다중 챌린지 우회 방어)
-  if (!rateLimit(`otp:verify:phone:${ch.phone}`, 10, HOUR).ok) {
+  if (!(await rateLimit(`otp:verify:phone:${ch.phone}`, 10, HOUR)).ok) {
     return err("RATE_LIMITED", "잠시 후 다시 시도해 주세요", 429);
   }
 

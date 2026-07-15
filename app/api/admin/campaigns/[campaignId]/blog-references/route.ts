@@ -30,7 +30,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ campaig
   if (!adminId) return err("UNAUTHORIZED", "관리자 로그인이 필요합니다", 401);
 
   const ip = clientIp(req);
-  if (!rateLimit(`admin:blog-references:${adminId}:${ip}`, 30, HOUR).ok) {
+  if (!(await rateLimit(`admin:blog-references:${adminId}:${ip}`, 30, HOUR)).ok) {
     return err("RATE_LIMITED", "잠시 후 다시 시도해 주세요", 429);
   }
 

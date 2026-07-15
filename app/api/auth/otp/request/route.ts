@@ -3,6 +3,7 @@ import { ok, err } from "@/lib/http";
 import { sha256 } from "@/lib/crypto";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
 import { checkOrigin } from "@/lib/auth/origin";
+import { sendOtpSms, SmsProviderError } from "@/lib/sms";
 
 export const runtime = "nodejs";
 
@@ -22,11 +23,11 @@ export async function POST(req: Request) {
 
   const ip = clientIp(req);
   // IP·번호 레이트리밋 + 번호당 60초 최소 간격 (SECURITY_AUTH.md §5)
-  const ipR = rateLimit(`otp:req:ip:${ip}`, 20, HOUR);
+  const ipR = await rateLimit(`otp:req:ip:${ip}`, 20, HOUR);
   if (!ipR.ok) return err("RATE_LIMITED", "요청이 많아요. 잠시 후 다시 시도해 주세요", 429);
-  const phoneHourR = rateLimit(`otp:req:phone:${phone}`, 5, HOUR);
+  const phoneHourR = await rateLimit(`otp:req:phone:${phone}`, 5, HOUR);
   if (!phoneHourR.ok) return err("RATE_LIMITED", "잠시 후 다시 시도해 주세요", 429);
-  const intervalR = rateLimit(`otp:req:phone60:${phone}`, 1, 60 * 1000);
+  const intervalR = await rateLimit(`otp:req:phone60:${phone}`, 1, 60 * 1000);
   if (!intervalR.ok) {
     return err("RATE_LIMITED", `${intervalR.retryAfterSec}초 후 다시 받아주세요`, 429);
   }
@@ -39,6 +40,16 @@ export async function POST(req: Request) {
       expiresAt: new Date(Date.now() + 3 * 60 * 1000),
     },
   });
+
+  if (!devOtpEnabled()) {
+    try {
+      await sendOtpSms(phone, code);
+    } catch (error) {
+      await prisma.otpChallenge.delete({ where: { id: challenge.id } }).catch(() => undefined);
+      if (error instanceof SmsProviderError) return err(error.code, error.message, error.status);
+      return err("SMS_SEND_FAILED", "인증번호 문자 발송에 실패했습니다. 잠시 후 다시 시도해 주세요", 502);
+    }
+  }
 
   const payload: Record<string, unknown> = { requestId: challenge.id, expiresIn: 180 };
   // 실제 SMS 연동 전 로컬/테스트 진행용. 운영에서는 절대 노출하지 않는다.

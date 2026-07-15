@@ -19,7 +19,7 @@ function adminDevBypassEnabled() {
 export async function POST(req: Request) {
   if (!checkOrigin(req)) return err("BAD_ORIGIN", "요청 출처가 올바르지 않아요", 403);
   const ip = clientIp(req);
-  if (!rateLimit(`admin:login:ip:${ip}`, 10, HOUR).ok) {
+  if (!(await rateLimit(`admin:login:ip:${ip}`, 10, HOUR)).ok) {
     return err("RATE_LIMITED", "잠시 후 다시 시도해 주세요", 429);
   }
 
@@ -38,7 +38,7 @@ export async function POST(req: Request) {
   const password = String(body?.password ?? "");
 
   // F2: 계정별 throttle(소스 IP와 무관하게 단일 계정 보호)
-  if (!rateLimit(`admin:login:acct:${email}`, 10, HOUR).ok) {
+  if (!(await rateLimit(`admin:login:acct:${email}`, 10, HOUR)).ok) {
     return err("RATE_LIMITED", "잠시 후 다시 시도해 주세요", 429);
   }
 

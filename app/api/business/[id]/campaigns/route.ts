@@ -19,7 +19,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!business) return err("FORBIDDEN", "권한이 없어요", 403);
 
   // R3: 레이트리밋 + 매장당 캠페인 수 상한
-  if (!rateLimit(`owner:campaign:${ownerId}`, 20, HOUR).ok) {
+  if (!(await rateLimit(`owner:campaign:${ownerId}`, 20, HOUR)).ok) {
     return err("RATE_LIMITED", "잠시 후 다시 시도해 주세요", 429);
   }
   const count = await prisma.campaign.count({ where: { businessId: id } });
