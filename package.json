@@ -11,6 +11,7 @@
     "db:push": "prisma db push",
     "db:push:pg": "prisma db push --schema=prisma/schema.postgres.prisma",
     "db:seed": "tsx prisma/seed.ts",
+    "db:seed:sandbox": "tsx prisma/seed-sandbox.ts",
     "db:studio": "prisma studio"
   },
   "prisma": {
