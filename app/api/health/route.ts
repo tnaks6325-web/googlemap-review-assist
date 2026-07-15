@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { classifyDatabaseHealthError, type DatabaseHealthErrorCode } from "@/lib/health-database-status";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,18 +10,22 @@ function configured(value: string | undefined) {
 
 export async function GET() {
   let database = "ok";
+  let databaseError: DatabaseHealthErrorCode | undefined;
   let pendingJobs = 0;
   try {
     await prisma.$queryRaw`SELECT 1`;
     pendingJobs = await prisma.operationalJob.count({ where: { status: { in: ["PENDING", "RETRY"] } } });
-  } catch {
+  } catch (error) {
     database = "unavailable";
+    databaseError = classifyDatabaseHealthError(error);
+    console.error("health_database_check_failed", { databaseError });
   }
 
   const body = {
     status: database === "ok" ? "ok" : "degraded",
     timestamp: new Date().toISOString(),
     database,
+    ...(databaseError ? { databaseError } : {}),
     pendingJobs,
     integrations: {
       sms: process.env.SMS_PROVIDER === "naver-sens" && configured(process.env.NAVER_SENS_ACCESS_KEY),
