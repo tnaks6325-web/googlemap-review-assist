@@ -97,7 +97,7 @@ export interface AdminReviewProofRow {
   status: string;
   rewardPoints: number;
   draftText: string | null;
-  proofImageUrl: string | null;
+  hasProofImage: boolean;
   proofOriginalName: string | null;
   extractedText: string | null;
   analysisStatus: string | null;
@@ -146,7 +146,7 @@ export async function getPendingReviewProofs(): Promise<AdminReviewProofRow[]> {
     status: receipt.status,
     rewardPoints: DEFAULT_REWARD_POINTS,
     draftText: receipt.reviewDraftText,
-    proofImageUrl: receipt.reviewProofImageUrl,
+    hasProofImage: Boolean(receipt.reviewProofImageUrl),
     proofOriginalName: receipt.reviewProofOriginalName,
     extractedText: receipt.reviewProofExtractedText,
     analysisStatus: receipt.reviewProofAnalysisStatus,

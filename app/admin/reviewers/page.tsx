@@ -67,7 +67,7 @@ export default async function AdminReviewersPage() {
             campaignName: item.campaignName,
             rewardPoints: item.rewardPoints,
             draftText: item.draftText,
-            proofImageUrl: item.proofImageUrl,
+            hasProofImage: item.hasProofImage,
             proofOriginalName: item.proofOriginalName,
             extractedText: item.extractedText,
             analysisStatus: item.analysisStatus,

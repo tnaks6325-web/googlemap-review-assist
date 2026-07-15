@@ -84,7 +84,7 @@ interface CompleteResponse {
   alreadyCompleted?: boolean;
   paidAmount?: number;
   pendingApproval?: boolean;
-  proofImageUrl?: string | null;
+  hasProofImage?: boolean;
   analysis?: {
     status: string;
     similarity: number;
@@ -439,9 +439,9 @@ export function ReviewFlow({
                   AI 유사도 {(completion.analysis.similarity * 100).toFixed(1)}% · {completion.analysis.reason}
                 </p>
               )}
-              {completion?.proofImageUrl && (
+              {completion?.hasProofImage && assignmentId && (
                 <a
-                  href={completion.proofImageUrl}
+                  href={`/api/reviewer/campaigns/proofs/${assignmentId}`}
                   target="_blank"
                   rel="noreferrer"
                   className="text-sm font-semibold text-brand"
