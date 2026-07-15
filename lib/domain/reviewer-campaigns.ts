@@ -1,11 +1,13 @@
 import { randomBytes } from "crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
+import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/db";
 import {
   DEFAULT_REWARD_POINTS,
   googleMapsSearchUrl,
   type PublicCampaignCard,
 } from "@/lib/domain/operator-campaigns";
+import { summarizeCampaignReviewDraftSources } from "@/lib/domain/campaign-review-draft";
 import type { ReviewProofAnalysis } from "@/lib/domain/review-proof-analysis";
 
 export const REVIEWER_PLACE_COOLDOWN_DAYS = 7;
@@ -14,6 +16,7 @@ export const REVIEWER_ASSIGNMENT_STATUS_REVIEW_SUBMITTED = "REVIEW_SUBMITTED";
 export const REVIEWER_ASSIGNMENT_STATUS_COMPLETED = "COMPLETED";
 export const REVIEWER_ASSIGNMENT_STATUS_REJECTED = "REJECTED";
 export const REVIEWER_ASSIGNMENT_SOURCE = "CAMPAIGN_ASSIGNMENT";
+const PUBLIC_AVAILABILITY_CACHE_SECONDS = 10;
 
 export interface ReviewerCampaignAssignment extends PublicCampaignCard {
   businessId: string;
@@ -64,10 +67,14 @@ function googlePlaceKeyForBusiness(
   business: {
     id: string;
     googlePlaceId: string | null;
-    externalPlaces: Array<{ externalId: string | null }>;
+    externalPlaces: Array<{ platform: string; externalId: string | null }>;
   },
 ) {
-  return business.externalPlaces[0]?.externalId ?? business.googlePlaceId ?? business.id;
+  return (
+    business.externalPlaces.find((place) => place.platform === "GOOGLE")?.externalId ??
+    business.googlePlaceId ??
+    business.id
+  );
 }
 
 function availabilityLabel(completedCount: number) {
@@ -119,14 +126,46 @@ async function fetchActiveCampaignRows(db: DbClient) {
     orderBy: { createdAt: "desc" },
     include: {
       business: {
-        include: {
+        select: {
+          id: true,
+          name: true,
+          address: true,
+          googlePlaceId: true,
           externalPlaces: {
-            where: { platform: "GOOGLE" },
-            take: 1,
+            where: { platform: { in: ["GOOGLE", "NAVER"] } },
+            select: {
+              platform: true,
+              externalId: true,
+              url: true,
+              name: true,
+              address: true,
+              category: true,
+              rating: true,
+              reviewCount: true,
+            },
+          },
+          externalReviews: {
+            where: { content: { not: null } },
+            select: { id: true, platform: true, content: true },
+            take: 50,
           },
         },
       },
-      receipts: { select: { source: true, status: true } },
+      blogReferences: {
+        where: { status: "ACTIVE" },
+        select: { id: true, title: true, description: true },
+        take: 5,
+      },
+      _count: {
+        select: {
+          receipts: {
+            where: {
+              source: REVIEWER_ASSIGNMENT_SOURCE,
+              status: REVIEWER_ASSIGNMENT_STATUS_COMPLETED,
+            },
+          },
+        },
+      },
     },
   });
 }
@@ -137,12 +176,15 @@ async function fetchCooldownReceiptRows(db: DbClient, reviewerId: string, now = 
       reviewerId,
       createdAt: { gte: cooldownStart(now) },
     },
-    include: {
+    select: {
       business: {
-        include: {
+        select: {
+          id: true,
+          googlePlaceId: true,
           externalPlaces: {
             where: { platform: "GOOGLE" },
             take: 1,
+            select: { platform: true, externalId: true },
           },
         },
       },
@@ -155,15 +197,47 @@ function toExcludedGooglePlaceKeys(receipts: ReceiptRow[]) {
 }
 
 function completedAssignmentCount(campaign: CampaignRow) {
-  return campaign.receipts.filter(
-    (receipt) =>
-      receipt.source === REVIEWER_ASSIGNMENT_SOURCE &&
-      receipt.status === REVIEWER_ASSIGNMENT_STATUS_COMPLETED,
+  return campaign._count.receipts;
+}
+
+function hasSufficientDraftSources(campaign: CampaignRow) {
+  const googlePlace = campaign.business.externalPlaces.find((place) => place.platform === "GOOGLE") ?? null;
+  const naverPlace = campaign.business.externalPlaces.find((place) => place.platform === "NAVER") ?? null;
+  const googleReviewCount = campaign.business.externalReviews.filter(
+    (review) => review.platform === "GOOGLE" && hasUsableReferenceText(review.content),
   ).length;
+  const naverReviewCount = campaign.business.externalReviews.filter(
+    (review) => review.platform === "NAVER" && hasUsableReferenceText(review.content),
+  ).length;
+  const blogReferenceCount = campaign.blogReferences.filter(
+    (reference) =>
+      hasUsableReferenceText(reference.title) || hasUsableReferenceText(reference.description),
+  ).length;
+
+  return summarizeCampaignReviewDraftSources({
+    googlePlace,
+    googleReviewCount,
+    naverPlace,
+    naverReferenceCount: blogReferenceCount + naverReviewCount,
+  }).canGenerateReviewDraft;
+}
+
+function hasUsableReferenceText(value: string | null | undefined) {
+  const normalized = (value ?? "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return normalized.length > 0;
 }
 
 function toReviewerCampaign(campaign: CampaignRow): ReviewerCampaignAssignment {
-  const googlePlace = campaign.business.externalPlaces[0] ?? null;
+  const googlePlace = campaign.business.externalPlaces.find((place) => place.platform === "GOOGLE") ?? null;
   const businessName = googlePlace?.name ?? campaign.business.name;
   const address = googlePlace?.address ?? campaign.business.address;
   const googlePlaceKey = googlePlaceKeyForBusiness(campaign.business);
@@ -200,6 +274,7 @@ export async function getReviewerCampaignAvailability(
   ]);
   const excludedKeys = toExcludedGooglePlaceKeys(cooldownReceipts);
   const eligible = campaigns
+    .filter(hasSufficientDraftSources)
     .map(toReviewerCampaign)
     .filter((campaign) => !excludedKeys.has(campaign.googlePlaceKey));
 
@@ -212,14 +287,29 @@ export async function getReviewerCampaignAvailability(
   };
 }
 
-export async function getPublicCampaignAvailabilitySummary(db: DbClient = prisma) {
-  const campaigns = (await fetchActiveCampaignRows(db)).map(toReviewerCampaign);
+async function getPublicCampaignAvailabilitySummaryUncached(db: DbClient) {
+  const campaigns = (await fetchActiveCampaignRows(db))
+    .filter(hasSufficientDraftSources)
+    .map(toReviewerCampaign);
   return {
     availableCount: campaigns.length,
     totalRewardPoints: campaigns.reduce((sum, campaign) => sum + campaign.rewardPoints, 0),
     cooldownDays: REVIEWER_PLACE_COOLDOWN_DAYS,
     categoryCounts: buildCategoryCounts(campaigns),
   };
+}
+
+const getCachedPublicCampaignAvailabilitySummary = unstable_cache(
+  async () => getPublicCampaignAvailabilitySummaryUncached(prisma),
+  ["reviewer-public-campaign-availability"],
+  { revalidate: PUBLIC_AVAILABILITY_CACHE_SECONDS, tags: ["public-campaigns"] },
+);
+
+export async function getPublicCampaignAvailabilitySummary(db: DbClient = prisma) {
+  if (db !== prisma || process.env.NODE_ENV !== "production") {
+    return getPublicCampaignAvailabilitySummaryUncached(db);
+  }
+  return getCachedPublicCampaignAvailabilitySummary();
 }
 
 function randomIndex(length: number) {

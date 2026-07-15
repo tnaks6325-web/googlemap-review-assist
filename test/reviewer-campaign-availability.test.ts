@@ -18,7 +18,15 @@ async function createReviewer() {
   });
 }
 
-async function createCampaign(googlePlaceId: string, category?: string | null) {
+interface CampaignFixtureOptions {
+  category?: string | null;
+  sourceReady?: boolean;
+}
+
+async function createCampaign(
+  googlePlaceId: string,
+  { category = "음식점", sourceReady = true }: CampaignFixtureOptions = {},
+) {
   const owner = await prisma.owner.create({ data: { email: `reviewer-${uniq()}@test.local`, password: "x" } });
   const business = await prisma.business.create({
     data: {
@@ -26,19 +34,30 @@ async function createCampaign(googlePlaceId: string, category?: string | null) {
       name: `place-${uniq()}`,
       address: "서울시 테스트로 1",
       googlePlaceId,
-      externalPlaces:
-        category === undefined
-          ? undefined
-          : {
-              create: {
-                platform: "GOOGLE",
-                externalId: googlePlaceId,
-                name: `place-${uniq()}`,
-                address: "서울시 테스트로 1",
-                category,
-                url: `https://maps.example/${googlePlaceId}`,
-              },
-            },
+      externalPlaces: {
+        create: [
+          {
+            platform: "GOOGLE",
+            externalId: googlePlaceId,
+            name: `place-${uniq()}`,
+            address: "서울시 테스트로 1",
+            category,
+            url: `https://maps.example/${googlePlaceId}`,
+          },
+          ...(sourceReady
+            ? [
+                {
+                  platform: "NAVER",
+                  externalId: `naver-${googlePlaceId}`,
+                  name: `place-${uniq()}`,
+                  address: "서울시 테스트로 1",
+                  category,
+                  url: `https://map.naver.example/${googlePlaceId}`,
+                },
+              ]
+            : []),
+        ],
+      },
     },
   });
   const campaign = await prisma.campaign.create({
@@ -79,6 +98,38 @@ describe("reviewer campaign availability", () => {
     expect(availability.totalRewardPoints).toBe(
       availability.campaigns.length * DEFAULT_REWARD_POINTS,
     );
+  });
+
+  it("excludes active campaigns without the two required draft source groups", async () => {
+    const reviewer = await createReviewer();
+    await prisma.campaign.updateMany({ data: { active: false } });
+    const incomplete = await createCampaign(`google-place-incomplete-${uniq()}`, { sourceReady: false });
+    const ready = await createCampaign(`google-place-ready-${uniq()}`);
+
+    const availability = await getReviewerCampaignAvailability(reviewer.id);
+    const ids = availability.campaigns.map((campaign) => campaign.id);
+
+    expect(ids).not.toContain(incomplete.campaign.id);
+    expect(ids).toContain(ready.campaign.id);
+    expect(availability.availableCount).toBe(1);
+  });
+
+  it("does not treat blank external reviews as usable draft context", async () => {
+    const reviewer = await createReviewer();
+    await prisma.campaign.updateMany({ data: { active: false } });
+    const incomplete = await createCampaign(`google-place-blank-review-${uniq()}`, { sourceReady: false });
+    await prisma.externalReview.create({
+      data: {
+        businessId: incomplete.business.id,
+        platform: "GOOGLE",
+        content: "<br>   ",
+        reviewHash: `blank-reference:${uniq()}`,
+      },
+    });
+
+    const availability = await getReviewerCampaignAvailability(reviewer.id);
+
+    expect(availability.campaigns.map((campaign) => campaign.id)).not.toContain(incomplete.campaign.id);
   });
 
   it("assignment creates a participation record so the assigned campaign is no longer immediately eligible", async () => {
@@ -207,10 +258,10 @@ describe("reviewer campaign availability", () => {
   it("groups eligible campaigns by Google place category", async () => {
     const reviewer = await createReviewer();
     await prisma.campaign.updateMany({ data: { active: false } });
-    await createCampaign(`google-place-food-a-${uniq()}`, "음식점");
-    await createCampaign(`google-place-food-b-${uniq()}`, "음식점>한식");
-    await createCampaign(`google-place-cafe-${uniq()}`, "카페");
-    await createCampaign(`google-place-unknown-${uniq()}`, null);
+    await createCampaign(`google-place-food-a-${uniq()}`, { category: "음식점" });
+    await createCampaign(`google-place-food-b-${uniq()}`, { category: "음식점>한식" });
+    await createCampaign(`google-place-cafe-${uniq()}`, { category: "카페" });
+    await createCampaign(`google-place-unknown-${uniq()}`, { category: null });
 
     const availability = await getReviewerCampaignAvailability(reviewer.id);
 

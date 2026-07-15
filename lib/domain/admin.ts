@@ -29,6 +29,28 @@ export interface AdminReviewProofChecks {
   recency: AdminReviewProofCheckStatus;
 }
 
+export type AdminReviewProofFilter = "ALL" | "MANUAL_REVIEW" | "OCR_UNAVAILABLE";
+
+type ReviewProofFilterItem = {
+  analysisStatus: string | null;
+  extractedText: string | null;
+};
+
+export function filterAdminReviewProofs<T extends ReviewProofFilterItem>(
+  items: T[],
+  filter: AdminReviewProofFilter,
+): T[] {
+  if (filter === "MANUAL_REVIEW") {
+    return items.filter((item) => item.analysisStatus !== "AUTO_APPROVE");
+  }
+  if (filter === "OCR_UNAVAILABLE") {
+    return items.filter(
+      (item) => item.analysisStatus === "UNAVAILABLE" || !item.extractedText?.trim(),
+    );
+  }
+  return items;
+}
+
 const isReviewProofCheckStatus = (value: unknown): value is AdminReviewProofCheckStatus =>
   value === "PASS" || value === "FAIL" || value === "UNKNOWN";
 

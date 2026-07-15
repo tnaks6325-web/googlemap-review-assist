@@ -38,31 +38,28 @@ export async function POST(req: Request) {
 
     const imageBytes = new Uint8Array(await screenshot.arrayBuffer());
     const image = validateReviewProofImage(screenshot, imageBytes);
-    const screenshotUrl = await uploadReviewProof({
-      assignmentId,
-      bytes: imageBytes,
+    const analysisPromise: Promise<ReviewProofAnalysis> = analyzeReviewProof({
+      draftText: expectedDraftText,
+      imageBytes,
       mimeType: image.mimeType,
-    });
-
-    let analysis: ReviewProofAnalysis;
-    try {
-      analysis = await analyzeReviewProof({
-        draftText: expectedDraftText,
-        imageBytes,
+      expectedPlaceName: proofContext.businessName,
+      mockText: typeof form.get("mockOcrText") === "string" ? String(form.get("mockOcrText")) : undefined,
+    }).catch(() => ({
+      status: "UNAVAILABLE",
+      provider: "ocr",
+      extractedText: "",
+      similarity: 0,
+      reason: "OCR_FAILED",
+      confidence: 0,
+    }));
+    const [screenshotUrl, analysis] = await Promise.all([
+      uploadReviewProof({
+        assignmentId,
+        bytes: imageBytes,
         mimeType: image.mimeType,
-        expectedPlaceName: proofContext.businessName,
-        mockText: typeof form.get("mockOcrText") === "string" ? String(form.get("mockOcrText")) : undefined,
-      });
-    } catch {
-      analysis = {
-        status: "UNAVAILABLE",
-        provider: "ocr",
-        extractedText: "",
-        similarity: 0,
-        reason: "OCR_FAILED",
-        confidence: 0,
-      };
-    }
+      }),
+      analysisPromise,
+    ]);
 
     const result = await submitReviewerCampaignProof(reviewerId, assignmentId, {
       screenshotUrl,

@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Google Maps Review Campaign Operations Report</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #191f28;
+      --sub: #6b7684;
+      --line: #e5e8eb;
+      --canvas: #f2f4f6;
+      --surface: #ffffff;
+      --brand: #3182f6;
+      --brand-tint: #e8f3ff;
+      --green: #00a86b;
+      --green-tint: #e8faf2;
+      --amber: #b76e00;
+      --amber-tint: #fff7e5;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--canvas); color: var(--ink); font-family: Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.55; }
+    main { max-width: 1040px; margin: 0 auto; padding: 36px 24px 72px; }
+    header { border-bottom: 1px solid var(--line); padding-bottom: 24px; }
+    .eyebrow { margin: 0 0 8px; color: var(--brand); font-size: 13px; font-weight: 800; }
+    h1 { margin: 0; font-size: 30px; letter-spacing: 0; }
+    h2 { margin: 0 0 12px; font-size: 20px; letter-spacing: 0; }
+    h3 { margin: 0; font-size: 15px; }
+    p { margin: 0; }
+    .lead { max-width: 720px; margin-top: 12px; color: var(--sub); }
+    .meta { margin-top: 16px; color: var(--sub); font-size: 13px; }
+    section { margin-top: 24px; padding: 24px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+    .summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+    .metric { min-height: 104px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: #fbfcfd; }
+    .metric p { color: var(--sub); font-size: 13px; }
+    .metric strong { display: block; margin-top: 7px; font-size: 24px; }
+    .ok { color: var(--green); }
+    .pending { color: var(--amber); }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { padding: 13px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: var(--sub); font-size: 12px; font-weight: 800; }
+    tr:last-child td { border-bottom: 0; }
+    .status { display: inline-block; border-radius: 999px; padding: 3px 8px; font-size: 12px; font-weight: 800; }
+    .status.ok { background: var(--green-tint); }
+    .status.pending { background: var(--amber-tint); }
+    ul, ol { margin: 10px 0 0; padding-left: 20px; }
+    li + li { margin-top: 7px; }
+    code { padding: 2px 5px; border-radius: 4px; background: var(--canvas); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .92em; }
+    .notice { padding: 14px; border-left: 3px solid var(--brand); background: var(--brand-tint); color: #2b5f9d; font-size: 14px; }
+    .links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 12px; }
+    a { color: #1769d1; text-decoration: none; font-weight: 700; }
+    a:hover { text-decoration: underline; }
+    .checklist { list-style: none; padding: 0; }
+    .checklist li { position: relative; padding-left: 24px; }
+    .checklist li::before { position: absolute; left: 0; content: "✓"; color: var(--green); font-weight: 900; }
+    .checklist li.manual::before { content: "○"; color: var(--amber); }
+    @media (max-width: 720px) {
+      main { padding: 24px 16px 56px; }
+      h1 { font-size: 25px; }
+      section { padding: 18px; }
+      .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .metric { min-height: 90px; padding: 13px; }
+      table { display: block; overflow-x: auto; white-space: nowrap; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">GOOGLE MAPS REVIEW CAMPAIGN</p>
+      <h1>운영 준비 및 통합 검증 보고서</h1>
+      <p class="lead">리뷰어 배정부터 서버 원고 생성, 캡처 검수, 포인트 적립, 정산 요청과 관리자 지급 처리까지의 운영 흐름을 점검하고 보완한 결과입니다.</p>
+      <p class="meta">작성일: 2026-07-15 · 대상 버전: main</p>
+    </header>
+
+    <section>
+      <h2>완료 요약</h2>
+      <div class="summary">
+        <div class="metric"><p>원고 배정 기준</p><strong class="ok">2 / 4 자료</strong></div>
+        <div class="metric"><p>전체 자동 회귀 테스트</p><strong class="ok">120 / 120</strong></div>
+        <div class="metric"><p>캡처 저장소</p><strong class="ok">Private Blob</strong></div>
+        <div class="metric"><p>실운영 수동 점검</p><strong class="pending">1회 필요</strong></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>이번 반영 사항</h2>
+      <table>
+        <thead><tr><th>영역</th><th>반영 내용</th><th>상태</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>캠페인 배정</td>
+            <td>Google 장소, Google 리뷰, Naver SmartPlace, Naver 참고자료 중 2개 이상의 자료 그룹이 있는 캠페인만 리뷰어 배정 및 공개 가능 건수에 포함합니다.</td>
+            <td><span class="status ok">완료</span></td>
+          </tr>
+          <tr>
+            <td>원고 생성</td>
+            <td>배정 이후 서버가 참고자료를 조합해 공백 제외 30~200자의 원고를 저장하고, 캡처 검수는 저장된 원고를 기준으로 비교합니다. 재생성은 배정당 최대 3회입니다.</td>
+            <td><span class="status ok">완료</span></td>
+          </tr>
+          <tr>
+            <td>캡처 검수</td>
+            <td>리뷰 캡처는 Private Blob에 보관하고, 관리자 화면은 인증된 API를 통해서만 이미지를 표시합니다. 대기열에 전체·수동 확인·OCR 미인식 필터를 추가했습니다.</td>
+            <td><span class="status ok">완료</span></td>
+          </tr>
+          <tr>
+            <td>정산</td>
+            <td>최초 계좌 등록, 최소 3,000P 및 1,000P 단위 요청, 관리자 CSV 확인, 승인 후 알림과 요청 잔액 정리를 지원합니다.</td>
+            <td><span class="status ok">완료</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>검증 결과</h2>
+      <ul class="checklist">
+        <li>자료가 1종인 활성 캠페인은 리뷰어 참여 가능 목록과 총 보상 합계에서 제외됩니다.</li>
+        <li>자료가 2종 이상인 캠페인은 기존 7일 동일 Google Place 중복 참여 제한을 유지한 채 배정됩니다.</li>
+        <li>관리자 검수 대기열의 수동 확인 및 OCR 미인식 필터가 분석 상태와 OCR 텍스트 기준으로 동작합니다.</li>
+        <li>정산 승인 후 요청 대기 금액은 0P, 지급 완료 금액은 승인 금액으로 집계되고 리뷰어 알림이 생성됩니다.</li>
+        <li>집중 테스트: <code>npx vitest run test/reviewer-campaign-availability.test.ts test/admin-review-proof-checks.test.ts test/settlement-payout.test.ts</code> 결과 14개 통과.</li>
+        <li>전체 테스트: <code>npm test</code> 결과 18개 파일, 120개 테스트 통과.</li>
+        <li>정적 타입 검사: <code>npx tsc --noEmit</code> 통과.</li>
+        <li>운영 빌드: <code>npm run build</code> 통과. Next.js 프로덕션 경로 37개 생성 확인.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>운영자 확인 화면</h2>
+      <p class="notice">운영 배포에서 실제 로그인 세션, Google Sheet 접수 데이터, 실제 휴대폰 캡처 파일을 사용하는 점검은 계정 권한이 필요한 작업입니다. 아래 경로에서 한 건을 끝까지 실행해 확인하세요.</p>
+      <div class="links">
+        <a href="https://googlemap-review-assist.vercel.app/admin/login">관리자 로그인</a>
+        <a href="https://googlemap-review-assist.vercel.app/admin/campaigns">캠페인 운영</a>
+        <a href="https://googlemap-review-assist.vercel.app/admin/reviewers">리뷰어·정산 관리</a>
+        <a href="https://googlemap-review-assist.vercel.app/r/demo">리뷰어 참여 화면</a>
+        <a href="https://googlemap-review-assist.vercel.app/me">내 적립금·정산 화면</a>
+      </div>
+    </section>
+
+    <section>
+      <h2>최종 운영 점검 순서</h2>
+      <ol>
+        <li>관리자에서 Google Sheet를 검사하고, 자료 그룹이 2/4 이상인 캠페인만 반영합니다.</li>
+        <li>리뷰어 계정으로 참여 가능한 캠페인 배정 후 원고를 생성합니다. 생성 원고가 화면과 서버에 저장되어야 합니다.</li>
+        <li>Google Maps에 등록한 리뷰 캡처를 제출하고, 관리자 검수 대기열에서 원고·OCR·유사도·이미지를 함께 확인합니다.</li>
+        <li>관리자가 승인하면 포인트가 1회만 적립되는지 확인합니다. 반려 건은 재제출 가능한 상태인지 확인합니다.</li>
+        <li>리뷰어가 전액 또는 일부를 1,000P 단위로 정산 요청하고, 관리자가 CSV를 내려받아 이체 후 지급 완료 처리합니다.</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>남은 외부 확인</h2>
+      <ul class="checklist">
+        <li class="manual">Vercel Production에서 실제 Blob 업로드 1건: 제출 후 관리자 검수 이미지가 정상 표시되는지 확인</li>
+        <li class="manual">Gemini API 실제 호출 1건: 자료 2종 이상 캠페인에서 자연스러운 30~200자 원고가 생성되는지 확인</li>
+        <li class="manual">관리자 계정으로 Google Sheet 검사 및 캠페인 반영 1건: 네이버 후보와 블로그 참고자료 상태가 카드에 표시되는지 확인</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

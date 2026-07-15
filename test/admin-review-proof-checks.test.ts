@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseReviewProofAnalysisChecks } from "@/lib/domain/admin";
+import { filterAdminReviewProofs, parseReviewProofAnalysisChecks } from "@/lib/domain/admin";
 
 describe("admin review proof checks", () => {
   it("parses AI check statuses from stored review proof analysis JSON", () => {
@@ -41,5 +41,16 @@ describe("admin review proof checks", () => {
     expect(parseReviewProofAnalysisChecks(null)).toBeNull();
     expect(parseReviewProofAnalysisChecks("{bad json")).toBeNull();
     expect(parseReviewProofAnalysisChecks(JSON.stringify({ status: "MANUAL_REVIEW" }))).toBeNull();
+  });
+
+  it("filters the pending queue for manual review and unavailable OCR", () => {
+    const rows = [
+      { id: "approved", analysisStatus: "AUTO_APPROVE", extractedText: "review text" },
+      { id: "manual", analysisStatus: "MANUAL_REVIEW", extractedText: "partial text" },
+      { id: "missing", analysisStatus: "UNAVAILABLE", extractedText: null },
+    ];
+
+    expect(filterAdminReviewProofs(rows, "MANUAL_REVIEW").map((row) => row.id)).toEqual(["manual", "missing"]);
+    expect(filterAdminReviewProofs(rows, "OCR_UNAVAILABLE").map((row) => row.id)).toEqual(["missing"]);
   });
 });

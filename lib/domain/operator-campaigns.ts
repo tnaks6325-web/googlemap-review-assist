@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { unstable_cache } from "next/cache";
 import {
   toAdminCampaignBlogReference,
   type AdminCampaignBlogReference,
@@ -63,6 +64,7 @@ export const DEFAULT_REWARD_POINTS = 5000;
 const CAMPAIGN_ASSIGNMENT_SOURCE = "CAMPAIGN_ASSIGNMENT";
 const CAMPAIGN_ASSIGNMENT_STATUS_COMPLETED = "COMPLETED";
 const CAMPAIGN_COMPLETION_IDEMPOTENCY_PREFIX = "campaign-complete:";
+const PUBLIC_CAMPAIGN_CACHE_SECONDS = 10;
 
 export function googleMapsSearchUrl(name: string, address: string | null, googlePlaceId: string | null) {
   if (googlePlaceId) {
@@ -83,6 +85,12 @@ function statusLabel(active: boolean) {
 }
 
 type CampaignWithBusiness = Awaited<ReturnType<typeof fetchCampaigns>>[number];
+type CampaignForPresentation = Pick<
+  CampaignWithBusiness,
+  "id" | "slug" | "name" | "active" | "businessId" | "createdAt"
+> & {
+  business: Pick<CampaignWithBusiness["business"], "name" | "address" | "googlePlaceId" | "externalPlaces">;
+};
 type CampaignParticipationStats = {
   assignedCount: number;
   completedCount: number;
@@ -95,9 +103,25 @@ async function fetchCampaigns(includeInactive = false) {
     orderBy: { createdAt: "desc" },
     include: {
       business: {
-        include: {
+        select: {
+          name: true,
+          address: true,
+          googlePlaceId: true,
           externalPlaces: {
             where: { platform: { in: ["GOOGLE", "NAVER"] } },
+            select: {
+              platform: true,
+              externalId: true,
+              url: true,
+              name: true,
+              address: true,
+              category: true,
+              rating: true,
+              reviewCount: true,
+              matchStatus: true,
+              matchConfidence: true,
+              syncedAt: true,
+            },
           },
           externalReviews: {
             where: { content: { not: null } },
@@ -107,42 +131,56 @@ async function fetchCampaigns(includeInactive = false) {
           _count: { select: { menus: true } },
         },
       },
-      receipts: { select: { id: true, source: true, status: true } },
       blogReferences: {
         where: { status: "ACTIVE" },
         orderBy: { createdAt: "desc" },
         take: 5,
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          link: true,
+          bloggerName: true,
+          bloggerLink: true,
+          postdate: true,
+          publishedAt: true,
+          searchQuery: true,
+          status: true,
+          createdAt: true,
+        },
       },
       _count: { select: { codes: true, blogReferences: true } },
     },
   });
 }
 
-function campaignParticipationStats(
-  campaign: CampaignWithBusiness,
-  paidPointAmount?: number,
-): CampaignParticipationStats {
-  const assignmentReceipts = campaign.receipts.filter(
-    (receipt) => receipt.source === CAMPAIGN_ASSIGNMENT_SOURCE,
-  );
-  const completedReceipts = assignmentReceipts.filter(
-    (receipt) => receipt.status === CAMPAIGN_ASSIGNMENT_STATUS_COMPLETED,
-  );
-  return {
-    assignedCount: assignmentReceipts.length,
-    completedCount: completedReceipts.length,
-    paidPointAmount: paidPointAmount ?? completedReceipts.length * DEFAULT_REWARD_POINTS,
-  };
+function emptyCampaignParticipationStats(): CampaignParticipationStats {
+  return { assignedCount: 0, completedCount: 0, paidPointAmount: 0 };
 }
 
-function completedReceiptIds(campaign: CampaignWithBusiness) {
-  return campaign.receipts
-    .filter(
-      (receipt) =>
-        receipt.source === CAMPAIGN_ASSIGNMENT_SOURCE &&
-        receipt.status === CAMPAIGN_ASSIGNMENT_STATUS_COMPLETED,
-    )
-    .map((receipt) => receipt.id);
+async function fetchCampaignParticipationStats(campaignIds: string[]) {
+  const statsByCampaignId = new Map<string, CampaignParticipationStats>(
+    campaignIds.map((campaignId) => [campaignId, emptyCampaignParticipationStats()]),
+  );
+  if (campaignIds.length === 0) return statsByCampaignId;
+
+  const groups = await prisma.receipt.groupBy({
+    by: ["campaignId", "status"],
+    where: {
+      campaignId: { in: campaignIds },
+      source: CAMPAIGN_ASSIGNMENT_SOURCE,
+    },
+    _count: { _all: true },
+  });
+  for (const group of groups) {
+    const stats = statsByCampaignId.get(group.campaignId) ?? emptyCampaignParticipationStats();
+    stats.assignedCount += group._count._all;
+    if (group.status === CAMPAIGN_ASSIGNMENT_STATUS_COMPLETED) {
+      stats.completedCount += group._count._all;
+    }
+    statsByCampaignId.set(group.campaignId, stats);
+  }
+  return statsByCampaignId;
 }
 
 function completionIdempotencyKey(receiptId: string) {
@@ -150,8 +188,8 @@ function completionIdempotencyKey(receiptId: string) {
 }
 
 function toPublicCampaign(
-  campaign: CampaignWithBusiness,
-  stats = campaignParticipationStats(campaign),
+  campaign: CampaignForPresentation,
+  stats = emptyCampaignParticipationStats(),
 ): PublicCampaignCard {
   const googlePlace = campaign.business.externalPlaces.find((place) => place.platform === "GOOGLE") ?? null;
   const businessName = googlePlace?.name ?? campaign.business.name;
@@ -189,34 +227,42 @@ function toAdminNaverPlace(campaign: CampaignWithBusiness): AdminConnectedNaverP
   };
 }
 
-export async function getPublicCampaignDetail(slug: string): Promise<PublicCampaignDetail | null> {
+async function getPublicCampaignDetailUncached(slug: string): Promise<PublicCampaignDetail | null> {
   const campaign = await prisma.campaign.findUnique({
     where: { slug },
     include: {
       business: {
-        include: {
-          menus: true,
+        select: {
+          name: true,
+          address: true,
+          googlePlaceId: true,
+          menus: { select: { id: true, name: true, category: true } },
           externalPlaces: {
             where: { platform: "GOOGLE" },
             take: 1,
+            select: {
+              platform: true,
+              externalId: true,
+              url: true,
+              name: true,
+              address: true,
+              category: true,
+              rating: true,
+              reviewCount: true,
+              matchStatus: true,
+              matchConfidence: true,
+              syncedAt: true,
+            },
           },
-          externalReviews: {
-            where: { content: { not: null } },
-            select: { id: true, platform: true },
-            take: 0,
-          },
-          _count: { select: { menus: true } },
         },
       },
-      receipts: { select: { id: true, source: true, status: true } },
-      blogReferences: { take: 0 },
-      _count: { select: { codes: true, blogReferences: true } },
     },
   });
   if (!campaign) return null;
+  const stats = (await fetchCampaignParticipationStats([campaign.id])).get(campaign.id);
 
   return {
-    ...toPublicCampaign(campaign),
+    ...toPublicCampaign(campaign, stats),
     active: campaign.active,
     businessId: campaign.businessId,
     menus: campaign.business.menus.map((menu) => ({
@@ -227,14 +273,49 @@ export async function getPublicCampaignDetail(slug: string): Promise<PublicCampa
   };
 }
 
-export async function listPublicCampaigns(): Promise<PublicCampaignCard[]> {
+const getCachedPublicCampaignDetail = unstable_cache(
+  async (slug: string) => getPublicCampaignDetailUncached(slug),
+  ["public-campaign-detail"],
+  { revalidate: PUBLIC_CAMPAIGN_CACHE_SECONDS, tags: ["public-campaigns"] },
+);
+
+export async function getPublicCampaignDetail(slug: string): Promise<PublicCampaignDetail | null> {
+  if (process.env.NODE_ENV !== "production") return getPublicCampaignDetailUncached(slug);
+  return getCachedPublicCampaignDetail(slug);
+}
+
+async function listPublicCampaignsUncached(): Promise<PublicCampaignCard[]> {
   const campaigns = await fetchCampaigns(false);
-  return campaigns.map((campaign) => toPublicCampaign(campaign));
+  const statsByCampaignId = await fetchCampaignParticipationStats(campaigns.map((campaign) => campaign.id));
+  return campaigns.map((campaign) => toPublicCampaign(campaign, statsByCampaignId.get(campaign.id)));
+}
+
+const getCachedPublicCampaigns = unstable_cache(
+  async () => listPublicCampaignsUncached(),
+  ["public-campaign-list"],
+  { revalidate: PUBLIC_CAMPAIGN_CACHE_SECONDS, tags: ["public-campaigns"] },
+);
+
+export async function listPublicCampaigns(): Promise<PublicCampaignCard[]> {
+  if (process.env.NODE_ENV !== "production") return listPublicCampaignsUncached();
+  return getCachedPublicCampaigns();
 }
 
 export async function listAdminCampaigns(): Promise<AdminCampaignRow[]> {
   const campaigns = await fetchCampaigns(true);
-  const receiptIds = campaigns.flatMap(completedReceiptIds);
+  const campaignIds = campaigns.map((campaign) => campaign.id);
+  const [statsByCampaignId, completedReceipts] = await Promise.all([
+    fetchCampaignParticipationStats(campaignIds),
+    prisma.receipt.findMany({
+      where: {
+        campaignId: { in: campaignIds },
+        source: CAMPAIGN_ASSIGNMENT_SOURCE,
+        status: CAMPAIGN_ASSIGNMENT_STATUS_COMPLETED,
+      },
+      select: { id: true, campaignId: true },
+    }),
+  ]);
+  const receiptIds = completedReceipts.map((receipt) => receipt.id);
   const paidTransactions = receiptIds.length
     ? await prisma.pointTransaction.findMany({
         where: {
@@ -251,12 +332,23 @@ export async function listAdminCampaigns(): Promise<AdminCampaignRow[]> {
     paidAmountByReceiptId.set(receiptId, (paidAmountByReceiptId.get(receiptId) ?? 0) + tx.amount);
   }
 
+  const completedReceiptIdsByCampaignId = new Map<string, string[]>();
+  for (const receipt of completedReceipts) {
+    const ids = completedReceiptIdsByCampaignId.get(receipt.campaignId) ?? [];
+    ids.push(receipt.id);
+    completedReceiptIdsByCampaignId.set(receipt.campaignId, ids);
+  }
+
   return campaigns.map((campaign) => {
-    const paidPointAmount = completedReceiptIds(campaign).reduce(
+    const completedReceiptIds = completedReceiptIdsByCampaignId.get(campaign.id) ?? [];
+    const paidPointAmount = completedReceiptIds.reduce(
       (sum, receiptId) => sum + (paidAmountByReceiptId.get(receiptId) ?? 0),
       0,
     );
-    const stats = campaignParticipationStats(campaign, paidPointAmount);
+    const stats = {
+      ...(statsByCampaignId.get(campaign.id) ?? emptyCampaignParticipationStats()),
+      paidPointAmount,
+    };
     const googlePlace = campaign.business.externalPlaces.find((place) => place.platform === "GOOGLE") ?? null;
     const naverPlace = campaign.business.externalPlaces.find((place) => place.platform === "NAVER") ?? null;
     const googleReviewCount = campaign.business.externalReviews.filter(

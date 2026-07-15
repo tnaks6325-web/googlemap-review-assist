@@ -6,6 +6,7 @@ import {
 } from "@/lib/domain/admin";
 import {
   decodeSettlementPayoutInfo,
+  getReviewerSettlementSummary,
   processSettlement,
   requestSettlement,
   upsertReviewerPayoutAccount,
@@ -81,5 +82,12 @@ describe("settlement payout account", () => {
     });
     expect(notification?.title).toBe("정산완료");
     expect(notification?.body).toContain("4,000P");
+
+    const summary = await getReviewerSettlementSummary(reviewer.id);
+    expect(summary).toMatchObject({
+      availableBalance: 6000,
+      pendingAmount: 0,
+      paidAmount: 4000,
+    });
   });
 });

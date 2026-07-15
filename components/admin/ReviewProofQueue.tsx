@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
+import { filterAdminReviewProofs, type AdminReviewProofFilter } from "@/lib/domain/admin";
 
 type ReviewProofCheckStatus = "PASS" | "FAIL" | "UNKNOWN";
 
@@ -64,6 +65,8 @@ export function ReviewProofQueue({ items }: { items: ReviewProofItem[] }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [filter, setFilter] = useState<AdminReviewProofFilter>("ALL");
+  const visibleItems = filterAdminReviewProofs(items, filter);
 
   const act = async (id: string, action: "approve" | "reject") => {
     setBusy(`${id}:${action}`);
@@ -97,7 +100,33 @@ export function ReviewProofQueue({ items }: { items: ReviewProofItem[] }) {
     <div className="space-y-3">
       {message && <p className="rounded-card bg-brand-tint p-3 text-sm font-semibold text-brand">{message}</p>}
       {error && <p className="rounded-card bg-red-50 p-3 text-sm font-semibold text-danger">{error}</p>}
-      {items.map((item) => {
+      <div className="flex flex-wrap items-center gap-2" aria-label="검수 대기열 필터">
+        {([
+          ["ALL", "전체"],
+          ["MANUAL_REVIEW", "수동 확인"],
+          ["OCR_UNAVAILABLE", "OCR 미인식"],
+        ] as const).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setFilter(value)}
+            className={`h-9 rounded-full border px-3 text-xs font-semibold ${
+              filter === value
+                ? "border-brand bg-brand-tint text-brand"
+                : "border-line bg-surface text-ink-weak"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+        <span className="text-xs text-ink-weak">{visibleItems.length}건 표시</span>
+      </div>
+      {!visibleItems.length && (
+        <p className="rounded-card border border-line bg-canvas p-3 text-sm text-ink-weak">
+          선택한 조건에 맞는 검수 대기 건이 없습니다.
+        </p>
+      )}
+      {visibleItems.map((item) => {
         const checks = item.analysisChecks ?? EMPTY_CHECKS;
 
         return (
