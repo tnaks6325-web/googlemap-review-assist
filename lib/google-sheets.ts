@@ -54,7 +54,8 @@ export function googleSheetsFailureMessage(error: GoogleSheetsApiError) {
   }
 
   if (error.status === 400) {
-    return "GOOGLE_SHEETS_RANGE의 시트 탭 이름과 범위를 확인해 주세요. 기본값은 '광고요청시트'!A:U입니다.";
+    const detail = error.message.replace(/\s+/g, " ").trim().slice(0, 240);
+    return `GOOGLE_SHEETS_RANGE의 시트 탭 이름과 범위를 확인해 주세요. 기본값은 '광고요청시트'!A:U입니다.${detail ? ` (${detail})` : ""}`;
   }
 
   if (error.status === 429) {
@@ -139,7 +140,11 @@ export async function readGoogleSheetValues(spreadsheetId: string, range: string
   );
   const data = (await res.json().catch(() => ({}))) as ValuesResponse;
   if (!res.ok) {
-    throw new GoogleSheetsApiError(data.error?.status ?? "sheet read failed", res.status, "sheet");
+    throw new GoogleSheetsApiError(
+      data.error?.message ?? data.error?.status ?? "sheet read failed",
+      res.status,
+      "sheet"
+    );
   }
   return {
     range: data.range ?? range,
