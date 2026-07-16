@@ -322,6 +322,11 @@ export async function POST(req: Request) {
       return err("SHEETS_CONFIG_MISSING", "Google Sheets 환경변수가 설정되지 않았어요", 500);
     }
     if (e instanceof GoogleSheetsApiError) {
+      console.warn("google_sheets_read_failed", {
+        stage: e.stage,
+        status: e.status,
+        providerMessage: e.message,
+      });
       return err("SHEETS_READ_FAILED", googleSheetsFailureMessage(e), 502);
     }
     return err("SHEETS_IMPORT_FAILED", "시트 검사 중 문제가 생겼어요", 500);
