@@ -26,15 +26,38 @@ export class GoogleSheetsConfigError extends Error {
   code = "SHEETS_CONFIG_MISSING";
 }
 
+export type GoogleSheetsApiStage = "token" | "sheet";
+
 export class GoogleSheetsApiError extends Error {
   code = "SHEETS_API_FAILED";
 
   constructor(
     message: string,
-    readonly status: number
+    readonly status: number,
+    readonly stage: GoogleSheetsApiStage
   ) {
     super(message);
   }
+}
+
+export function googleSheetsFailureMessage(error: GoogleSheetsApiError) {
+  if (error.stage === "token") {
+    return "Google 서비스 계정 인증에 실패했어요. GOOGLE_SHEETS_CLIENT_EMAIL과 GOOGLE_SHEETS_PRIVATE_KEY를 확인해 주세요.";
+  }
+
+  if (error.status === 403) {
+    return "Google Sheets API를 활성화하고 광고 요청 시트를 서비스 계정 이메일에 뷰어 권한으로 공유해 주세요.";
+  }
+
+  if (error.status === 404) {
+    return "스프레드시트 ID 또는 시트 탭과 범위를 확인해 주세요.";
+  }
+
+  if (error.status === 429) {
+    return "Google Sheets API 할당량을 초과했어요. 잠시 후 다시 시도해 주세요.";
+  }
+
+  return "Google Sheet를 읽지 못했어요. 서비스 계정과 시트 설정을 확인해 주세요.";
 }
 
 function base64url(value: string | Buffer) {
@@ -92,7 +115,7 @@ async function createAccessToken() {
   });
   const data = (await res.json().catch(() => ({}))) as TokenResponse;
   if (!res.ok || !data.access_token) {
-    throw new GoogleSheetsApiError(data.error ?? "token request failed", res.status);
+    throw new GoogleSheetsApiError(data.error ?? "token request failed", res.status, "token");
   }
   return data.access_token;
 }
@@ -112,7 +135,7 @@ export async function readGoogleSheetValues(spreadsheetId: string, range: string
   );
   const data = (await res.json().catch(() => ({}))) as ValuesResponse;
   if (!res.ok) {
-    throw new GoogleSheetsApiError(data.error?.status ?? "sheet read failed", res.status);
+    throw new GoogleSheetsApiError(data.error?.status ?? "sheet read failed", res.status, "sheet");
   }
   return {
     range: data.range ?? range,

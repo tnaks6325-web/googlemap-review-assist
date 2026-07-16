@@ -17,6 +17,7 @@ import {
 import {
   GoogleSheetsApiError,
   GoogleSheetsConfigError,
+  googleSheetsFailureMessage,
   readGoogleSheetValues,
 } from "@/lib/google-sheets";
 
@@ -321,7 +322,7 @@ export async function POST(req: Request) {
       return err("SHEETS_CONFIG_MISSING", "Google Sheets 환경변수가 설정되지 않았어요", 500);
     }
     if (e instanceof GoogleSheetsApiError) {
-      return err("SHEETS_READ_FAILED", "Google Sheet를 읽지 못했어요. API 활성화와 시트 공유 권한을 확인해 주세요", 502);
+      return err("SHEETS_READ_FAILED", googleSheetsFailureMessage(e), 502);
     }
     return err("SHEETS_IMPORT_FAILED", "시트 검사 중 문제가 생겼어요", 500);
   }
