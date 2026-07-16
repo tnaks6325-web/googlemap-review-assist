@@ -25,4 +25,12 @@ describe("Google Sheets failure messages", () => {
       "스프레드시트 ID 또는 시트 탭과 범위를 확인해 주세요."
     );
   });
+
+  it("identifies an invalid worksheet range", () => {
+    const error = new GoogleSheetsApiError("bad request", 400, "sheet");
+
+    expect(googleSheetsFailureMessage(error)).toBe(
+      "GOOGLE_SHEETS_RANGE의 시트 탭 이름과 범위를 확인해 주세요. 기본값은 '광고요청시트'!A:U입니다."
+    );
+  });
 });

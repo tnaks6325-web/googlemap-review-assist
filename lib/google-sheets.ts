@@ -53,6 +53,10 @@ export function googleSheetsFailureMessage(error: GoogleSheetsApiError) {
     return "스프레드시트 ID 또는 시트 탭과 범위를 확인해 주세요.";
   }
 
+  if (error.status === 400) {
+    return "GOOGLE_SHEETS_RANGE의 시트 탭 이름과 범위를 확인해 주세요. 기본값은 '광고요청시트'!A:U입니다.";
+  }
+
   if (error.status === 429) {
     return "Google Sheets API 할당량을 초과했어요. 잠시 후 다시 시도해 주세요.";
   }
