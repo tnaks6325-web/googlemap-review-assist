@@ -73,7 +73,44 @@ describe("google map review sheet import dry-run parser", () => {
       landingUrl: "https://maps.app.goo.gl/test",
       totalQuota: 30,
       dailyQuota: 5,
+      guideKeywords: ["Mention side dishes and kind service"],
+      examplePhrases: ["Kind service", "Good side dishes"],
       examplePhraseCount: 2,
+    });
+  });
+
+  it("splits slash-separated review examples from the actual order sheet", () => {
+    const result = parseGoogleMapReviewSheet([
+      [],
+      [],
+      [],
+      [],
+      header,
+      [
+        "",
+        "2026-07-17",
+        "2026-07-21",
+        "2026-07-25",
+        "5",
+        "finish46",
+        "모락샤브 강남점",
+        "미기재",
+        "구글리뷰",
+        "미기재",
+        "미기재",
+        "구글 리뷰형",
+        "https://maps.app.goo.gl/test",
+        "25",
+        "5",
+        "강남역 샤브샤브, 매장이 넓고 쾌적한, 친절한 서비스",
+        "야채가 신선했어요 / 매장이 넓고 쾌적해요/직원분들이 친절해요",
+      ],
+    ]);
+
+    expect(result.rows[0]).toMatchObject({
+      guideKeywords: ["강남역 샤브샤브", "매장이 넓고 쾌적한", "친절한 서비스"],
+      examplePhrases: ["야채가 신선했어요", "매장이 넓고 쾌적해요", "직원분들이 친절해요"],
+      examplePhraseCount: 3,
     });
   });
 
@@ -219,6 +256,8 @@ describe("google map review sheet import dry-run parser", () => {
         totalQuota: 30,
         dailyQuota: 5,
         guide: "Guide",
+        guideKeywords: ["Guide"],
+        examplePhrases: ["Example"],
         examplePhraseCount: 1,
         excludedDays: [],
         errors: [],

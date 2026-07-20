@@ -12,7 +12,7 @@ import { listAdminCampaigns } from "@/lib/domain/operator-campaigns";
 export const runtime = "nodejs";
 
 const SHEET_URL =
-  "https://docs.google.com/spreadsheets/d/1utkH6WnPnDnqbvF2Szg3yIxFwU73vFBMMAWu1DjOE5s/edit?gid=342145819#gid=342145819";
+  "https://docs.google.com/spreadsheets/d/1dktrajeVNFQAGShNe5bMmeA_LGtLF386fwQ2Z-xqHKs/edit?gid=1469964854#gid=1469964854";
 
 export default async function AdminCampaignsPage() {
   const adminId = await getAdminId();

@@ -45,6 +45,8 @@ export interface SheetImportDryRunRow {
   totalQuota: number | null;
   dailyQuota: number | null;
   guide: string;
+  guideKeywords: string[];
+  examplePhrases: string[];
   examplePhraseCount: number;
   excludedDays: string[];
   errors: string[];
@@ -101,11 +103,30 @@ function parsePositiveInt(value: string) {
   return Number.isInteger(number) && number > 0 ? number : null;
 }
 
-function splitLines(value: string) {
-  return value
-    .split(/\r?\n/)
-    .map((item) => item.trim())
-    .filter(Boolean);
+function splitUniqueValues(
+  value: string,
+  separator: RegExp,
+  maxItems: number,
+  maxItemLength: number,
+) {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const item of value.split(separator)) {
+    const clean = item.replace(/\s+/g, " ").trim().slice(0, maxItemLength);
+    if (!clean || seen.has(clean)) continue;
+    seen.add(clean);
+    result.push(clean);
+    if (result.length >= maxItems) break;
+  }
+  return result;
+}
+
+function splitGuideKeywords(value: string) {
+  return splitUniqueValues(value, /[\r\n,/]+/, 20, 80);
+}
+
+function splitExamplePhrases(value: string) {
+  return splitUniqueValues(value, /(?:\r?\n|\/)+/, 10, 240);
 }
 
 function splitDays(value: string) {
@@ -182,7 +203,9 @@ export function parseGoogleMapReviewSheet(values: unknown[][]): SheetImportDryRu
     const totalQuota = parsePositiveInt(cell(row, COLUMN.totalQuota));
     const dailyQuota = parsePositiveInt(cell(row, COLUMN.dailyQuota));
     const guide = cell(row, COLUMN.guide);
-    const examplePhraseCount = splitLines(cell(row, COLUMN.examples)).length;
+    const guideKeywords = splitGuideKeywords(guide);
+    const examplePhrases = splitExamplePhrases(cell(row, COLUMN.examples));
+    const examplePhraseCount = examplePhrases.length;
     const excludedDays = splitDays(cell(row, COLUMN.excludedDays));
 
     const errors: string[] = [];
@@ -219,6 +242,8 @@ export function parseGoogleMapReviewSheet(values: unknown[][]): SheetImportDryRu
       totalQuota,
       dailyQuota,
       guide,
+      guideKeywords,
+      examplePhrases,
       examplePhraseCount,
       excludedDays,
       errors,

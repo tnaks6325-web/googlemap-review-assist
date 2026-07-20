@@ -177,6 +177,18 @@ export async function syncGoogleMapReviewCampaignRows(
         });
 
     await ensureCampaignCodes(campaign.id, row.totalQuota);
+    await prisma.campaignDraftGuidance.upsert({
+      where: { campaignId: campaign.id },
+      create: {
+        campaignId: campaign.id,
+        guideKeywordsJson: JSON.stringify(row.guideKeywords),
+        reviewExamplesJson: JSON.stringify(row.examplePhrases),
+      },
+      update: {
+        guideKeywordsJson: JSON.stringify(row.guideKeywords),
+        reviewExamplesJson: JSON.stringify(row.examplePhrases),
+      },
+    });
 
     if (existingCampaign) result.updated += 1;
     else result.imported += 1;
