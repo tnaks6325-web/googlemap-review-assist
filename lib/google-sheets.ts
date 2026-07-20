@@ -18,6 +18,11 @@ interface ValuesResponse {
   error?: { status?: string; message?: string };
 }
 
+interface SpreadsheetMetadataResponse {
+  properties?: { title?: unknown };
+  error?: { status?: string; message?: string };
+}
+
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly";
 const FETCH_TIMEOUT_MS = 10000;
@@ -63,6 +68,18 @@ export function googleSheetsFailureMessage(error: GoogleSheetsApiError) {
   }
 
   return "Google Sheet를 읽지 못했어요. 서비스 계정과 시트 설정을 확인해 주세요.";
+}
+
+export function parseGoogleSpreadsheetTitle(value: unknown) {
+  if (!value || typeof value !== "object") return null;
+
+  const properties = (value as SpreadsheetMetadataResponse).properties;
+  const title =
+    properties && typeof properties.title === "string"
+      ? properties.title.trim()
+      : "";
+
+  return title ? title.slice(0, 200) : null;
 }
 
 function base64url(value: string | Buffer) {
@@ -150,4 +167,35 @@ export async function readGoogleSheetValues(spreadsheetId: string, range: string
     range: data.range ?? range,
     values: Array.isArray(data.values) ? data.values : [],
   };
+}
+
+export async function readGoogleSpreadsheetTitle(spreadsheetId: string) {
+  if (!spreadsheetId.trim()) {
+    throw new GoogleSheetsConfigError(
+      "Google Sheets spreadsheet id is not configured",
+    );
+  }
+
+  const accessToken = await createAccessToken();
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}?fields=properties(title)&includeGridData=false`,
+    {
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      headers: { authorization: `Bearer ${accessToken}` },
+    },
+  );
+  const data = (await res
+    .json()
+    .catch(() => ({}))) as SpreadsheetMetadataResponse;
+  if (!res.ok) {
+    throw new GoogleSheetsApiError(
+      data.error?.message ??
+        data.error?.status ??
+        "spreadsheet metadata read failed",
+      res.status,
+      "sheet",
+    );
+  }
+
+  return parseGoogleSpreadsheetTitle(data);
 }

@@ -1,5 +1,32 @@
 import { describe, expect, it } from "vitest";
-import { GoogleSheetsApiError, googleSheetsFailureMessage } from "@/lib/google-sheets";
+import {
+  GoogleSheetsApiError,
+  googleSheetsFailureMessage,
+  parseGoogleSpreadsheetTitle,
+} from "@/lib/google-sheets";
+
+describe("Google Sheets metadata", () => {
+  it("reads a trimmed spreadsheet title from API metadata", () => {
+    expect(
+      parseGoogleSpreadsheetTitle({
+        properties: { title: "  IA 플레이스 광고 요청서  " },
+      }),
+    ).toBe("IA 플레이스 광고 요청서");
+  });
+
+  it("returns null when spreadsheet metadata has no usable title", () => {
+    expect(parseGoogleSpreadsheetTitle({ properties: { title: " " } })).toBeNull();
+    expect(parseGoogleSpreadsheetTitle({})).toBeNull();
+  });
+
+  it("limits an external spreadsheet title before rendering it", () => {
+    const title = parseGoogleSpreadsheetTitle({
+      properties: { title: "가".repeat(300) },
+    });
+
+    expect(title).toHaveLength(200);
+  });
+});
 
 describe("Google Sheets failure messages", () => {
   it("explains service account token failures without exposing the provider response", () => {

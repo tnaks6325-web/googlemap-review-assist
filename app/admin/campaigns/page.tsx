@@ -3,22 +3,28 @@ import {
   AdminCampaignOperationsTable,
   type AdminCampaignOperationsRow,
 } from "@/components/admin/AdminCampaignOperationsTable";
+import { GoogleSheetConnectionStatus } from "@/components/admin/GoogleSheetConnectionStatus";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { SheetImportDryRun } from "@/components/admin/SheetImportDryRun";
 import { operationalCampaignStatus } from "@/lib/admin-campaign-table";
 import { getAdminId } from "@/lib/auth/session";
 import { listAdminCampaigns } from "@/lib/domain/operator-campaigns";
+import { readGoogleSpreadsheetTitle } from "@/lib/google-sheets";
 
 export const runtime = "nodejs";
 
-const SHEET_URL =
-  "https://docs.google.com/spreadsheets/d/1dktrajeVNFQAGShNe5bMmeA_LGtLF386fwQ2Z-xqHKs/edit?gid=1469964854#gid=1469964854";
+const SPREADSHEET_ID =
+  "1dktrajeVNFQAGShNe5bMmeA_LGtLF386fwQ2Z-xqHKs";
+const SHEET_URL = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/edit?gid=1469964854#gid=1469964854`;
 
 export default async function AdminCampaignsPage() {
   const adminId = await getAdminId();
   if (!adminId) redirect("/admin/login");
 
-  const campaigns = await listAdminCampaigns();
+  const [campaigns, spreadsheetTitle] = await Promise.all([
+    listAdminCampaigns(),
+    readGoogleSpreadsheetTitle(SPREADSHEET_ID).catch(() => null),
+  ]);
   const activeCount = campaigns.filter((campaign) => campaign.active).length;
   const assignedCount = campaigns.reduce(
     (sum, campaign) => sum + campaign.assignedTodayCount,
@@ -80,13 +86,7 @@ export default async function AdminCampaignsPage() {
               aria-hidden="true"
               className="mt-1 size-2 shrink-0 rounded-full bg-success shadow-[0_0_0_4px_#dff7ec]"
             />
-            <div>
-              <p className="font-bold text-ink">Google Sheet 연동 정상</p>
-              <p className="mt-1 text-xs leading-5 text-ink-weak">
-                업체명, 장소 URL, 목표 수량과 가이드라인을 검사한 뒤
-                캠페인으로 반영합니다.
-              </p>
-            </div>
+            <GoogleSheetConnectionStatus title={spreadsheetTitle} />
           </div>
           <div className="rounded-[11px] border border-blue-100 bg-white/80 p-4">
             <div className="mb-3 flex justify-end">
