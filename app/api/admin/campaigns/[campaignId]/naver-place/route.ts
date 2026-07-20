@@ -2,8 +2,8 @@ import { getAdminId } from "@/lib/auth/session";
 import { checkOrigin } from "@/lib/auth/origin";
 import { prisma } from "@/lib/db";
 import {
-  naverPlaceSnapshotFromCandidate,
   naverPlaceSnapshotFromPlaceId,
+  resolveNaverPlaceSnapshotFromCandidate,
 } from "@/lib/domain/admin-campaign-naver";
 import { saveExternalPlace } from "@/lib/domain/external-place-save";
 import { recordOperationalError } from "@/lib/error-logging";
@@ -73,13 +73,16 @@ export async function PUT(req: Request, { params }: { params: Promise<{ campaign
         businessAddress: campaign.business.address,
         existingPlace: campaign.business.externalPlaces[0] ?? null,
       })
-    : naverPlaceSnapshotFromCandidate(body?.candidate, campaign.business.name);
+    : await resolveNaverPlaceSnapshotFromCandidate(
+        body?.candidate,
+        campaign.business.name,
+      );
   if (!place) {
     return err(
       "INVALID_INPUT",
       hasManualPlaceId
         ? "네이버 플레이스 ID는 숫자만 입력해 주세요"
-        : "저장할 네이버 플레이스 후보가 올바르지 않아요",
+        : "선택한 후보의 네이버 Place ID를 확인하지 못했어요",
       400,
     );
   }

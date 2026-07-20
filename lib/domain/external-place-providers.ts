@@ -294,10 +294,28 @@ export function naverPlaceIdFromSearchHtml(
       return match[1] ?? null;
     }
   }
+
+  const placeUrl =
+    /https:\/\/map\.naver\.com\/p\/entry\/place\/(\d{1,20})[^"'\\\s<]*/gi;
+  const matches = Array.from(html.matchAll(placeUrl));
+  for (const [index, match] of matches.entries()) {
+    const start = match.index ?? 0;
+    const nextStart = matches[index + 1]?.index ?? html.length;
+    const end = Math.min(nextStart, start + 4000);
+    const nearbyText = html
+      .slice(start, end)
+      .replace(/<[^>]*>/g, " ")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;|&apos;/g, "'")
+      .replace(/&amp;/g, "&");
+    if (normalizedNaverResultName(nearbyText).includes(expected)) {
+      return match[1] ?? null;
+    }
+  }
   return null;
 }
 
-async function resolveNaverPlaceUrlFromSearch(name: string) {
+export async function resolveNaverPlaceUrlFromSearch(name: string) {
   const url = new URL("https://search.naver.com/search.naver");
   url.searchParams.set("where", "nexearch");
   url.searchParams.set("query", name.slice(0, 120));

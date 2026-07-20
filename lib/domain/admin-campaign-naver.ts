@@ -1,4 +1,9 @@
-import { findNaverCandidates, type ExternalPlaceSnapshot, type NaverCandidate } from "@/lib/domain/external-place-providers";
+import {
+  findNaverCandidates,
+  resolveNaverPlaceUrlFromSearch,
+  type ExternalPlaceSnapshot,
+  type NaverCandidate,
+} from "@/lib/domain/external-place-providers";
 import type { PlaceMatchBase } from "@/lib/domain/external-places";
 import {
   parseNaverPlaceInput,
@@ -115,6 +120,30 @@ export function naverPlaceSnapshotFromCandidate(
     matchConfidence: candidateConfidence(candidate.matchConfidence),
     rawJson: candidate.rawJson ? String(candidate.rawJson).slice(0, 8000) : safeJsonSnapshot(candidate),
   };
+}
+
+export async function resolveNaverPlaceSnapshotFromCandidate(
+  raw: unknown,
+  businessName: string,
+): Promise<ExternalPlaceSnapshot | null> {
+  const place = naverPlaceSnapshotFromCandidate(raw, businessName);
+  if (!place || place.externalId) return place;
+
+  let resolvedUrl: string | null = null;
+  try {
+    resolvedUrl = await resolveNaverPlaceUrlFromSearch(place.name);
+  } catch {
+    return null;
+  }
+  if (!resolvedUrl || !raw || typeof raw !== "object") return null;
+
+  return naverPlaceSnapshotFromCandidate(
+    {
+      ...(raw as Record<string, unknown>),
+      link: resolvedUrl,
+    },
+    businessName,
+  );
 }
 
 export const MIN_AUTO_NAVER_LINK_CONFIDENCE = 90;

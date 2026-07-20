@@ -3,7 +3,10 @@ import { recordOperationalError } from "@/lib/error-logging";
 import { getAdminId } from "@/lib/auth/session";
 import { checkOrigin } from "@/lib/auth/origin";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
-import { findBestNaverPlaceSnapshotForCampaign } from "@/lib/domain/admin-campaign-naver";
+import {
+  findBestNaverPlaceSnapshotForCampaign,
+  MIN_AUTO_NAVER_MATCH_CONFIDENCE,
+} from "@/lib/domain/admin-campaign-naver";
 import { resolveGooglePlace } from "@/lib/domain/external-place-providers";
 import { syncGoogleMapReviewCampaignRows } from "@/lib/domain/google-sheet-campaign-sync";
 import {
@@ -26,7 +29,7 @@ export const runtime = "nodejs";
 
 const HOUR = 60 * 60 * 1000;
 const PLACE_PREVIEW_LIMIT = 12;
-const STRONG_NAVER_MATCH_CONFIDENCE = 75;
+const STRONG_NAVER_MATCH_CONFIDENCE = MIN_AUTO_NAVER_MATCH_CONFIDENCE;
 const GOOGLE_MAP_REVIEW_SPREADSHEET_ID = "1dktrajeVNFQAGShNe5bMmeA_LGtLF386fwQ2Z-xqHKs";
 
 function googlePlaceErrorMessage(error: unknown) {
