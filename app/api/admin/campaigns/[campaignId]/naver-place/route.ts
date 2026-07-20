@@ -1,7 +1,10 @@
 import { getAdminId } from "@/lib/auth/session";
 import { checkOrigin } from "@/lib/auth/origin";
 import { prisma } from "@/lib/db";
-import { naverPlaceSnapshotFromCandidate, naverPlaceSnapshotFromManualUrl } from "@/lib/domain/admin-campaign-naver";
+import {
+  naverPlaceSnapshotFromCandidate,
+  naverPlaceSnapshotFromPlaceId,
+} from "@/lib/domain/admin-campaign-naver";
 import { saveExternalPlace } from "@/lib/domain/external-place-save";
 import { ok, err } from "@/lib/http";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
@@ -58,15 +61,25 @@ export async function PUT(req: Request, { params }: { params: Promise<{ campaign
   if (!campaign) return err("CAMPAIGN_NOT_FOUND", "캠페인을 찾을 수 없어요", 404);
 
   const body = await req.json().catch(() => null);
-  const manualUrl = typeof body?.naverUrl === "string" ? body.naverUrl : "";
-  const place = manualUrl
-    ? naverPlaceSnapshotFromManualUrl(manualUrl, {
+  const hasManualPlaceId = typeof body?.naverPlaceId === "string";
+  const manualPlaceId =
+    hasManualPlaceId ? body.naverPlaceId : "";
+  const place = hasManualPlaceId
+    ? naverPlaceSnapshotFromPlaceId(manualPlaceId, {
         businessName: campaign.business.name,
         businessAddress: campaign.business.address,
         existingPlace: campaign.business.externalPlaces[0] ?? null,
       })
     : naverPlaceSnapshotFromCandidate(body?.candidate, campaign.business.name);
-  if (!place) return err("INVALID_INPUT", "저장할 네이버 플레이스 후보가 올바르지 않아요", 400);
+  if (!place) {
+    return err(
+      "INVALID_INPUT",
+      hasManualPlaceId
+        ? "네이버 플레이스 ID는 숫자만 입력해 주세요"
+        : "저장할 네이버 플레이스 후보가 올바르지 않아요",
+      400,
+    );
+  }
 
   const saved = await saveExternalPlace(campaign.businessId, place);
   return ok({ place: placeResponse(saved) });

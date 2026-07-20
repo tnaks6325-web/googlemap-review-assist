@@ -53,7 +53,7 @@ export function AdminCampaignNaverCandidates({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [savingIndex, setSavingIndex] = useState<number | null>(null);
-  const [manualUrl, setManualUrl] = useState("");
+  const [manualPlaceId, setManualPlaceId] = useState("");
   const [manualSaving, setManualSaving] = useState(false);
 
   const loadCandidates = async () => {
@@ -108,10 +108,10 @@ export function AdminCampaignNaverCandidates({
     }
   };
 
-  const saveManualUrl = async () => {
-    const naverUrl = manualUrl.trim();
-    if (!naverUrl) {
-      setError("네이버 스마트플레이스 상세 URL을 입력해 주세요.");
+  const saveManualPlaceId = async () => {
+    const naverPlaceId = manualPlaceId.trim();
+    if (!/^\d{1,20}$/.test(naverPlaceId)) {
+      setError("네이버 플레이스 ID는 숫자만 입력해 주세요.");
       return;
     }
 
@@ -122,16 +122,16 @@ export function AdminCampaignNaverCandidates({
       const res = await fetch(`/api/admin/campaigns/${campaignId}/naver-place`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ naverUrl }),
+        body: JSON.stringify({ naverPlaceId }),
       });
       const data = (await res.json().catch(() => null)) as (SaveResult & ErrorResult) | null;
-      if (!res.ok) throw new Error(data?.error?.message || "네이버 상세 URL을 저장하지 못했습니다.");
+      if (!res.ok) throw new Error(data?.error?.message || "네이버 플레이스 ID를 저장하지 못했습니다.");
       if (!data?.place) throw new Error("네이버 저장 응답이 비어 있습니다.");
       setConnectedPlace(data.place);
-      setManualUrl("");
+      setManualPlaceId("");
       setEditing(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "네이버 상세 URL을 저장하지 못했습니다.");
+      setError(e instanceof Error ? e.message : "네이버 플레이스 ID를 저장하지 못했습니다.");
     } finally {
       setManualSaving(false);
     }
@@ -203,30 +203,41 @@ export function AdminCampaignNaverCandidates({
       <div className="mt-3 rounded-card border border-line bg-surface p-3">
         <p className="text-xs font-semibold text-ink">관리자 보정</p>
         <p className="mt-1 text-xs text-ink-weak">
-          네이버 지도에서 매장 상세 화면을 연 뒤 주소창 URL 또는 공유 링크를
-          붙여넣으세요. URL에 매장 Place ID 숫자가 포함되어야 합니다.
+          네이버 상세페이지 주소의 <strong>/place/</strong> 또는{" "}
+          <strong>/restaurant/</strong> 뒤에 있는 숫자만 입력하세요.
         </p>
-        <p className="mt-1 break-all rounded-[8px] bg-canvas px-2 py-1.5 text-[11px] leading-5 text-ink-weak">
-          예: https://map.naver.com/p/entry/place/2059222523
-          <br />
-          또는 https://pcmap.place.naver.com/restaurant/2059222523/home
+        <p className="mt-1 rounded-[8px] bg-canvas px-2 py-1.5 text-[11px] leading-5 text-ink-weak">
+          입력 예시: <strong className="text-ink-sub">2059222523</strong>
         </p>
         <div className="mt-2 flex flex-col gap-2 sm:flex-row">
           <input
-            value={manualUrl}
-            onChange={(event) => setManualUrl(event.target.value)}
-            placeholder="https://pcmap.place.naver.com/restaurant/..."
+            type="text"
+            value={manualPlaceId}
+            onChange={(event) => {
+              if (/^\d*$/.test(event.target.value)) {
+                setManualPlaceId(event.target.value);
+                setError(null);
+              } else {
+                setError("네이버 플레이스 ID는 숫자만 입력해 주세요.");
+              }
+            }}
+            inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={20}
+            autoComplete="off"
+            aria-label="네이버 플레이스 ID"
+            placeholder="예: 2059222523"
             className="h-10 min-w-0 flex-1 rounded-btn border border-line bg-canvas px-3 text-sm text-ink outline-none focus:border-brand"
           />
           <Button
             type="button"
             variant="secondary"
             loading={manualSaving}
-            disabled={manualSaving || savingIndex !== null}
-            onClick={saveManualUrl}
+            disabled={manualSaving || savingIndex !== null || !manualPlaceId}
+            onClick={saveManualPlaceId}
             className="h-10 shrink-0 px-3 text-xs"
           >
-            상세 URL 저장
+            Place ID 저장
           </Button>
         </div>
       </div>
