@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AdminCampaignBlogReferences } from "@/components/admin/AdminCampaignBlogReferences";
 import { AdminCampaignDraftPreview } from "@/components/admin/AdminCampaignDraftPreview";
 import { AdminCampaignDraftGuidance } from "@/components/admin/AdminCampaignDraftGuidance";
 import { AdminCampaignNaverCandidates } from "@/components/admin/AdminCampaignNaverCandidates";
+import { Button } from "@/components/ui";
 import {
+  adminCampaignAutomationPlan,
   automaticNaverCampaignIds,
   filterAdminCampaignRows,
   operationalCampaignStatus,
@@ -35,6 +37,46 @@ const STATUS_OPTIONS: Array<{
   { value: "inactive", label: "중지됨" },
 ];
 
+async function requestNaverAutoLink(campaignId: string) {
+  try {
+    const response = await fetch(
+      `/api/admin/campaigns/${campaignId}/naver-candidates`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      },
+    );
+    if (!response.ok) return false;
+    const data = (await response.json().catch(() => null)) as {
+      place?: unknown;
+    } | null;
+    return Boolean(data?.place);
+  } catch {
+    return false;
+  }
+}
+
+async function requestBlogReferenceCollection(campaignId: string) {
+  try {
+    const response = await fetch(
+      `/api/admin/campaigns/${campaignId}/blog-references`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      },
+    );
+    if (!response.ok) return false;
+    const data = (await response.json().catch(() => null)) as {
+      providerConfigured?: boolean;
+    } | null;
+    return Boolean(data?.providerConfigured);
+  } catch {
+    return false;
+  }
+}
+
 export function AdminCampaignOperationsTable({
   campaigns,
 }: {
@@ -42,8 +84,18 @@ export function AdminCampaignOperationsTable({
 }) {
   const router = useRouter();
   const autoLinkStarted = useRef(false);
+  const autoLinkPromise = useRef<Promise<number> | null>(null);
+  const automationRunning = useRef(false);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<AdminCampaignStatusFilter>("all");
+  const [automationLoading, setAutomationLoading] = useState(false);
+  const [automationProgress, setAutomationProgress] = useState<string | null>(
+    null,
+  );
+  const [automationMessage, setAutomationMessage] = useState<{
+    text: string;
+    hasError: boolean;
+  } | null>(null);
   const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(
     null,
   );
@@ -53,6 +105,29 @@ export function AdminCampaignOperationsTable({
     [campaigns, query, status],
   );
 
+  const runNaverAutoLink = useCallback((campaignIds: string[]) => {
+    if (autoLinkPromise.current) return autoLinkPromise.current;
+
+    const promise = (async () => {
+      let savedCount = 0;
+      for (let index = 0; index < campaignIds.length; index += 3) {
+        const results = await Promise.all(
+          campaignIds
+            .slice(index, index + 3)
+            .map((campaignId) => requestNaverAutoLink(campaignId)),
+        );
+        savedCount += results.filter(Boolean).length;
+      }
+      return savedCount;
+    })();
+
+    autoLinkPromise.current = promise;
+    void promise.finally(() => {
+      if (autoLinkPromise.current === promise) autoLinkPromise.current = null;
+    });
+    return promise;
+  }, []);
+
   useEffect(() => {
     if (autoLinkStarted.current) return;
     autoLinkStarted.current = true;
@@ -61,43 +136,60 @@ export function AdminCampaignOperationsTable({
     if (!campaignIds.length) return;
 
     let cancelled = false;
-    const autoLink = async () => {
-      let updated = false;
-
-      for (let index = 0; index < campaignIds.length; index += 3) {
-        const batch = campaignIds.slice(index, index + 3);
-        const results = await Promise.all(
-          batch.map(async (campaignId) => {
-            try {
-              const response = await fetch(
-                `/api/admin/campaigns/${campaignId}/naver-candidates`,
-                {
-                  method: "POST",
-                  headers: { "content-type": "application/json" },
-                  body: JSON.stringify({}),
-                },
-              );
-              if (!response.ok) return false;
-              const data = (await response.json().catch(() => null)) as {
-                place?: unknown;
-              } | null;
-              return Boolean(data?.place);
-            } catch {
-              return false;
-            }
-          }),
-        );
-        updated = results.some(Boolean) || updated;
+    void runNaverAutoLink(campaignIds).then((savedCount) => {
+      if (savedCount > 0 && !cancelled && !automationRunning.current) {
+        router.refresh();
       }
-
-      if (updated && !cancelled) router.refresh();
-    };
-
-    void autoLink();
+    });
     return () => {
       cancelled = true;
     };
-  }, [campaigns, router]);
+  }, [campaigns, router, runNaverAutoLink]);
+
+  const runAllAutomation = async () => {
+    const plan = adminCampaignAutomationPlan(campaigns);
+    automationRunning.current = true;
+    setAutomationLoading(true);
+    setAutomationMessage(null);
+    setAutomationProgress("네이버 Place ID 자동보정 중");
+
+    try {
+      const savedNaverCount = await runNaverAutoLink(
+        plan.naverCampaignIds,
+      );
+      let collectedCount = 0;
+      let failedCount = 0;
+
+      for (
+        let index = 0;
+        index < plan.referenceCampaignIds.length;
+        index += 3
+      ) {
+        setAutomationProgress(
+          `참고자료 수집 중 ${Math.min(index + 3, plan.referenceCampaignIds.length)}/${plan.referenceCampaignIds.length}`,
+        );
+        const results = await Promise.all(
+          plan.referenceCampaignIds
+            .slice(index, index + 3)
+            .map((campaignId) => requestBlogReferenceCollection(campaignId)),
+        );
+        collectedCount += results.filter(Boolean).length;
+        failedCount += results.filter((success) => !success).length;
+      }
+
+      setAutomationMessage({
+        text: `네이버 ${savedNaverCount}건 자동보정 · 참고자료 ${collectedCount}개 캠페인 수집 완료${
+          failedCount ? ` · 실패 ${failedCount}건` : ""
+        }`,
+        hasError: failedCount > 0,
+      });
+      router.refresh();
+    } finally {
+      automationRunning.current = false;
+      setAutomationLoading(false);
+      setAutomationProgress(null);
+    }
+  };
 
   return (
     <section>
@@ -112,9 +204,28 @@ export function AdminCampaignOperationsTable({
           <p className="mt-1 text-xs text-ink-weak">
             행을 펼치면 장소 연결, 참고자료 수집, 원고 가이드를 관리할 수 있습니다.
           </p>
+          {automationMessage ? (
+            <p
+              className={`mt-1 text-xs font-semibold ${
+                automationMessage.hasError ? "text-danger" : "text-success"
+              }`}
+            >
+              {automationMessage.text}
+            </p>
+          ) : null}
         </div>
 
         <div className="flex flex-col gap-2 sm:flex-row">
+          <Button
+            type="button"
+            variant="secondary"
+            loading={automationLoading}
+            disabled={automationLoading || campaigns.length === 0}
+            onClick={runAllAutomation}
+            className="h-10 shrink-0 whitespace-nowrap px-3 text-xs"
+          >
+            {automationProgress ?? "네이버 자동보정 + 참고자료 수집"}
+          </Button>
           <label className="relative block">
             <span className="sr-only">캠페인 검색</span>
             <svg

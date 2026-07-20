@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  adminCampaignAutomationPlan,
   automaticNaverCampaignIds,
   filterAdminCampaignRows,
   operationalCampaignStatus,
@@ -59,6 +60,34 @@ describe("admin campaign table", () => {
         },
       ]),
     ).toEqual(["campaign-1", "campaign-3"]);
+  });
+
+  it("plans one Naver correction per business and reference collection per campaign", () => {
+    expect(
+      adminCampaignAutomationPlan([
+        {
+          id: "campaign-1",
+          businessId: "business-1",
+          hasGooglePlace: true,
+          naverPlace: null,
+        },
+        {
+          id: "campaign-2",
+          businessId: "business-1",
+          hasGooglePlace: true,
+          naverPlace: { matchStatus: "NEEDS_REVIEW" },
+        },
+        {
+          id: "campaign-3",
+          businessId: "business-2",
+          hasGooglePlace: true,
+          naverPlace: { matchStatus: "LINKED" },
+        },
+      ]),
+    ).toEqual({
+      naverCampaignIds: ["campaign-1"],
+      referenceCampaignIds: ["campaign-1", "campaign-2", "campaign-3"],
+    });
   });
 
   it("marks an active campaign requiring source review as needing attention", () => {

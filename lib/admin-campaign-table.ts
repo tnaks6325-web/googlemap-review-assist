@@ -53,6 +53,15 @@ export function automaticNaverCampaignIds(
   return campaignIds;
 }
 
+export function adminCampaignAutomationPlan(
+  campaigns: AdminCampaignNaverAutoLinkRow[],
+) {
+  return {
+    naverCampaignIds: automaticNaverCampaignIds(campaigns),
+    referenceCampaignIds: [...new Set(campaigns.map((campaign) => campaign.id))],
+  };
+}
+
 export function operationalCampaignStatus(
   campaign: AdminCampaignFilterRow,
 ) {
