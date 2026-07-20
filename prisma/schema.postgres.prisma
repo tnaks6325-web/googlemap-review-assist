@@ -287,6 +287,41 @@ model OperationalJob {
   @@index([status, runAt])
 }
 
+model OperationalError {
+  id               String    @id @default(cuid())
+  fingerprint      String    @unique
+  severity         String
+  source           String
+  workflow         String
+  stage            String
+  code             String
+  title            String
+  situation        String
+  cause            String
+  impact           String
+  action           String
+  narrative        String
+  technicalName    String?
+  technicalMessage String?
+  digest           String?
+  route            String?
+  method           String?
+  requestId        String?
+  entityType       String?
+  entityId         String?
+  metadataJson     String?
+  status           String    @default("OPEN")
+  occurrenceCount  Int       @default(1)
+  firstOccurredAt  DateTime  @default(now())
+  lastOccurredAt   DateTime  @default(now())
+  resolvedAt       DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([status, severity, lastOccurredAt])
+  @@index([workflow, lastOccurredAt])
+}
+
 model Feedback {
   id          String            @id @default(cuid())
   receiptId   String            @unique // 1 영수증 1 설문

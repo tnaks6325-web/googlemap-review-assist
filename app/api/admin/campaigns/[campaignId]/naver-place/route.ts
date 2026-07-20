@@ -6,6 +6,7 @@ import {
   naverPlaceSnapshotFromPlaceId,
 } from "@/lib/domain/admin-campaign-naver";
 import { saveExternalPlace } from "@/lib/domain/external-place-save";
+import { recordOperationalError } from "@/lib/error-logging";
 import { ok, err } from "@/lib/http";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 
@@ -83,6 +84,27 @@ export async function PUT(req: Request, { params }: { params: Promise<{ campaign
     );
   }
 
-  const saved = await saveExternalPlace(campaign.businessId, place);
-  return ok({ place: placeResponse(saved) });
+  try {
+    const saved = await saveExternalPlace(campaign.businessId, place);
+    return ok({ place: placeResponse(saved) });
+  } catch (error) {
+    await recordOperationalError({
+      severity: "ERROR",
+      source: "INTEGRATION",
+      workflow: "네이버 장소 연결",
+      stage: "Place ID 저장",
+      code: "NAVER_PLACE_SAVE_FAILED",
+      title: "네이버 Place ID를 저장하지 못했습니다.",
+      situation: "관리자가 선택하거나 입력한 네이버 장소를 캠페인에 연결하던 중이었습니다.",
+      cause: "확인한 장소 정보를 데이터베이스에 저장하는 과정에서 오류가 발생했습니다.",
+      impact: "해당 캠페인의 네이버 장소 연결이 완료되지 않았습니다.",
+      action: "잠시 후 다시 저장하고 계속 실패하면 데이터베이스 상태를 확인해 주세요.",
+      route: req.url,
+      method: "PUT",
+      entityType: "campaign",
+      entityId: campaignId,
+      error,
+    });
+    return err("NAVER_PLACE_SAVE_FAILED", "네이버 플레이스 ID를 저장하지 못했습니다.", 500);
+  }
 }

@@ -7,6 +7,7 @@ import {
   ReviewerCampaignError,
 } from "@/lib/domain/reviewer-campaigns";
 import { err, ok } from "@/lib/http";
+import { recordOperationalError } from "@/lib/error-logging";
 import {
   getPrivateReviewProof,
   privateReviewProofResponse,
@@ -37,6 +38,23 @@ export async function GET(
     return privateReviewProofResponse(result);
   } catch (e) {
     if (e instanceof ReviewProofStorageError) return err(e.code, e.message, e.status);
+    await recordOperationalError({
+      severity: "ERROR",
+      source: "INTEGRATION",
+      workflow: "리뷰 인증 확인",
+      stage: "인증 이미지 불러오기",
+      code: "PROOF_STORAGE_UNAVAILABLE",
+      title: "리뷰 인증 이미지를 불러오지 못했습니다.",
+      situation: "관리자가 제출된 리뷰 인증 이미지를 확인하던 중이었습니다.",
+      cause: "비공개 이미지 저장소에 연결하거나 파일을 읽는 과정에서 오류가 발생했습니다.",
+      impact: "해당 인증 이미지를 표시할 수 없어 승인 여부를 판단할 수 없습니다.",
+      action: "이미지 저장소 상태를 확인한 뒤 다시 열어 주세요.",
+      route: req.url,
+      method: "GET",
+      entityType: "assignment",
+      entityId: assignmentId,
+      error: e,
+    });
     return err("PROOF_STORAGE_UNAVAILABLE", "캡처 저장소에 연결할 수 없어요.", 503);
   }
 }
@@ -68,6 +86,23 @@ export async function POST(
     if (e instanceof ReviewerCampaignError) {
       return err(e.code, e.message, e.status);
     }
+    await recordOperationalError({
+      severity: "ERROR",
+      source: "SERVER",
+      workflow: "리뷰 인증 처리",
+      stage: action === "approve" ? "인증 승인과 포인트 지급" : "인증 반려",
+      code: "REVIEW_PROOF_FAILED",
+      title: "리뷰 인증 처리 결과를 저장하지 못했습니다.",
+      situation: "관리자가 제출된 리뷰 인증을 승인 또는 반려하던 중이었습니다.",
+      cause: "인증 상태와 포인트 원장을 함께 저장하는 과정에서 예상하지 못한 오류가 발생했습니다.",
+      impact: "승인 또는 반려 처리가 완료되지 않았습니다.",
+      action: "현재 인증 상태와 포인트 원장을 확인한 뒤 다시 처리해 주세요.",
+      route: req.url,
+      method: "POST",
+      entityType: "assignment",
+      entityId: assignmentId,
+      error: e,
+    });
     return err("REVIEW_PROOF_FAILED", "검수 요청을 처리하지 못했어요", 500);
   }
 }

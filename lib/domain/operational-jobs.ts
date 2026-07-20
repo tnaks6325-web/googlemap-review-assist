@@ -6,6 +6,7 @@ import {
   submitReviewerCampaignProof,
 } from "@/lib/domain/reviewer-campaigns";
 import { getPrivateReviewProof } from "@/lib/review-proof-storage";
+import { recordOperationalError } from "@/lib/error-logging";
 
 const REVIEW_PROOF_ANALYSIS_JOB = "REVIEW_PROOF_ANALYSIS";
 const MAX_JOB_ATTEMPTS = 4;
@@ -123,6 +124,28 @@ export async function processOperationalJobs(limit = 10) {
         data: exhausted
           ? { status: "FAILED", lockedAt: null, lastError: errorMessage(error) }
           : { status: "RETRY", lockedAt: null, runAt: retryAt(claimedJob.attempts), lastError: errorMessage(error) },
+      });
+      await recordOperationalError({
+        severity: exhausted ? "CRITICAL" : "WARNING",
+        source: "JOB",
+        workflow: "리뷰 인증 자동 분석",
+        stage: exhausted ? "최종 재시도" : "배치 재시도",
+        code: exhausted ? "OPERATIONAL_JOB_FAILED" : "OPERATIONAL_JOB_RETRY",
+        title: exhausted
+          ? "리뷰 인증 자동 분석이 모든 재시도 후 실패했습니다."
+          : "리뷰 인증 자동 분석이 실패하여 다시 시도합니다.",
+        situation: "백그라운드에서 제출된 리뷰 인증 이미지를 자동 분석하던 중이었습니다.",
+        cause: "저장된 이미지를 읽거나 OCR 분석 결과를 저장하는 과정에서 오류가 발생했습니다.",
+        impact: exhausted
+          ? "해당 인증 건은 자동 분석이 완료되지 않아 관리자 확인이 필요합니다."
+          : "자동 분석이 지연되며 예약된 시간에 다시 실행됩니다.",
+        action: exhausted
+          ? "오류 기술 정보와 인증 이미지를 확인한 뒤 관리자 화면에서 직접 처리해 주세요."
+          : "추가 조치는 필요하지 않으며 반복 실패 여부를 확인해 주세요.",
+        entityType: "operationalJob",
+        entityId: job.id,
+        error,
+        metadata: { jobType: job.type, attempts: claimedJob.attempts },
       });
     }
   }

@@ -8,6 +8,7 @@ import {
 import { analyzeReviewProof, type ReviewProofAnalysis } from "@/lib/domain/review-proof-analysis";
 import { enqueueReviewProofAnalysis } from "@/lib/domain/operational-jobs";
 import { getReviewerSettlementProfile } from "@/lib/domain/settlement";
+import { recordOperationalError } from "@/lib/error-logging";
 import { err, ok } from "@/lib/http";
 import {
   ReviewProofStorageError,
@@ -88,6 +89,23 @@ export async function POST(req: Request) {
     }
     if (e instanceof ReviewProofStorageError) return err(e.code, e.message, e.status);
     if (e instanceof ReviewerCampaignError) return err(e.code, e.message, e.status);
+    await recordOperationalError({
+      severity: "ERROR",
+      source: "SERVER",
+      workflow: "리뷰 인증 제출",
+      stage: uploadedProofUrl ? "인증 이미지 정리와 제출 저장" : "인증 이미지 분석과 업로드",
+      code: "COMPLETE_FAILED",
+      title: "리뷰 인증 제출을 완료하지 못했습니다.",
+      situation: "리뷰어가 작성 완료 화면에서 인증 이미지를 제출하던 중이었습니다.",
+      cause: "이미지 업로드, OCR 분석 또는 제출 결과 저장 과정에서 예상하지 못한 오류가 발생했습니다.",
+      impact: "리뷰 인증이 접수되지 않았으며 포인트도 지급되지 않았습니다.",
+      action: "이미지 저장소와 OCR 서비스, 데이터베이스 상태를 확인한 뒤 다시 제출해 주세요.",
+      route: req.url,
+      method: "POST",
+      entityType: "reviewer",
+      entityId: reviewerId,
+      error: e,
+    });
     return err("COMPLETE_FAILED", "완료 신고를 처리하지 못했어요.", 500);
   }
 }

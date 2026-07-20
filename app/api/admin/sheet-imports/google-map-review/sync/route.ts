@@ -1,4 +1,5 @@
 import { ok, err } from "@/lib/http";
+import { recordOperationalError } from "@/lib/error-logging";
 import { getAdminId } from "@/lib/auth/session";
 import { checkOrigin } from "@/lib/auth/origin";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
@@ -320,6 +321,21 @@ export async function POST(req: Request) {
     });
   } catch (e) {
     if (e instanceof GoogleSheetsConfigError) {
+      await recordOperationalError({
+        severity: "CRITICAL",
+        source: "INTEGRATION",
+        workflow: "캠페인 가져오기",
+        stage: "Google Sheets 연결 설정 확인",
+        code: "SHEETS_CONFIG_MISSING",
+        title: "Google Sheets 연결 설정이 없어 캠페인을 가져오지 못했습니다.",
+        situation: "관리자가 광고 요청 시트 검사 또는 캠페인 반영을 실행하던 중이었습니다.",
+        cause: "서버에 Google Sheets 인증 환경변수가 설정되지 않았습니다.",
+        impact: "시트 검사와 새 캠페인 반영이 시작되지 않았습니다.",
+        action: "Google 서비스 계정과 시트 ID 환경변수를 설정한 뒤 다시 실행해 주세요.",
+        route: req.url,
+        method: "POST",
+        error: e,
+      });
       return err("SHEETS_CONFIG_MISSING", "Google Sheets 환경변수가 설정되지 않았어요", 500);
     }
     if (e instanceof GoogleSheetsApiError) {
@@ -328,8 +344,39 @@ export async function POST(req: Request) {
         status: e.status,
         providerMessage: e.message,
       });
+      await recordOperationalError({
+        severity: "ERROR",
+        source: "INTEGRATION",
+        workflow: "캠페인 가져오기",
+        stage: "Google Sheets 내용 읽기",
+        code: "SHEETS_READ_FAILED",
+        title: "Google Sheets 내용을 읽지 못했습니다.",
+        situation: "관리자가 광고 요청 시트 검사 또는 캠페인 반영을 실행하던 중이었습니다.",
+        cause: "Google API가 시트 접근을 거부했거나 일시적으로 응답하지 않았습니다.",
+        impact: "새 캠페인 정보가 반영되지 않았으며 기존 캠페인에는 변화가 없습니다.",
+        action: "시트 공유 권한과 Google API 상태를 확인한 뒤 다시 실행해 주세요.",
+        route: req.url,
+        method: "POST",
+        error: e,
+        metadata: { providerStage: e.stage, providerStatus: e.status },
+      });
       return err("SHEETS_READ_FAILED", googleSheetsFailureMessage(e), 502);
     }
+    await recordOperationalError({
+      severity: "ERROR",
+      source: "SERVER",
+      workflow: "캠페인 가져오기",
+      stage: dryRun ? "시트 검사 결과 만들기" : "캠페인 데이터 저장",
+      code: "SHEETS_IMPORT_FAILED",
+      title: "캠페인 시트 처리를 완료하지 못했습니다.",
+      situation: "관리자가 광고 요청 시트 검사 또는 캠페인 반영을 실행하던 중이었습니다.",
+      cause: "시트 행을 해석하거나 캠페인 정보를 저장하는 과정에서 예상하지 못한 오류가 발생했습니다.",
+      impact: dryRun ? "검사 결과를 확인할 수 없습니다." : "캠페인 반영이 완료되지 않았습니다.",
+      action: "시트 열 형식과 오류 기술 정보를 확인한 뒤 다시 실행해 주세요.",
+      route: req.url,
+      method: "POST",
+      error: e,
+    });
     return err("SHEETS_IMPORT_FAILED", "시트 검사 중 문제가 생겼어요", 500);
   }
 }

@@ -4,6 +4,7 @@ import { sha256 } from "@/lib/crypto";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
 import { checkOrigin } from "@/lib/auth/origin";
 import { sendOtpSms, SmsProviderError } from "@/lib/sms";
+import { recordOperationalError } from "@/lib/error-logging";
 
 export const runtime = "nodejs";
 
@@ -46,6 +47,21 @@ export async function POST(req: Request) {
       await sendOtpSms(phone, code);
     } catch (error) {
       await prisma.otpChallenge.delete({ where: { id: challenge.id } }).catch(() => undefined);
+      await recordOperationalError({
+        severity: "ERROR",
+        source: "INTEGRATION",
+        workflow: "휴대폰 인증",
+        stage: "인증번호 문자 발송",
+        code: error instanceof SmsProviderError ? error.code : "SMS_SEND_FAILED",
+        title: "휴대폰 인증번호를 발송하지 못했습니다.",
+        situation: "리뷰어가 로그인용 인증번호를 요청하던 중이었습니다.",
+        cause: "문자 발송 서비스가 요청을 거부했거나 일시적으로 응답하지 않았습니다.",
+        impact: "인증번호가 발송되지 않아 휴대폰 인증을 계속할 수 없습니다.",
+        action: "문자 발송 서비스 설정과 잔액, 서비스 상태를 확인한 뒤 다시 요청해 주세요.",
+        route: req.url,
+        method: "POST",
+        error,
+      });
       if (error instanceof SmsProviderError) return err(error.code, error.message, error.status);
       return err("SMS_SEND_FAILED", "인증번호 문자 발송에 실패했습니다. 잠시 후 다시 시도해 주세요", 502);
     }

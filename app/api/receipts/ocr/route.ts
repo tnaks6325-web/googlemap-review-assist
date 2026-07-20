@@ -6,6 +6,7 @@ import { checkOrigin } from "@/lib/auth/origin";
 import { receiptDedupeHash } from "@/lib/domain/receipts";
 import { getOcrProvider } from "@/lib/ocr";
 import { decideReceiptStatus } from "@/lib/domain/receipt-verify";
+import { recordOperationalError } from "@/lib/error-logging";
 
 export const runtime = "nodejs";
 
@@ -88,7 +89,24 @@ export async function POST(req: Request) {
   let result;
   try {
     result = await getOcrProvider().extract({ imageBytes, mimeType, mockText: devMock });
-  } catch {
+  } catch (error) {
+    await recordOperationalError({
+      severity: "ERROR",
+      source: "INTEGRATION",
+      workflow: "영수증 확인",
+      stage: "영수증 이미지 OCR 분석",
+      code: "OCR_FAILED",
+      title: "영수증 내용을 읽지 못했습니다.",
+      situation: "리뷰어가 캠페인 참여를 위해 영수증 이미지를 확인하던 중이었습니다.",
+      cause: "OCR 제공 서비스가 응답하지 않거나 이미지 분석 과정에서 오류가 발생했습니다.",
+      impact: "영수증 확인이 완료되지 않아 캠페인 참여를 계속할 수 없습니다.",
+      action: "OCR 서비스 상태를 확인하고 같은 이미지로 다시 시도해 주세요.",
+      route: req.url,
+      method: "POST",
+      entityType: "campaign",
+      entityId: campaignId,
+      error,
+    });
     // F1: 제공자 오류를 일반 응답으로(내부 메시지 비노출). 영수증 미생성(fail-closed).
     return err("OCR_FAILED", "영수증 확인 중 문제가 생겼어요. 잠시 후 다시 시도해 주세요", 502);
   }
