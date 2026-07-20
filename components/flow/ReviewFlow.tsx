@@ -96,6 +96,9 @@ interface DraftResponse {
   sourceGroupCount: number;
   version: number;
   reused: boolean;
+  styleId?: string;
+  slot?: number;
+  promptVersion?: string;
 }
 
 interface CategoryCount {
@@ -405,6 +408,7 @@ export function ReviewFlow({
               {draftMeta && (
                 <p className="text-xs text-ink-weak">
                   원고자료 {draftMeta.sourceGroupCount}/4 · 생성 {draftMeta.version}/3회
+                  {draftMeta.slot != null ? ` · 다양성 슬롯 ${draftMeta.slot + 1}/25` : ""}
                 </p>
               )}
               {copied && <p className="text-xs font-medium text-brand">클립보드에 복사했어요.</p>}

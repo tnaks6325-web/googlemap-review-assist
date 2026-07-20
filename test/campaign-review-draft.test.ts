@@ -8,10 +8,12 @@ import {
   REVIEW_DRAFT_MAX_REGENERATIONS,
 } from "@/lib/domain/campaign-review-draft";
 import { generateUniqueSlug } from "@/lib/domain/codes";
+import { REVIEW_DRAFT_STYLE_SLOTS } from "@/lib/domain/review-draft-diversity";
 
 let seq = 0;
 const uniq = () => `${Date.now()}_${seq++}_${Math.floor(Math.random() * 1e6)}`;
 const originalProvider = process.env.REVIEW_DRAFT_PROVIDER;
+const originalV2Flag = process.env.REVIEW_DRAFT_V2_ENABLED;
 
 async function createReviewer() {
   return prisma.reviewer.create({
@@ -136,6 +138,8 @@ describe("campaign review draft generator", () => {
     vi.unstubAllGlobals();
     if (originalProvider == null) delete process.env.REVIEW_DRAFT_PROVIDER;
     else process.env.REVIEW_DRAFT_PROVIDER = originalProvider;
+    if (originalV2Flag == null) delete process.env.REVIEW_DRAFT_V2_ENABLED;
+    else process.env.REVIEW_DRAFT_V2_ENABLED = originalV2Flag;
     delete process.env.GEMINI_API_KEY;
   });
 
@@ -201,6 +205,17 @@ describe("campaign review draft generator", () => {
         reviewExamplesJson: JSON.stringify(["직원분들이 친절해서 편하게 이용했어요."]),
       },
     });
+    await prisma.campaignDraftEvidence.createMany({
+      data: Array.from({ length: 8 }, (_, index) => ({
+        campaignId: campaign.id,
+        facet: ["SPACE", "ACCESS", "OPERATIONS", "OTHER"][index % 4],
+        fact: `미리보기 검증을 위한 승인 사실 ${index + 1}이 구체적으로 안내되어 있다`,
+        sourceType: "ADMIN_APPROVED",
+        sourceRef: `preview-approved-${index}`,
+        sourceExcerpt: `승인 사실 ${index + 1}`,
+        status: "APPROVED",
+      })),
+    });
     const before = await prisma.receipt.findUniqueOrThrow({ where: { id: receipt.id } });
 
     const preview = await generateCampaignReviewDraftPreview(campaign.id);
@@ -209,13 +224,16 @@ describe("campaign review draft generator", () => {
     expect(preview).toMatchObject({
       campaignId: campaign.id,
       provider: "template",
+      promptVersion: "review-diversity-v2",
     });
+    expect(preview.items).toHaveLength(25);
+    expect(preview.metrics.styleCoverage).toBe(25);
     expect(nonSpaceLength(preview.text)).toBeGreaterThanOrEqual(30);
     expect(after.reviewDraftText).toBe(before.reviewDraftText);
     expect(after.reviewDraftVersion).toBe(before.reviewDraftVersion);
   });
 
-  it("includes sheet guide keywords and review examples in the Gemini prompt", async () => {
+  it("sends only approved evidence, not raw guide examples, to the v2 preview prompt", async () => {
     const { campaign } = await createAssignment({
       googlePlace: true,
       naverPlace: true,
@@ -228,22 +246,41 @@ describe("campaign review draft generator", () => {
         reviewExamplesJson: JSON.stringify(["야채가 신선하고 직원분들이 친절했어요."]),
       },
     });
+    const evidence = await prisma.campaignDraftEvidence.create({
+      data: {
+        campaignId: campaign.id,
+        facet: "MENU_PRODUCT",
+        fact: "신선한 야채 구성이 안내되어 있다",
+        sourceType: "ADMIN_APPROVED",
+        sourceRef: "prompt-test-approved",
+        sourceExcerpt: "신선한 야채",
+        status: "APPROVED",
+      },
+    });
     process.env.REVIEW_DRAFT_PROVIDER = "gemini";
     process.env.GEMINI_API_KEY = "test-gemini-api-key";
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
-          candidates: [
-            {
-              content: {
-                parts: [
-                  {
-                    text: "강남역 근처에서 편하게 방문했고 전체적으로 깔끔해서 만족스러운 시간을 보냈습니다.",
-                  },
-                ],
-              },
+          candidates: [{
+            content: {
+              parts: [{
+                text: JSON.stringify({
+                  items: REVIEW_DRAFT_STYLE_SLOTS.map((slot) => ({
+                    reviewText:
+                      slot.structure === "SHORT_SINGLE"
+                        ? "신선한 야채 구성이 구체적으로 안내되어 있어 필요한 내용을 방문 전에 차분히 확인하기 좋아 보여요."
+                        : slot.structure === "THREE_STEP"
+                          ? "신선한 야채 구성이 안내되어 있어요. 필요한 정보를 구체적으로 확인할 수 있습니다. 방문 전에 살펴볼 내용이 잘 정리되어 있어요."
+                          : "신선한 야채 구성이 구체적으로 안내되어 있어요. 방문 전에 필요한 내용을 차분하게 확인하기 좋아 보입니다.",
+                    styleId: slot.id,
+                    evidenceIds: [evidence.id],
+                    promptVersion: "review-diversity-v2",
+                  })),
+                }),
+              }],
             },
-          ],
+          }],
         }),
         { status: 200, headers: { "content-type": "application/json" } },
       ),
@@ -254,8 +291,10 @@ describe("campaign review draft generator", () => {
 
     const requestBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
     const prompt = requestBody.contents[0].parts[0].text;
-    expect(prompt).toContain("시트 리뷰작성 가이드 키워드: 강남역 샤브샤브, 신선한 야채");
-    expect(prompt).toContain("야채가 신선하고 직원분들이 친절했어요.");
+    expect(prompt).toContain(evidence.id);
+    expect(prompt).toContain("신선한 야채 구성이 안내되어 있다");
+    expect(prompt).not.toContain("시트 리뷰작성 가이드 키워드");
+    expect(prompt).not.toContain("야채가 신선하고 직원분들이 친절했어요.");
   });
 
   it("generates and stores a 30 to 200 non-space character draft from place data and a substantive source", async () => {
@@ -466,6 +505,151 @@ describe("campaign review draft generator", () => {
 
     await expect(generateCampaignReviewDraftForAssignment(reviewer.id, receipt.id)).rejects.toMatchObject({
       code: "UNSUITABLE_GENERATED_DRAFT",
+      status: 422,
+    });
+  });
+
+  it("reserves and persists a v2 style slot with approved evidence", async () => {
+    const { reviewer, campaign, receipt } = await createAssignment({
+      googlePlace: true,
+      googleReview: true,
+      blogReference: true,
+    });
+    await prisma.campaignDraftEvidence.createMany({
+      data: [
+        ["SPACE", "내부 공간이 구역별로 정돈되어 있다"],
+        ["SPACE", "좌석 사이의 이동 공간이 구분되어 있다"],
+        ["ACCESS", "대중교통 접근 정보를 확인할 수 있다"],
+        ["ACCESS", "위치 안내가 지도에 구체적으로 등록되어 있다"],
+        ["OPERATIONS", "운영 관련 정보가 온라인에 안내되어 있다"],
+        ["OTHER", "이용 전에 참고할 장소 정보가 정리되어 있다"],
+      ].map(([facet, fact], index) => ({
+        campaignId: campaign.id,
+        facet,
+        fact,
+        sourceType: "ADMIN_APPROVED",
+        sourceRef: `approved-test-${index}`,
+        sourceExcerpt: fact,
+        status: "APPROVED",
+      })),
+    });
+    process.env.REVIEW_DRAFT_V2_ENABLED = "true";
+
+    const result = await generateCampaignReviewDraftForAssignment(reviewer.id, receipt.id);
+    const stored = await prisma.receipt.findUniqueOrThrow({ where: { id: receipt.id } });
+
+    expect(result).toMatchObject({
+      slot: 0,
+      promptVersion: "review-diversity-v2",
+      model: "template-v2",
+    });
+    expect(result.styleId).toContain("v2-01");
+    expect(result.evidenceIds?.length).toBeGreaterThan(0);
+    expect(stored.reviewDraftSequence).toBe(0);
+    expect(stored.reviewDraftStyleId).toBe(result.styleId);
+    expect(stored.reviewDraftEvidenceIdsJson).toContain(result.evidenceIds?.[0] ?? "");
+  });
+
+  it("assigns distinct v2 sequences to concurrent campaign drafts", async () => {
+    const { reviewer, business, campaign, receipt } = await createAssignment({
+      googlePlace: true,
+      googleReview: true,
+      blogReference: true,
+    });
+    const secondReviewer = await createReviewer();
+    const secondReceipt = await prisma.receipt.create({
+      data: {
+        businessId: business.id,
+        campaignId: campaign.id,
+        reviewerId: secondReviewer.id,
+        code: `ASSIGN-${uniq()}`,
+        source: "CAMPAIGN_ASSIGNMENT",
+        dedupeHash: `assignment:${uniq()}`,
+        status: "ASSIGNED",
+      },
+    });
+    await prisma.campaignDraftEvidence.createMany({
+      data: [
+        ["SPACE", "실내 공간은 구역별로 나뉘어 안내되어 있다"],
+        ["ACCESS", "대중교통 접근 경로를 지도에서 확인할 수 있다"],
+        ["OPERATIONS", "운영 시간 정보가 온라인에 공개되어 있다"],
+        ["OTHER", "방문 전 참고 사항이 별도로 정리되어 있다"],
+        ["SPACE", "이동 동선을 고려한 공간 정보가 등록되어 있다"],
+        ["ACCESS", "주변 위치를 찾을 수 있는 주소 정보가 제공된다"],
+        ["OPERATIONS", "이용 관련 안내 항목을 사전에 살펴볼 수 있다"],
+        ["OTHER", "장소의 주요 특징이 여러 자료에 기록되어 있다"],
+      ].map(([facet, fact], index) => ({
+        campaignId: campaign.id,
+        facet,
+        fact,
+        sourceType: "ADMIN_APPROVED",
+        sourceRef: `concurrent-approved-${index}`,
+        sourceExcerpt: fact,
+        status: "APPROVED",
+      })),
+    });
+    process.env.REVIEW_DRAFT_V2_ENABLED = "true";
+
+    const [first, second] = await Promise.all([
+      generateCampaignReviewDraftForAssignment(reviewer.id, receipt.id),
+      generateCampaignReviewDraftForAssignment(secondReviewer.id, secondReceipt.id),
+    ]);
+
+    expect(new Set([first.slot, second.slot]).size).toBe(2);
+    const stored = await prisma.receipt.findMany({
+      where: { id: { in: [receipt.id, secondReceipt.id] } },
+      select: { reviewDraftSequence: true },
+    });
+    expect(new Set(stored.map((row) => row.reviewDraftSequence)).size).toBe(2);
+  });
+
+  it("rejects a v2 model response that cites unapproved evidence", async () => {
+    const { reviewer, campaign, receipt } = await createAssignment({
+      googlePlace: true,
+      googleReview: true,
+      blogReference: true,
+    });
+    await prisma.campaignDraftEvidence.create({
+      data: {
+        campaignId: campaign.id,
+        facet: "SPACE",
+        fact: "공간 구성이 구역별로 안내되어 있다",
+        sourceType: "ADMIN_APPROVED",
+        sourceRef: "approved-runtime-source",
+        sourceExcerpt: "공간 구성 안내",
+        status: "APPROVED",
+      },
+    });
+    process.env.REVIEW_DRAFT_V2_ENABLED = "true";
+    process.env.REVIEW_DRAFT_PROVIDER = "gemini";
+    process.env.GEMINI_API_KEY = "test-gemini-api-key";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            candidates: [{
+              content: {
+                parts: [{
+                  text: JSON.stringify({
+                    reviewText: "공간 구성이 구역별로 안내되어 있어 필요한 내용을 방문 전에 차분히 확인하기 좋아 보여요. 관련 정보도 함께 살펴볼 수 있습니다.",
+                    styleId: "v2-01-plain-point_first",
+                    evidenceIds: ["evidence-from-another-campaign"],
+                    promptVersion: "review-diversity-v2",
+                  }),
+                }],
+              },
+            }],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      ),
+    );
+
+    await expect(
+      generateCampaignReviewDraftForAssignment(reviewer.id, receipt.id),
+    ).rejects.toMatchObject({
+      code: "UNAPPROVED_DRAFT_EVIDENCE",
       status: 422,
     });
   });

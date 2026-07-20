@@ -9,6 +9,24 @@ interface PreviewResult {
   model: string;
   sourceGroupCount: number;
   generatedAt: string;
+  promptVersion: string;
+  items: Array<{
+    slot: number;
+    styleId: string;
+    toneLabel: string;
+    structureLabel: string;
+    text: string;
+    evidenceIds: string[];
+    maxSimilarity: number;
+    qualityPassed: boolean;
+  }>;
+  metrics: {
+    styleCoverage: number;
+    maxSimilarity: number;
+    averageSimilarity: number;
+    duplicateCount: number;
+    evidenceCoverage: number;
+  };
 }
 
 interface ErrorResult {
@@ -55,7 +73,7 @@ export function AdminCampaignDraftPreview({
       if (!response.ok) {
         throw new Error(data?.error?.message || "테스트 원고를 생성하지 못했습니다.");
       }
-      if (!data?.text) throw new Error("생성된 테스트 원고가 없습니다.");
+      if (!data?.items?.length) throw new Error("생성된 25개 테스트 원고가 없습니다.");
       setPreview(data);
       setOpen(true);
     } catch (cause) {
@@ -90,7 +108,7 @@ export function AdminCampaignDraftPreview({
             role="dialog"
             aria-modal="true"
             aria-labelledby={`draft-preview-title-${campaignId}`}
-            className="w-full max-w-xl rounded-[18px] border border-line bg-surface p-5 text-left shadow-2xl"
+            className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-[18px] border border-line bg-surface p-5 text-left shadow-2xl"
           >
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -122,14 +140,38 @@ export function AdminCampaignDraftPreview({
               </p>
             ) : preview ? (
               <>
-                <div className="mt-5 rounded-[12px] border border-line bg-canvas p-4">
-                  <p className="text-[11px] font-bold text-ink-weak">생성 결과</p>
-                  <p className="mt-2 whitespace-pre-wrap text-[15px] leading-7 text-ink">
-                    {preview.text}
-                  </p>
+                <div className="mt-5 grid gap-2 sm:grid-cols-5">
+                  <Metric label="스타일" value={`${preview.metrics.styleCoverage}/25`} />
+                  <Metric label="최대 유사도" value={preview.metrics.maxSimilarity.toFixed(3)} />
+                  <Metric label="평균 유사도" value={preview.metrics.averageSimilarity.toFixed(3)} />
+                  <Metric label="중복 쌍" value={`${preview.metrics.duplicateCount}개`} />
+                  <Metric label="근거 사용률" value={`${Math.round(preview.metrics.evidenceCoverage * 100)}%`} />
+                </div>
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  {preview.items.map((item) => (
+                    <article
+                      key={item.styleId}
+                      className={`rounded-[12px] border p-4 ${
+                        item.qualityPassed ? "border-line bg-canvas" : "border-amber-200 bg-amber-50"
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                        <span className="font-bold text-brand">#{item.slot + 1}</span>
+                        <span className="rounded-full bg-brand-tint px-2 py-0.5 font-semibold text-brand">
+                          {item.toneLabel}
+                        </span>
+                        <span className="text-ink-weak">{item.structureLabel}</span>
+                        <span className="ml-auto text-ink-weak">유사도 {item.maxSimilarity.toFixed(3)}</span>
+                      </div>
+                      <p className="mt-2 whitespace-pre-wrap text-[14px] leading-6 text-ink">{item.text}</p>
+                      <p className="mt-2 text-[11px] text-ink-weak">
+                        근거 {item.evidenceIds.length}개 · {item.qualityPassed ? "품질 통과" : "보정 필요"}
+                      </p>
+                    </article>
+                  ))}
                 </div>
                 <p className="mt-3 text-xs text-ink-weak">
-                  참고자료 {preview.sourceGroupCount}종 · {preview.provider} / {preview.model}
+                  참고자료 {preview.sourceGroupCount}종 · {preview.provider} / {preview.model} · {preview.promptVersion}
                 </p>
               </>
             ) : null}
@@ -155,5 +197,14 @@ export function AdminCampaignDraftPreview({
         </div>
       ) : null}
     </>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[10px] border border-line bg-canvas p-2.5">
+      <p className="text-[10px] font-semibold text-ink-weak">{label}</p>
+      <p className="mt-1 text-sm font-bold text-ink">{value}</p>
+    </div>
   );
 }
