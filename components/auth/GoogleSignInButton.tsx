@@ -14,6 +14,25 @@ interface GoogleCredentialResponse {
   credential?: string;
 }
 
+interface GoogleTokenResponse {
+  access_token?: string;
+  error?: string;
+}
+
+interface GoogleTokenClient {
+  requestAccessToken(options?: { prompt?: "select_account" }): void;
+}
+
+interface GoogleAccountsOAuth2 {
+  initTokenClient(options: {
+    client_id: string;
+    scope: string;
+    prompt?: "select_account";
+    callback: (response: GoogleTokenResponse) => void;
+    error_callback?: (error: { type?: string }) => void;
+  }): GoogleTokenClient;
+}
+
 interface GoogleAccountsId {
   initialize(options: {
     client_id: string;
@@ -40,6 +59,7 @@ declare global {
     google?: {
       accounts?: {
         id?: GoogleAccountsId;
+        oauth2?: GoogleAccountsOAuth2;
       };
     };
   }
@@ -48,9 +68,9 @@ declare global {
 const GOOGLE_SCRIPT_ID = "google-identity-services";
 let googleScriptPromise: Promise<void> | null = null;
 
-function loadGoogleScript() {
+export function loadGoogleScript() {
   if (typeof window === "undefined") return Promise.resolve();
-  if (window.google?.accounts?.id) return Promise.resolve();
+  if (window.google?.accounts?.id || window.google?.accounts?.oauth2) return Promise.resolve();
   if (googleScriptPromise) return googleScriptPromise;
 
   googleScriptPromise = new Promise<void>((resolve, reject) => {
