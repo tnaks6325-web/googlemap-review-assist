@@ -86,7 +86,7 @@ export interface AdminCampaignRow extends PublicCampaignCard {
   naverPlace: AdminConnectedNaverPlace | null;
 }
 
-export const DEFAULT_REWARD_POINTS = 5000;
+export const DEFAULT_REWARD_POINTS = 500;
 const CAMPAIGN_ASSIGNMENT_STATUS_COMPLETED = "COMPLETED";
 const CAMPAIGN_COMPLETION_IDEMPOTENCY_PREFIX = "campaign-complete:";
 
@@ -121,6 +121,7 @@ type CampaignForPresentation = Pick<
   | "dailyQuota"
   | "startDate"
   | "endDate"
+  | "rewardPoints"
 > & {
   business: Pick<CampaignWithBusiness["business"], "name" | "address" | "googlePlaceId" | "externalPlaces">;
 };
@@ -230,7 +231,7 @@ function toPublicCampaign(
     remainingTotalCount: availability.remainingTotalCount,
     isAvailableToday: availability.isAvailableToday,
     availabilityReason: availability.availabilityReason,
-    rewardPoints: DEFAULT_REWARD_POINTS,
+    rewardPoints: campaign.rewardPoints,
     availabilityLabel: availabilityLabel(
       availability.isAvailableToday,
       stats.assignedTodayCount,

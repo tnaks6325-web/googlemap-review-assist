@@ -1,10 +1,10 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { DEFAULT_REWARD_POINTS } from "@/lib/domain/operator-campaigns";
 
 type DbClient = PrismaClient | Prisma.TransactionClient;
 const REVIEWER_ASSIGNMENT_SOURCE = "CAMPAIGN_ASSIGNMENT";
 const REVIEWER_HISTORY_LIMIT = 20;
+const CAMPAIGN_COMPLETION_IDEMPOTENCY_PREFIX = "campaign-complete:";
 
 export interface ReviewerHomeAccount {
   name: string | null;
@@ -103,8 +103,9 @@ export async function getReviewerHomeDashboard(
         reviewReviewedAt: true,
         reviewReviewNote: true,
         createdAt: true,
+        rewardPoints: true,
         business: { select: { name: true } },
-        campaign: { select: { name: true, slug: true } },
+        campaign: { select: { name: true, slug: true, rewardPoints: true } },
       },
     }),
     db.receipt.count({
@@ -125,6 +126,27 @@ export async function getReviewerHomeDashboard(
       },
     }),
   ]);
+  const paidTransactions = receipts.length
+    ? await db.pointTransaction.findMany({
+        where: {
+          idempotencyKey: {
+            in: receipts.map(
+              (receipt) =>
+                `${CAMPAIGN_COMPLETION_IDEMPOTENCY_PREFIX}${receipt.id}`,
+            ),
+          },
+        },
+        select: { idempotencyKey: true, amount: true },
+      })
+    : [];
+  const paidAmountByReceiptId = new Map(
+    paidTransactions.map((transaction) => [
+      transaction.idempotencyKey.slice(
+        CAMPAIGN_COMPLETION_IDEMPOTENCY_PREFIX.length,
+      ),
+      transaction.amount,
+    ]),
+  );
 
   return {
     profile: {
@@ -144,7 +166,10 @@ export async function getReviewerHomeDashboard(
         campaignName: receipt.campaign.name,
         campaignSlug: receipt.campaign.slug,
         status: receipt.status,
-        rewardPoints: DEFAULT_REWARD_POINTS,
+        rewardPoints:
+          paidAmountByReceiptId.get(receipt.id) ??
+          receipt.rewardPoints ??
+          receipt.campaign.rewardPoints,
         reviewNote: receipt.reviewReviewNote,
         occurredAt: (
           receipt.reviewReviewedAt ??

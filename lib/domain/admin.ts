@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/db";
-import { DEFAULT_REWARD_POINTS } from "@/lib/domain/operator-campaigns";
 import { decodeSettlementPayoutInfo } from "@/lib/domain/settlement";
 
 const maskPhone = (phone?: string | null) =>
@@ -156,7 +155,7 @@ export async function getPendingReviewProofs(): Promise<AdminReviewProofRow[]> {
     include: {
       reviewer: { select: { phone: true } },
       business: { select: { name: true } },
-      campaign: { select: { name: true } },
+      campaign: { select: { name: true, rewardPoints: true } },
     },
   });
 
@@ -167,7 +166,7 @@ export async function getPendingReviewProofs(): Promise<AdminReviewProofRow[]> {
     businessName: receipt.business.name,
     campaignName: receipt.campaign.name,
     status: receipt.status,
-    rewardPoints: DEFAULT_REWARD_POINTS,
+    rewardPoints: receipt.rewardPoints ?? receipt.campaign.rewardPoints,
     draftText: receipt.reviewDraftText,
     hasProofImage: Boolean(receipt.reviewProofImageUrl),
     proofOriginalName: receipt.reviewProofOriginalName,

@@ -127,6 +127,7 @@ model Campaign {
   dailyQuota     Int?
   startDate      String?
   endDate        String?
+  rewardPoints   Int                     @default(500)
   receipts       Receipt[]
   codes          CampaignCode[]
   blogReferences CampaignBlogReference[]
@@ -235,6 +236,7 @@ model Receipt {
   reviewProofOriginalName     String?
   reviewProofSubmittedAt      DateTime?
   assignmentExpiresAt         DateTime?
+  rewardPoints                Int?
   reviewProofExtractedText    String?
   reviewProofSimilarity       Float?
   reviewProofAnalysisStatus   String?

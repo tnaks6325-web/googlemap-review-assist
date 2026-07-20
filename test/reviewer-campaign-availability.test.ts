@@ -25,6 +25,7 @@ interface CampaignFixtureOptions {
   dailyQuota?: number;
   startDate?: string;
   endDate?: string;
+  rewardPoints?: number;
 }
 
 async function createCampaign(
@@ -36,6 +37,7 @@ async function createCampaign(
     dailyQuota = 5,
     startDate = "2020-01-01",
     endDate = "2099-12-31",
+    rewardPoints = DEFAULT_REWARD_POINTS,
   }: CampaignFixtureOptions = {},
 ) {
   const owner = await prisma.owner.create({ data: { email: `reviewer-${uniq()}@test.local`, password: "x" } });
@@ -91,6 +93,7 @@ async function createCampaign(
       dailyQuota,
       startDate,
       endDate,
+      rewardPoints,
     },
   });
   return { business, campaign };
@@ -172,6 +175,51 @@ describe("reviewer campaign availability", () => {
 
     const nextAvailability = await getReviewerCampaignAvailability(reviewer.id);
     expect(nextAvailability.campaigns.map((campaign) => campaign.id)).not.toContain(result.assignedCampaign!.id);
+  });
+
+  it("snapshots the configured campaign reward and pays that amount after later edits", async () => {
+    const reviewer = await createReviewer();
+    await prisma.campaign.updateMany({ data: { active: false } });
+    const fixture = await createCampaign(`google-place-custom-reward-${uniq()}`, {
+      rewardPoints: 750,
+    });
+
+    const assigned = await assignReviewerCampaign(reviewer.id);
+    expect(assigned.assignedCampaign?.rewardPoints).toBe(750);
+    expect(
+      await prisma.receipt.findUnique({
+        where: { id: assigned.assignmentId! },
+        select: { rewardPoints: true },
+      }),
+    ).toMatchObject({ rewardPoints: 750 });
+
+    await prisma.campaign.update({
+      where: { id: fixture.campaign.id },
+      data: { rewardPoints: 900 },
+    });
+    await prisma.receipt.update({
+      where: { id: assigned.assignmentId! },
+      data: {
+        status: "REVIEW_SUBMITTED",
+        reviewProofImageUrl: "/uploads/review-proofs/custom-reward.png",
+        reviewProofSubmittedAt: new Date(),
+      },
+    });
+
+    const completed = await completeReviewerCampaignAssignment(
+      assigned.assignmentId!,
+      "admin:test",
+    );
+
+    expect(completed).toMatchObject({ earned: 750, paidAmount: 750 });
+    expect(
+      await prisma.pointTransaction.findUnique({
+        where: { idempotencyKey: `campaign-complete:${assigned.assignmentId}` },
+      }),
+    ).toMatchObject({ amount: 750 });
+    expect(
+      await prisma.pointWallet.findUnique({ where: { reviewerId: reviewer.id } }),
+    ).toMatchObject({ balance: 750 });
   });
 
   it("reuses an unexpired active assignment instead of reserving another slot", async () => {

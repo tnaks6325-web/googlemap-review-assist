@@ -316,7 +316,7 @@ function toReviewerCampaign(
     remainingTotalCount: availability.remainingTotalCount,
     isAvailableToday: availability.isAvailableToday,
     availabilityReason: availability.availabilityReason,
-    rewardPoints: DEFAULT_REWARD_POINTS,
+    rewardPoints: campaign.rewardPoints,
     availabilityLabel: availabilityLabel(
       availability.isAvailableToday,
       stats.assignedTodayCount,
@@ -366,16 +366,21 @@ export async function getReviewerCampaignAvailability(
       campaignId: true,
       createdAt: true,
       assignmentExpiresAt: true,
+      rewardPoints: true,
     },
   });
   const activeCampaign = activeReceipt
     ? allCampaigns.find((campaign) => campaign.id === activeReceipt.campaignId) ?? null
     : null;
+  const activeCampaignWithSnapshot =
+    activeCampaign && activeReceipt?.rewardPoints != null
+      ? { ...activeCampaign, rewardPoints: activeReceipt.rewardPoints }
+      : activeCampaign;
   const activeExpiresAt = activeReceipt
     ? activeReceipt.assignmentExpiresAt ?? assignmentExpiry(activeReceipt.createdAt)
     : null;
   const activeAssignment =
-    activeReceipt && activeCampaign && activeExpiresAt
+    activeReceipt && activeCampaignWithSnapshot && activeExpiresAt
       ? {
           assignmentId: activeReceipt.id,
           assignmentExpiresAt: activeExpiresAt,
@@ -383,7 +388,7 @@ export async function getReviewerCampaignAvailability(
             0,
             Math.ceil((activeExpiresAt.getTime() - now.getTime()) / 1000),
           ),
-          assignedCampaign: activeCampaign,
+          assignedCampaign: activeCampaignWithSnapshot,
         }
       : null;
 
@@ -504,8 +509,10 @@ async function approveCampaignAssignment(
   tx: Prisma.TransactionClient,
   receipt: {
     id: string;
+    campaignId: string;
     reviewerId: string;
     reviewProofImageUrl: string | null;
+    rewardPoints: number | null;
   },
   actor: string,
   note?: string | null,
@@ -514,6 +521,16 @@ async function approveCampaignAssignment(
     throw new ReviewerCampaignError("MISSING_PROOF", "제출된 캡처본이 없어요", 409);
   }
 
+  const rewardPoints =
+    receipt.rewardPoints ??
+    (
+      await tx.campaign.findUnique({
+        where: { id: receipt.campaignId },
+        select: { rewardPoints: true },
+      })
+    )?.rewardPoints ??
+    DEFAULT_REWARD_POINTS;
+
   await tx.receipt.update({
     where: { id: receipt.id },
     data: {
@@ -521,28 +538,29 @@ async function approveCampaignAssignment(
       reviewReviewedAt: new Date(),
       reviewReviewedBy: actor,
       reviewReviewNote: note?.trim() || null,
+      rewardPoints,
     },
   });
   await tx.pointTransaction.create({
     data: {
       reviewerId: receipt.reviewerId,
       type: "EARN",
-      amount: DEFAULT_REWARD_POINTS,
+      amount: rewardPoints,
       idempotencyKey: completionIdempotencyKey(receipt.id),
       memo: "구글맵 리뷰 캡처 검수 승인",
     },
   });
   const wallet = await tx.pointWallet.upsert({
     where: { reviewerId: receipt.reviewerId },
-    update: { balance: { increment: DEFAULT_REWARD_POINTS } },
-    create: { reviewerId: receipt.reviewerId, balance: DEFAULT_REWARD_POINTS },
+    update: { balance: { increment: rewardPoints } },
+    create: { reviewerId: receipt.reviewerId, balance: rewardPoints },
   });
   await tx.reviewerNotification.create({
     data: {
       reviewerId: receipt.reviewerId,
       type: "REVIEW_PROOF_APPROVED",
       title: "리뷰 검수가 승인됐어요",
-      body: `${DEFAULT_REWARD_POINTS.toLocaleString("ko-KR")}P가 적립됐어요.`,
+      body: `${rewardPoints.toLocaleString("ko-KR")}P가 적립됐어요.`,
       metadataJson: JSON.stringify({ assignmentId: receipt.id }),
     },
   });
@@ -550,10 +568,10 @@ async function approveCampaignAssignment(
   return {
     assignmentId: receipt.id,
     status: REVIEWER_ASSIGNMENT_STATUS_COMPLETED,
-    earned: DEFAULT_REWARD_POINTS,
+    earned: rewardPoints,
     balance: wallet.balance,
     alreadyCompleted: false,
-    paidAmount: DEFAULT_REWARD_POINTS,
+    paidAmount: rewardPoints,
     hasProofImage: Boolean(receipt.reviewProofImageUrl),
   };
 }
@@ -599,6 +617,7 @@ export async function assignReviewerCampaign(reviewerId: string, now = new Date(
               status: REVIEWER_ASSIGNMENT_STATUS_ASSIGNED,
               createdAt: now,
               assignmentExpiresAt: expiresAt,
+              rewardPoints: assignedCampaign.rewardPoints,
             },
           });
           const activeAssignment = {
@@ -768,7 +787,13 @@ export async function submitReviewerCampaignProof(
     if (analysis?.status === "AUTO_APPROVE") {
       const approved = await approveCampaignAssignment(
         tx,
-        { id: updated.id, reviewerId: updated.reviewerId, reviewProofImageUrl: updated.reviewProofImageUrl },
+        {
+          id: updated.id,
+          campaignId: updated.campaignId,
+          reviewerId: updated.reviewerId,
+          reviewProofImageUrl: updated.reviewProofImageUrl,
+          rewardPoints: updated.rewardPoints,
+        },
         `ai:${analysis.provider}`,
         "이미지 분석 결과 생성 원고와 유사도가 높아 자동 승인됐습니다.",
       );
@@ -836,7 +861,13 @@ export async function completeReviewerCampaignAssignment(
 
       return approveCampaignAssignment(
         tx,
-        { id: receipt.id, reviewerId: receipt.reviewerId, reviewProofImageUrl: receipt.reviewProofImageUrl },
+        {
+          id: receipt.id,
+          campaignId: receipt.campaignId,
+          reviewerId: receipt.reviewerId,
+          reviewProofImageUrl: receipt.reviewProofImageUrl,
+          rewardPoints: receipt.rewardPoints,
+        },
         actor,
         note,
       );

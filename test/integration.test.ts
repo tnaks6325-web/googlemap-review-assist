@@ -242,7 +242,7 @@ describe("운영자형 캠페인 목록", () => {
       businessName: "하리무드 범계본점",
       category: "미용실",
       googleMapsUrl: "https://maps.app.goo.gl/testCampaign",
-      rewardPoints: 5000,
+      rewardPoints: 500,
       statusLabel: "진행 중",
     });
     expect(publicItems.some((c) => c.id === inactive.id)).toBe(false);

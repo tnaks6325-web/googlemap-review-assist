@@ -138,6 +138,17 @@ describe("reviewer home account", () => {
         },
       ],
     });
+    const completedReceipt = await prisma.receipt.findUniqueOrThrow({
+      where: { dedupeHash: `dashboard-completed-${suffix}` },
+    });
+    await prisma.pointTransaction.create({
+      data: {
+        reviewerId: reviewer.id,
+        type: "EARN",
+        amount: 5000,
+        idempotencyKey: `campaign-complete:${completedReceipt.id}`,
+      },
+    });
 
     const dashboard = await getReviewerHomeDashboard(reviewer.id);
 
@@ -157,6 +168,15 @@ describe("reviewer home account", () => {
     expect(dashboard.participation.items.map((item) => item.status)).toEqual(
       expect.arrayContaining(["REVIEW_SUBMITTED", "COMPLETED"]),
     );
+    expect(
+      dashboard.participation.items.find((item) => item.status === "COMPLETED")
+        ?.rewardPoints,
+    ).toBe(5000);
+    expect(
+      dashboard.participation.items.find(
+        (item) => item.status === "REVIEW_SUBMITTED",
+      )?.rewardPoints,
+    ).toBe(500);
     expect(dashboard.profile).not.toHaveProperty("accountNumber");
     expect(JSON.stringify(dashboard)).not.toContain("99000");
   });

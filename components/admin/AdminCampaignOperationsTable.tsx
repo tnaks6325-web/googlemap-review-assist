@@ -7,6 +7,7 @@ import { AdminCampaignBlogReferences } from "@/components/admin/AdminCampaignBlo
 import { AdminCampaignDraftPreview } from "@/components/admin/AdminCampaignDraftPreview";
 import { AdminCampaignDraftGuidance } from "@/components/admin/AdminCampaignDraftGuidance";
 import { AdminCampaignNaverCandidates } from "@/components/admin/AdminCampaignNaverCandidates";
+import { AdminCampaignRewardPoints } from "@/components/admin/AdminCampaignRewardPoints";
 import { Button } from "@/components/ui";
 import {
   adminCampaignAutomationPlan,
@@ -36,6 +37,14 @@ const STATUS_OPTIONS: Array<{
   { value: "ended", label: "운영 종료" },
   { value: "inactive", label: "중지됨" },
 ];
+
+function formatCampaignPeriod(startDate: string | null, endDate: string | null) {
+  const format = (value: string) => value.replaceAll("-", ".");
+  if (startDate && endDate) return `${format(startDate)} ~ ${format(endDate)}`;
+  if (startDate) return `${format(startDate)} ~ 종료일 미정`;
+  if (endDate) return `시작일 미정 ~ ${format(endDate)}`;
+  return "기간 미설정";
+}
 
 async function requestNaverAutoLink(campaignId: string) {
   try {
@@ -385,6 +394,9 @@ function CampaignRows({
             {[campaign.category, campaign.address].filter(Boolean).join(" · ") ||
               campaign.campaignName}
           </p>
+          <p className="mt-0.5 max-w-[300px] truncate text-[11px] leading-4 text-ink-weak">
+            기간 {formatCampaignPeriod(campaign.startDate, campaign.endDate)}
+          </p>
         </td>
         <TableCell>
           <StatusBadge status={status} />
@@ -404,6 +416,9 @@ function CampaignRows({
         <TableCell>
           <p className="font-bold tabular-nums text-ink">
             {campaign.paidPointAmount.toLocaleString("ko-KR")}P
+          </p>
+          <p className="mt-1 whitespace-nowrap text-[11px] text-ink-weak">
+            건당 {campaign.rewardPoints.toLocaleString("ko-KR")}P
           </p>
         </TableCell>
         <TableCell>
@@ -482,6 +497,10 @@ function CampaignRows({
       {expanded ? (
         <tr id={`campaign-detail-${campaign.id}`}>
           <td colSpan={9} className="border-t border-line bg-[#f8fbff] p-4">
+            <AdminCampaignRewardPoints
+              campaignId={campaign.id}
+              initialRewardPoints={campaign.rewardPoints}
+            />
             <div className="grid gap-3 xl:grid-cols-3">
               <AdminCampaignNaverCandidates
                 key={`${campaign.id}:${campaign.naverPlace?.externalId ?? "unlinked"}:${campaign.naverPlace?.matchStatus ?? "none"}`}
