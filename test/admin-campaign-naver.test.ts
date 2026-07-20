@@ -5,6 +5,7 @@ import {
   naverAutoConnectableSnapshot,
   naverPlaceSnapshotFromCandidate,
   naverPlaceSnapshotFromPlaceId,
+  resolveNaverPlaceSnapshotFromCandidate,
   naverSearchTargetFromCampaign,
 } from "@/lib/domain/admin-campaign-naver";
 import {
@@ -395,6 +396,90 @@ describe("admin campaign naver candidate target", () => {
       naverPlaceIdFromSearchHtml(html, "차이들 안녕인사동점"),
     ).toBe("1494727146");
     expect(naverPlaceIdFromSearchHtml(html, "없는 식당")).toBeNull();
+  });
+
+  it("extracts a Place ID when the matching name is near an icon-only place link", () => {
+    const html = `
+      <section class="place-result">
+        <a href="https://map.naver.com/p/entry/place/1110460175" aria-label="지도 열기"></a>
+        <div class="details">
+          <h2>천안바른마취통증의학과의원</h2>
+          <p>충청남도 천안시 동남구 대흥로 118</p>
+        </div>
+      </section>
+      <section class="place-result">
+        <a href="https://map.naver.com/p/entry/place/9999999999"></a>
+        <h2>다른 병원</h2>
+      </section>
+    `;
+
+    expect(
+      naverPlaceIdFromSearchHtml(html, "천안바른마취통증의학과의원"),
+    ).toBe("1110460175");
+  });
+
+  it("resolves and stores the selected candidate Place ID before admin confirmation", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          `
+            <section>
+              <a href="https://map.naver.com/p/entry/place/1110460175"></a>
+              <h2>천안바른마취통증의학과의원</h2>
+            </section>
+          `,
+          {
+            status: 200,
+            headers: { "content-type": "text/html; charset=utf-8" },
+          },
+        ),
+      ),
+    );
+
+    const place = await resolveNaverPlaceSnapshotFromCandidate(
+      {
+        title: "천안바른마취통증의학과의원",
+        link: "",
+        category: "병원,의원>정형외과",
+        roadAddress: "충청남도 천안시 동남구 대흥로 118",
+        address: null,
+        mapx: null,
+        mapy: null,
+        matchConfidence: 100,
+        rawJson: null,
+      },
+      "천안바른마취통증의학과의원",
+    );
+
+    expect(place).toMatchObject({
+      externalId: "1110460175",
+      url: "https://map.naver.com/p/entry/place/1110460175",
+      matchConfidence: 100,
+    });
+  });
+
+  it("does not save a selected candidate when its Place ID lookup fails", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      throw new Error("NAVER_SEARCH_UNAVAILABLE");
+    }));
+
+    await expect(
+      resolveNaverPlaceSnapshotFromCandidate(
+        {
+          title: "Place without an ID",
+          link: "",
+          category: "Clinic",
+          roadAddress: "Cheonan",
+          address: null,
+          mapx: null,
+          mapy: null,
+          matchConfidence: 100,
+          rawJson: null,
+        },
+        "Place without an ID",
+      ),
+    ).resolves.toBeNull();
   });
 
   it("enriches the top local-search candidate with its actual Naver Place URL", async () => {
