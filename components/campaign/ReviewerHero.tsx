@@ -1,4 +1,5 @@
 import { ReviewerGoogleSignIn } from "@/components/auth/ReviewerGoogleSignIn";
+import { ReviewerAccountSwitcher } from "@/components/auth/ReviewerAccountSwitcher";
 import type { ReviewerHomeAccount } from "@/lib/domain/reviewer-home";
 
 interface ReviewerHeroProps {
@@ -57,9 +58,7 @@ export function ReviewerHero({
               <p className="mt-0.5 truncate text-sm font-bold">{displayName}</p>
               {account.email && <p className="truncate text-xs text-white/75">{account.email}</p>}
             </div>
-            <span className="rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-semibold text-white/90">
-              연결됨
-            </span>
+            <ReviewerAccountSwitcher />
           </div>
         ) : (
           <div className="rounded-[18px] border border-white/20 bg-white/12 p-4 backdrop-blur-sm">

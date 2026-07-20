@@ -93,4 +93,48 @@ describe("Google reviewer auth", () => {
     expect(linked.reviewer.googleSub).toBe("google-sub-link");
     expect(linked.linked).toBe(true);
   });
+
+  it("switches to another Google reviewer without overwriting either saved account", async () => {
+    const current = await prisma.reviewer.create({
+      data: {
+        googleSub: "google-sub-current",
+        email: "current@example.com",
+        name: "현재 계정",
+        wallet: { create: {} },
+      },
+    });
+    const target = await prisma.reviewer.create({
+      data: {
+        googleSub: "google-sub-target",
+        email: "target@example.com",
+        name: "전환 계정",
+        wallet: { create: {} },
+      },
+    });
+
+    const switched = await authenticateGoogleReviewer(
+      {
+        googleSub: "google-sub-target",
+        email: "target-updated@example.com",
+        name: "전환 계정",
+        avatarUrl: null,
+      },
+      current.id,
+      { mode: "switch" },
+    );
+
+    expect(switched.reviewer.id).toBe(target.id);
+    await expect(
+      prisma.reviewer.findUniqueOrThrow({ where: { id: current.id } }),
+    ).resolves.toMatchObject({
+      googleSub: "google-sub-current",
+      email: "current@example.com",
+    });
+    await expect(
+      prisma.reviewer.findUniqueOrThrow({ where: { id: target.id } }),
+    ).resolves.toMatchObject({
+      googleSub: "google-sub-target",
+      email: "target-updated@example.com",
+    });
+  });
 });

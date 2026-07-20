@@ -3,6 +3,7 @@ import { connection } from "next/server";
 import { CampaignList } from "@/components/campaign/CampaignList";
 import { ReviewerHero } from "@/components/campaign/ReviewerHero";
 import { Footer } from "@/components/Footer";
+import { ReviewerLogoutButton } from "@/components/auth/ReviewerLogoutButton";
 import { getReviewerId } from "@/lib/auth/session";
 import { listPublicCampaigns } from "@/lib/domain/operator-campaigns";
 import {
@@ -77,6 +78,7 @@ export default async function CampaignsPage() {
           <CampaignList campaigns={home.campaigns} />
         </section>
       </main>
+      {home.account && <ReviewerLogoutButton />}
       <Footer />
     </>
   );

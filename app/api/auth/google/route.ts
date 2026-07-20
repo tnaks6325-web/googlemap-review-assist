@@ -32,6 +32,7 @@ export async function POST(req: Request) {
 
   const body = await req.json().catch(() => null);
   const credential = typeof body?.credential === "string" ? body.credential : "";
+  const mode = body?.mode === "switch" ? "switch" : "login";
   if (!credential) {
     return err("GOOGLE_TOKEN_REQUIRED", "Google 로그인 토큰이 필요합니다", 400);
   }
@@ -39,13 +40,14 @@ export async function POST(req: Request) {
   try {
     const currentReviewerId = await getReviewerId();
     const profile = await verifyGoogleIdToken(credential);
-    const result = await authenticateGoogleReviewer(profile, currentReviewerId);
+    const result = await authenticateGoogleReviewer(profile, currentReviewerId, { mode });
     const res = ok({
       reviewerId: result.reviewer.id,
       email: result.reviewer.email,
       name: result.reviewer.name,
       created: result.created,
       linked: result.linked,
+      switched: result.switched,
     });
     res.cookies.set(REVIEWER_COOKIE, signReviewerSession(result.reviewer.id), sessionCookieOptions);
     return res;
