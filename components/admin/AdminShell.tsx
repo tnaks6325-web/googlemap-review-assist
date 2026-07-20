@@ -1,0 +1,103 @@
+import type { ReactNode } from "react";
+import Link from "next/link";
+import { AdminLogout } from "@/components/admin/AdminLogout";
+import { cn } from "@/lib/cn";
+
+type AdminSection = "overview" | "campaigns" | "reviewers";
+
+interface AdminShellProps {
+  current: AdminSection;
+  title: string;
+  description: string;
+  children: ReactNode;
+}
+
+const navigation: Array<{ id: AdminSection; href: string; label: string; description: string }> = [
+  { id: "overview", href: "/admin", label: "운영 현황", description: "대기 업무와 운영 신호" },
+  { id: "campaigns", href: "/admin/campaigns", label: "캠페인 운영", description: "접수 반영과 장소 자료" },
+  { id: "reviewers", href: "/admin/reviewers", label: "리뷰어 · 정산", description: "검수와 지급 관리" },
+];
+
+function NavigationLink({
+  item,
+  current,
+  compact = false,
+}: {
+  item: (typeof navigation)[number];
+  current: AdminSection;
+  compact?: boolean;
+}) {
+  const active = item.id === current;
+
+  return (
+    <Link
+      href={item.href}
+      className={cn(
+        compact
+          ? "inline-flex shrink-0 items-center border-b-2 px-1 py-3 text-sm font-semibold"
+          : "block rounded-field px-3 py-3 transition-colors",
+        active
+          ? compact
+            ? "border-brand text-brand"
+            : "bg-brand-tint text-brand"
+          : compact
+            ? "border-transparent text-ink-weak hover:text-ink"
+            : "text-ink-sub hover:bg-surface-alt hover:text-ink",
+      )}
+    >
+      <span className="block">{item.label}</span>
+      {!compact ? <span className="mt-1 block text-xs font-normal text-ink-weak">{item.description}</span> : null}
+    </Link>
+  );
+}
+
+export function AdminShell({ current, title, description, children }: AdminShellProps) {
+  return (
+    <div className="min-h-dvh bg-canvas">
+      <div className="mx-auto flex min-h-dvh max-w-[1600px]">
+        <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col border-r border-line bg-surface px-4 py-6 lg:flex">
+          <Link href="/admin" className="px-3 text-base font-bold text-ink">
+            리뷰 캠페인 운영
+          </Link>
+          <p className="mt-1 px-3 text-xs text-ink-weak">관리자 백오피스</p>
+
+          <nav className="mt-8 space-y-1" aria-label="관리자 메뉴">
+            {navigation.map((item) => (
+              <NavigationLink key={item.id} item={item} current={current} />
+            ))}
+          </nav>
+
+          <div className="mt-auto border-t border-line px-3 pt-5">
+            <p className="mb-3 text-xs text-ink-weak">운영자 세션</p>
+            <AdminLogout />
+          </div>
+        </aside>
+
+        <div className="min-w-0 flex-1">
+          <header className="border-b border-line bg-surface lg:hidden">
+            <div className="flex items-center justify-between px-5 py-4">
+              <Link href="/admin" className="text-sm font-bold text-ink">
+                리뷰 캠페인 운영
+              </Link>
+              <AdminLogout />
+            </div>
+            <nav className="flex gap-5 overflow-x-auto px-5" aria-label="관리자 메뉴">
+              {navigation.map((item) => (
+                <NavigationLink key={item.id} item={item} current={current} compact />
+              ))}
+            </nav>
+          </header>
+
+          <div className="mx-auto max-w-[1440px] px-5 py-7 lg:px-8 lg:py-9">
+            <header className="mb-8 border-b border-line pb-6 lg:mb-9">
+              <p className="text-sm font-semibold text-brand">관리자 운영</p>
+              <h1 className="mt-2 text-2xl font-bold text-ink lg:text-[28px]">{title}</h1>
+              <p className="mt-2 text-[15px] text-ink-sub">{description}</p>
+            </header>
+            {children}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

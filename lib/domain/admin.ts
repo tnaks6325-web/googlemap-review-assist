@@ -80,6 +80,7 @@ export interface AdminReviewerRow {
   id: string;
   phone: string | null;
   maskedPhone: string;
+  displayName: string;
   balance: number;
   pendingAmount: number;
   paidAmount: number;
@@ -220,6 +221,7 @@ export async function getAdminReviewerRows(): Promise<AdminReviewerRow[]> {
       id: reviewer.id,
       phone: reviewer.phone,
       maskedPhone: maskPhone(reviewer.phone),
+      displayName: reviewer.name?.trim() || reviewer.email?.trim() || maskPhone(reviewer.phone),
       balance: reviewer.wallet?.balance ?? 0,
       pendingAmount: settlementSum.pending,
       paidAmount: settlementSum.paid,

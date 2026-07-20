@@ -7,7 +7,10 @@ import {
   googleMapsSearchUrl,
   type PublicCampaignCard,
 } from "@/lib/domain/operator-campaigns";
-import { summarizeCampaignReviewDraftSources } from "@/lib/domain/campaign-review-draft";
+import {
+  normalizeCampaignDraftGuidance,
+  summarizeCampaignReviewDraftSources,
+} from "@/lib/domain/campaign-review-draft";
 import type { ReviewProofAnalysis } from "@/lib/domain/review-proof-analysis";
 
 export const REVIEWER_PLACE_COOLDOWN_DAYS = 7;
@@ -157,6 +160,7 @@ async function fetchActiveCampaignRows(db: DbClient) {
         select: { id: true, title: true, description: true },
         take: 5,
       },
+      draftGuidance: true,
       _count: {
         select: {
           receipts: {
@@ -214,12 +218,17 @@ function hasSufficientDraftSources(campaign: CampaignRow) {
     (reference) =>
       hasUsableReferenceText(reference.title) || hasUsableReferenceText(reference.description),
   ).length;
+  const draftGuidance = normalizeCampaignDraftGuidance(campaign.draftGuidance);
 
   return summarizeCampaignReviewDraftSources({
     googlePlace,
     googleReviewCount,
     naverPlace,
     naverReferenceCount: blogReferenceCount + naverReviewCount,
+    category: googlePlace?.category ?? naverPlace?.category,
+    businessName: googlePlace?.name ?? naverPlace?.name ?? campaign.business.name,
+    industry: draftGuidance.industry,
+    approvedFactCount: draftGuidance.approvedFacts.length,
   }).canGenerateReviewDraft;
 }
 

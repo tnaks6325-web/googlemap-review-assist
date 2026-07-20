@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { GoogleSignInButton } from "@/components/auth/GoogleSignInButton";
 import { AmountText, Button, Card, TextInput } from "@/components/ui";
+import { formatPhoneInput } from "@/lib/phone";
 
 interface Tx {
   id: string;
@@ -38,6 +39,13 @@ interface NotificationItem {
   createdAt: string;
 }
 
+interface ReviewerSettlementProfile {
+  name: string | null;
+  phone: string | null;
+  email: string | null;
+  settlementProfileRequired: boolean;
+}
+
 interface SettlementSummary {
   availableBalance: number;
   pendingAmount: number;
@@ -45,6 +53,7 @@ interface SettlementSummary {
   minAmount: number;
   unitAmount: number;
   payoutAccount: PayoutAccount | null;
+  profile: ReviewerSettlementProfile;
   settlements: SettlementItem[];
   notifications: NotificationItem[];
 }
@@ -102,8 +111,10 @@ export default function MePage() {
   const [bankName, setBankName] = useState("");
   const [accountNumber, setAccountNumber] = useState("");
   const [accountHolder, setAccountHolder] = useState("");
+  const [profileName, setProfileName] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
   const [editingAccount, setEditingAccount] = useState(false);
-  const [busy, setBusy] = useState<"load" | "account" | "settlement" | null>(null);
+  const [busy, setBusy] = useState<"load" | "profile" | "account" | "settlement" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -121,6 +132,8 @@ export default function MePage() {
       if (!summaryRes.ok) throw new Error("정산 정보를 불러오지 못했어요");
       const summaryData = (await summaryRes.json()) as SettlementSummary;
       setSummary(summaryData);
+      setProfileName(summaryData.profile.name ?? "");
+      setContactPhone(formatPhoneInput(summaryData.profile.phone ?? ""));
       setEditingAccount(!summaryData.payoutAccount);
       if (summaryData.payoutAccount) {
         setBankName(summaryData.payoutAccount.bankName);
@@ -176,6 +189,27 @@ export default function MePage() {
     }
   };
 
+  const saveProfile = async () => {
+    setBusy("profile");
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await fetch("/api/me/profile", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: profileName, phone: contactPhone }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error?.message ?? "기본 정보를 저장하지 못했어요.");
+      setNotice("정산 기본 정보를 저장했어요.");
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "오류가 발생했어요.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const requestSettle = async () => {
     setBusy("settlement");
     setError(null);
@@ -225,6 +259,7 @@ export default function MePage() {
   const unitAmount = summary?.unitAmount ?? 1000;
   const canRequest =
     Boolean(summary?.payoutAccount) &&
+    !summary?.profile.settlementProfileRequired &&
     Number(amount) >= minAmount &&
     Number(amount) % unitAmount === 0;
 
@@ -259,6 +294,35 @@ export default function MePage() {
           </div>
         </Card>
       </section>
+
+      <Card className="space-y-3">
+        <div>
+          <p className="text-sm font-bold text-ink">정산 기본 정보</p>
+          <p className="mt-1 text-xs leading-5 text-ink-weak">
+            이름과 연락처는 정산 안내와 지급 확인에 사용합니다. 현재 SMS·카카오 본인인증은 제공하지 않습니다.
+          </p>
+        </div>
+        <TextInput
+          placeholder="이름"
+          value={profileName}
+          onChange={(e) => setProfileName(e.target.value.slice(0, 80))}
+        />
+        <TextInput
+          inputMode="tel"
+          placeholder="010-0000-0000"
+          value={contactPhone}
+          onChange={(e) => setContactPhone(formatPhoneInput(e.target.value))}
+        />
+        <Button
+          fullWidth
+          variant="secondary"
+          loading={busy === "profile"}
+          disabled={!profileName.trim() || contactPhone.replace(/[^0-9]/g, "").length !== 11}
+          onClick={saveProfile}
+        >
+          기본 정보 저장
+        </Button>
+      </Card>
 
       <Card className="space-y-3">
         <div className="flex items-center justify-between gap-3">
@@ -339,7 +403,7 @@ export default function MePage() {
           <Button
             fullWidth
             variant="secondary"
-            disabled={!summary?.payoutAccount || maxRequestable < minAmount}
+            disabled={!summary?.payoutAccount || summary?.profile.settlementProfileRequired || maxRequestable < minAmount}
             onClick={() => setAmount(String(maxRequestable))}
           >
             전액

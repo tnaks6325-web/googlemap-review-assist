@@ -58,6 +58,16 @@ async function createCampaign(
             : []),
         ],
       },
+      externalReviews: sourceReady
+        ? {
+            create: {
+              platform: "GOOGLE",
+              reviewType: "GENERAL",
+              content: "방문하기 편했고 안내가 친절해서 전반적으로 만족스러웠습니다.",
+              reviewHash: `reference-${uniq()}`,
+            },
+          }
+        : undefined,
     },
   });
   const campaign = await prisma.campaign.create({

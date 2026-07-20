@@ -1,14 +1,14 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { AdminLogout } from "@/components/admin/AdminLogout";
-import { ReviewProofQueue } from "@/components/admin/ReviewProofQueue";
+import { AdminReviewerCooldownReset } from "@/components/admin/AdminReviewerCooldownReset";
 import { AdminSettlementBulkActions } from "@/components/admin/AdminSettlementBulkActions";
+import { AdminShell } from "@/components/admin/AdminShell";
+import { ReviewProofQueue } from "@/components/admin/ReviewProofQueue";
 import { Card } from "@/components/ui";
 import { getAdminId } from "@/lib/auth/session";
 import {
   getAdminReviewerRows,
-  getPendingReviewProofs,
   getAdminSettlementRequests,
+  getPendingReviewProofs,
 } from "@/lib/domain/admin";
 
 export const runtime = "nodejs";
@@ -27,26 +27,12 @@ export default async function AdminReviewersPage() {
   const paidAmount = reviewers.reduce((sum, reviewer) => sum + reviewer.paidAmount, 0);
 
   return (
-    <main className="mx-auto max-w-5xl px-5 py-8">
-      <header className="mb-8 flex items-start justify-between gap-4">
-        <div>
-          <div className="flex flex-wrap gap-3 text-sm text-ink-weak">
-            <Link href="/admin" className="hover:text-ink-sub">
-              관리자 홈
-            </Link>
-            <Link href="/admin/campaigns" className="hover:text-ink-sub">
-              캠페인 운영
-            </Link>
-          </div>
-          <h1 className="mt-3 text-[24px] font-bold text-ink">리뷰어 관리</h1>
-          <p className="mt-1 text-[15px] text-ink-sub">
-            리뷰어 정보, 적립금 현황, 정산신청을 한 번에 확인합니다.
-          </p>
-        </div>
-        <AdminLogout />
-      </header>
-
-      <section className="mb-6 grid gap-3 sm:grid-cols-4">
+    <AdminShell
+      current="reviewers"
+      title="리뷰어 · 정산 관리"
+      description="리뷰 캡처 검수, 적립금 현황, 정산 신청과 참여 제한 예외를 관리합니다."
+    >
+      <section className="mb-8 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Metric label="리뷰어" value={`${reviewers.length.toLocaleString("ko-KR")}명`} />
         <Metric label="정산 가능 잔액" value={`${totalBalance.toLocaleString("ko-KR")}P`} />
         <Metric label="리뷰 검수 대기" value={`${reviewProofs.length.toLocaleString("ko-KR")}건`} />
@@ -105,9 +91,16 @@ export default async function AdminReviewersPage() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-ink-weak">리뷰어 목록</h2>
-        <div className="overflow-x-auto rounded-card border border-line bg-surface">
-          <table className="min-w-full text-left text-sm">
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <h2 className="text-sm font-semibold text-ink-weak">리뷰어 목록</h2>
+            <p className="mt-1 text-xs text-ink-weak">
+              테스트 또는 고객 지원이 필요한 경우에만 리뷰어별 최근 7일 동일 장소 참여 제한을 해제하세요.
+            </p>
+          </div>
+        </div>
+        <div className="overflow-x-auto rounded-card border border-line bg-surface shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+          <table className="min-w-[980px] w-full text-left text-sm">
             <thead className="bg-canvas text-xs text-ink-weak">
               <tr>
                 <th className="px-4 py-3 font-semibold">리뷰어</th>
@@ -116,13 +109,14 @@ export default async function AdminReviewersPage() {
                 <th className="px-4 py-3 text-right font-semibold">대기</th>
                 <th className="px-4 py-3 text-right font-semibold">지급완료</th>
                 <th className="px-4 py-3 text-right font-semibold">참여</th>
+                <th className="px-4 py-3 text-right font-semibold">참여 제한</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line">
               {reviewers.map((reviewer) => (
                 <tr key={reviewer.id}>
                   <td className="px-4 py-3">
-                    <p className="font-semibold text-ink">{reviewer.maskedPhone}</p>
+                    <p className="font-semibold text-ink">{reviewer.displayName}</p>
                     <p className="text-xs text-ink-weak">
                       가입 {reviewer.createdAt.toLocaleDateString("ko-KR")}
                     </p>
@@ -130,7 +124,9 @@ export default async function AdminReviewersPage() {
                   <td className="px-4 py-3 text-ink-sub">
                     {reviewer.payoutAccount ? (
                       <>
-                        <p>{reviewer.payoutAccount.bankName} {reviewer.payoutAccount.maskedAccountNumber}</p>
+                        <p>
+                          {reviewer.payoutAccount.bankName} {reviewer.payoutAccount.maskedAccountNumber}
+                        </p>
                         <p className="text-xs text-ink-weak">{reviewer.payoutAccount.accountHolder}</p>
                       </>
                     ) : (
@@ -149,16 +145,22 @@ export default async function AdminReviewersPage() {
                   <td className="px-4 py-3 text-right tabular-nums text-ink-sub">
                     {reviewer.receiptCount.toLocaleString("ko-KR")}건
                   </td>
+                  <td className="px-4 py-3 text-right">
+                    <AdminReviewerCooldownReset
+                      reviewerId={reviewer.id}
+                      reviewerName={reviewer.displayName}
+                    />
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          {!reviewers.length && (
+          {!reviewers.length ? (
             <div className="p-6 text-center text-sm text-ink-weak">등록된 리뷰어가 없습니다.</div>
-          )}
+          ) : null}
         </div>
       </section>
-    </main>
+    </AdminShell>
   );
 }
 

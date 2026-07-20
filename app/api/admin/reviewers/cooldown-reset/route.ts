@@ -1,13 +1,12 @@
 import { getAdminId } from "@/lib/auth/session";
 import { checkOrigin } from "@/lib/auth/origin";
-import { resetReviewerCampaignCooldownByEmail } from "@/lib/domain/reviewer-cooldown-reset";
+import { resetReviewerCampaignCooldownByReviewerId } from "@/lib/domain/reviewer-cooldown-reset";
 import { err, ok } from "@/lib/http";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
 const HOUR_MS = 60 * 60 * 1000;
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function POST(req: Request) {
   if (!checkOrigin(req)) return err("BAD_ORIGIN", "Request origin is not allowed.", 403);
@@ -25,12 +24,12 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json().catch(() => null);
-  const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : "";
-  if (!EMAIL_PATTERN.test(email)) {
-    return err("INVALID_EMAIL", "A valid reviewer email is required.", 400);
+  const reviewerId = typeof body?.reviewerId === "string" ? body.reviewerId.trim() : "";
+  if (!reviewerId) {
+    return err("INVALID_REVIEWER", "A reviewer is required.", 400);
   }
 
-  const result = await resetReviewerCampaignCooldownByEmail(email);
+  const result = await resetReviewerCampaignCooldownByReviewerId(reviewerId);
   if (!result) return err("REVIEWER_NOT_FOUND", "Reviewer not found.", 404);
 
   return ok(result);

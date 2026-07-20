@@ -19,6 +19,7 @@ async function createReviewer(balance = 10000) {
   return prisma.reviewer.create({
     data: {
       phone: uniquePhone(),
+      name: "Test Reviewer",
       wallet: { create: { balance } },
     },
   });

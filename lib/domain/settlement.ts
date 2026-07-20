@@ -29,6 +29,18 @@ export interface ReviewerPayoutAccountInput {
   accountHolder: string;
 }
 
+export interface ReviewerSettlementProfileInput {
+  name: unknown;
+  phone: unknown;
+}
+
+export interface ReviewerSettlementProfile {
+  name: string | null;
+  phone: string | null;
+  email: string | null;
+  settlementProfileRequired: boolean;
+}
+
 export interface SafeReviewerPayoutAccount {
   bankName: string;
   accountLast4: string;
@@ -57,6 +69,30 @@ function normalizeAccountNumber(value: unknown): string {
     throw new SettlementError("INVALID_PAYOUT", "계좌번호를 정확히 입력해 주세요");
   }
   return normalized;
+}
+
+function normalizeReviewerName(value: unknown): string {
+  const name = String(value ?? "").trim().replace(/\s+/g, " ");
+  if (!name || name.length > 80) {
+    throw new SettlementError("INVALID_PROFILE", "이름을 80자 이내로 입력해 주세요.");
+  }
+  return name;
+}
+
+function normalizeReviewerPhone(value: unknown): string {
+  const phone = String(value ?? "").replace(/[^0-9]/g, "");
+  if (!/^010\d{8}$/.test(phone)) {
+    throw new SettlementError("INVALID_PROFILE", "연락처를 010-0000-0000 형식으로 입력해 주세요.");
+  }
+  return phone;
+}
+
+export function needsReviewerSettlementProfile(input: {
+  name: string | null | undefined;
+  phone: string | null | undefined;
+  hasPayoutAccount: boolean;
+}): boolean {
+  return !input.name?.trim() || !input.phone?.trim() || !input.hasPayoutAccount;
 }
 
 function encryptAccountNumber(accountNumber: string): string {
@@ -184,8 +220,76 @@ export async function getReviewerPayoutAccount(
   return account ? toSafePayoutAccount(account) : null;
 }
 
+export async function getReviewerSettlementProfile(
+  reviewerId: string,
+): Promise<ReviewerSettlementProfile> {
+  const reviewer = await prisma.reviewer.findUnique({
+    where: { id: reviewerId },
+    select: {
+      name: true,
+      phone: true,
+      email: true,
+      payoutAccount: { select: { id: true } },
+    },
+  });
+  if (!reviewer) {
+    throw new SettlementError("REVIEWER_NOT_FOUND", "리뷰어 정보를 찾을 수 없습니다.", 404);
+  }
+
+  return {
+    name: reviewer.name,
+    phone: reviewer.phone,
+    email: reviewer.email,
+    settlementProfileRequired: needsReviewerSettlementProfile({
+      name: reviewer.name,
+      phone: reviewer.phone,
+      hasPayoutAccount: Boolean(reviewer.payoutAccount),
+    }),
+  };
+}
+
+export async function updateReviewerSettlementProfile(
+  reviewerId: string,
+  input: ReviewerSettlementProfileInput,
+): Promise<ReviewerSettlementProfile> {
+  const name = normalizeReviewerName(input.name);
+  const phone = normalizeReviewerPhone(input.phone);
+
+  try {
+    const reviewer = await prisma.reviewer.update({
+      where: { id: reviewerId },
+      data: { name, phone },
+      select: {
+        name: true,
+        phone: true,
+        email: true,
+        payoutAccount: { select: { id: true } },
+      },
+    });
+    return {
+      name: reviewer.name,
+      phone: reviewer.phone,
+      email: reviewer.email,
+      settlementProfileRequired: needsReviewerSettlementProfile({
+        name: reviewer.name,
+        phone: reviewer.phone,
+        hasPayoutAccount: Boolean(reviewer.payoutAccount),
+      }),
+    };
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    if (code === "P2002") {
+      throw new SettlementError("CONTACT_IN_USE", "이미 등록된 연락처입니다.", 409);
+    }
+    if (code === "P2025") {
+      throw new SettlementError("REVIEWER_NOT_FOUND", "리뷰어 정보를 찾을 수 없습니다.", 404);
+    }
+    throw error;
+  }
+}
+
 export async function getReviewerSettlementSummary(reviewerId: string) {
-  const [wallet, settlements, payoutAccount, notifications] = await Promise.all([
+  const [wallet, settlements, payoutAccount, notifications, profile] = await Promise.all([
     prisma.pointWallet.findUnique({ where: { reviewerId }, select: { balance: true } }),
     prisma.settlement.findMany({
       where: { reviewerId },
@@ -214,6 +318,7 @@ export async function getReviewerSettlementSummary(reviewerId: string) {
         createdAt: true,
       },
     }),
+    getReviewerSettlementProfile(reviewerId),
   ]);
 
   return {
@@ -227,6 +332,7 @@ export async function getReviewerSettlementSummary(reviewerId: string) {
     minAmount: SETTLE_MIN,
     unitAmount: SETTLE_UNIT,
     payoutAccount,
+    profile,
     settlements,
     notifications,
   };
@@ -257,9 +363,26 @@ export async function requestSettlement(
   }
 
   return runMoneyTx(async (tx) => {
-    const account = await tx.reviewerPayoutAccount.findUnique({ where: { reviewerId } });
+    const [account, reviewer] = await Promise.all([
+      tx.reviewerPayoutAccount.findUnique({ where: { reviewerId } }),
+      tx.reviewer.findUnique({
+        where: { id: reviewerId },
+        select: { name: true, phone: true },
+      }),
+    ]);
     if (!account) {
       throw new SettlementError("PAYOUT_REQUIRED", "정산 계좌를 먼저 등록해 주세요", 422);
+    }
+
+    if (
+      !reviewer ||
+      needsReviewerSettlementProfile({
+        name: reviewer.name,
+        phone: reviewer.phone,
+        hasPayoutAccount: true,
+      })
+    ) {
+      throw new SettlementError("PROFILE_REQUIRED", "정산 기본 정보를 먼저 등록해 주세요.", 422);
     }
 
     const decremented = await tx.pointWallet.updateMany({

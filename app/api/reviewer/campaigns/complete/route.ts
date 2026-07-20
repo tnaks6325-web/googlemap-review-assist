@@ -7,6 +7,7 @@ import {
 } from "@/lib/domain/reviewer-campaigns";
 import { analyzeReviewProof, type ReviewProofAnalysis } from "@/lib/domain/review-proof-analysis";
 import { enqueueReviewProofAnalysis } from "@/lib/domain/operational-jobs";
+import { getReviewerSettlementProfile } from "@/lib/domain/settlement";
 import { err, ok } from "@/lib/http";
 import {
   ReviewProofStorageError,
@@ -72,7 +73,11 @@ export async function POST(req: Request) {
     if (analysis.status === "UNAVAILABLE") {
       await enqueueReviewProofAnalysis({ assignmentId }).catch(() => undefined);
     }
-    return ok(result);
+    const profile = await getReviewerSettlementProfile(reviewerId);
+    return ok({
+      ...result,
+      settlementProfileRequired: profile.settlementProfileRequired,
+    });
   } catch (e) {
     if (e instanceof ReviewProofStorageError) return err(e.code, e.message, e.status);
     if (e instanceof ReviewerCampaignError) return err(e.code, e.message, e.status);

@@ -13,7 +13,9 @@ let seq = 0;
 const uniq = () => `${Date.now()}_${seq++}_${Math.floor(Math.random() * 1e6)}`;
 
 async function reviewerWithBalance(balance: number) {
-  const r = await prisma.reviewer.create({ data: { phone: `t${uniq()}` } });
+  const r = await prisma.reviewer.create({
+    data: { phone: `t${uniq()}`, name: "Test Reviewer" },
+  });
   await prisma.pointWallet.create({ data: { reviewerId: r.id, balance } });
   await upsertReviewerPayoutAccount(r.id, {
     bankName: "국민은행",

@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AdminCampaignBlogReferences } from "@/components/admin/AdminCampaignBlogReferences";
+import { AdminCampaignDraftGuidance } from "@/components/admin/AdminCampaignDraftGuidance";
 import { AdminCampaignNaverCandidates } from "@/components/admin/AdminCampaignNaverCandidates";
-import { AdminLogout } from "@/components/admin/AdminLogout";
+import { AdminShell } from "@/components/admin/AdminShell";
 import { SheetImportDryRun } from "@/components/admin/SheetImportDryRun";
 import { Card } from "@/components/ui";
 import { getAdminId } from "@/lib/auth/session";
@@ -24,26 +25,13 @@ export default async function AdminCampaignsPage() {
   const paidPointAmount = campaigns.reduce((sum, campaign) => sum + campaign.paidPointAmount, 0);
 
   return (
-    <main className="mx-auto max-w-3xl px-5 py-8">
-      <header className="mb-8 flex items-start justify-between gap-4">
-        <div>
-          <div className="flex flex-wrap gap-3 text-sm text-ink-weak">
-            <Link href="/admin" className="hover:text-ink-sub">
-              관리자 홈
-            </Link>
-            <Link href="/admin/reviewers" className="hover:text-ink-sub">
-              리뷰어 관리
-            </Link>
-          </div>
-          <h1 className="mt-3 text-[24px] font-bold text-ink">캠페인 운영</h1>
-          <p className="mt-1 text-[15px] text-ink-sub">
-            Google Sheet 접수건을 리뷰 캠페인으로 반영하고 운영합니다.
-          </p>
-        </div>
-        <AdminLogout />
-      </header>
+    <AdminShell
+      current="campaigns"
+      title="캠페인 운영"
+      description="Google Sheet 접수건을 반영하고 장소·원고 참고자료를 관리합니다."
+    >
 
-      <section className="mb-6 grid gap-3 sm:grid-cols-4">
+      <section className="mb-8 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Metric label="진행 중" value={`${activeCount}건`} />
         <Metric label="배정" value={`${assignedCount.toLocaleString("ko-KR")}건`} />
         <Metric label="완료" value={`${completedCount.toLocaleString("ko-KR")}건`} />
@@ -52,8 +40,8 @@ export default async function AdminCampaignsPage() {
 
       <section className="mb-8 space-y-3">
         <h2 className="text-sm font-semibold text-ink-weak">Google Sheet 반영</h2>
-        <Card className="space-y-3">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <Card className="space-y-4 p-5">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <p className="font-semibold text-ink">광고 요청 시트</p>
               <p className="mt-1 text-sm text-ink-weak">
@@ -76,10 +64,10 @@ export default async function AdminCampaignsPage() {
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-ink-weak">캠페인 목록</h2>
         {campaigns.length ? (
-          <div className="space-y-3">
+          <div className="space-y-4">
             {campaigns.map((campaign) => (
-              <Card key={campaign.id} className="space-y-3">
-                <div className="flex items-start justify-between gap-3">
+              <Card key={campaign.id} className="space-y-4 p-5">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                   <div>
                     <p className="text-xs font-semibold text-brand">{campaign.statusLabel}</p>
                     <h3 className="mt-1 text-lg font-bold text-ink">{campaign.businessName}</h3>
@@ -95,13 +83,13 @@ export default async function AdminCampaignsPage() {
                     참여 링크
                   </Link>
                 </div>
-                <div className="grid grid-cols-4 gap-2 text-sm">
+                <div className="grid grid-cols-2 gap-2 text-sm lg:grid-cols-4">
                   <SmallMetric label="배정" value={`${campaign.assignedCount}건`} />
                   <SmallMetric label="완료" value={`${campaign.completedCount}건`} />
                   <SmallMetric label="지급" value={`${campaign.paidPointAmount.toLocaleString("ko-KR")}P`} />
                   <SmallMetric label="코드" value={`${campaign.issuedCodeCount}개`} />
                 </div>
-                <div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-5">
+                <div className="grid grid-cols-2 gap-2 text-sm lg:grid-cols-5">
                   <SmallMetric
                     label="원고자료"
                     value={`${campaign.draftSourceGroupCount}/4${campaign.canGenerateReviewDraft ? "" : " 부족"}`}
@@ -121,6 +109,10 @@ export default async function AdminCampaignsPage() {
                   initialReferences={campaign.blogReferences}
                   initialCount={campaign.blogReferenceCount}
                 />
+                <AdminCampaignDraftGuidance
+                  campaignId={campaign.id}
+                  initialGuidance={campaign.draftGuidance}
+                />
               </Card>
             ))}
           </div>
@@ -133,7 +125,7 @@ export default async function AdminCampaignsPage() {
           </Card>
         )}
       </section>
-    </main>
+    </AdminShell>
   );
 }
 

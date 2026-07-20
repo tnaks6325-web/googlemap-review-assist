@@ -22,6 +22,7 @@ async function createAssignment(options: {
   naverPlace?: boolean;
   googleReview?: boolean;
   blogReference?: boolean;
+  category?: string;
 }) {
   const reviewer = await createReviewer();
   const owner = await prisma.owner.create({
@@ -115,6 +116,12 @@ async function createAssignment(options: {
       status: "ASSIGNED",
     },
   });
+  if (options.category) {
+    await prisma.externalPlace.updateMany({
+      where: { businessId: business.id },
+      data: { category: options.category },
+    });
+  }
   return { reviewer, business, campaign, receipt };
 }
 
@@ -139,8 +146,36 @@ describe("campaign review draft generator", () => {
     });
   });
 
-  it("generates and stores a 30 to 200 non-space character draft from two or more source groups", async () => {
+  it("blocks duplicate place listings without a review, blog, or approved fact", async () => {
     const { reviewer, receipt } = await createAssignment({ googlePlace: true, naverPlace: true });
+
+    await expect(generateCampaignReviewDraftForAssignment(reviewer.id, receipt.id)).rejects.toMatchObject({
+      code: "INSUFFICIENT_QUALITY_CONTEXT",
+      status: 422,
+    });
+  });
+
+  it("allows an administrator-approved fact to satisfy the substantive source requirement", async () => {
+    const { reviewer, campaign, receipt } = await createAssignment({ googlePlace: true, naverPlace: true });
+    await prisma.campaignDraftGuidance.create({
+      data: {
+        campaignId: campaign.id,
+        industry: "BEAUTY_CLINIC",
+        approvedFactsJson: JSON.stringify(["피부 상담은 예약제로 운영됩니다."]),
+        bannedTermsJson: JSON.stringify(["메뉴", "음식"]),
+      },
+    });
+
+    const result = await generateCampaignReviewDraftForAssignment(reviewer.id, receipt.id);
+
+    expect(result.sourceGroupCount).toBeGreaterThanOrEqual(2);
+    expect(nonSpaceLength(result.text)).toBeGreaterThanOrEqual(30);
+    expect(result.text).toContain("피부 상담은 예약제로 운영됩니다.");
+    expect(result.text).not.toMatch(/메뉴|음식/);
+  });
+
+  it("generates and stores a 30 to 200 non-space character draft from place data and a substantive source", async () => {
+    const { reviewer, receipt } = await createAssignment({ googlePlace: true, naverPlace: true, googleReview: true });
 
     const result = await generateCampaignReviewDraftForAssignment(reviewer.id, receipt.id);
     const stored = await prisma.receipt.findUnique({ where: { id: receipt.id } });
@@ -178,7 +213,7 @@ describe("campaign review draft generator", () => {
   });
 
   it("keeps Gemini output within 200 non-space characters without failing at the boundary", async () => {
-    const { reviewer, receipt } = await createAssignment({ googlePlace: true, naverPlace: true });
+    const { reviewer, receipt } = await createAssignment({ googlePlace: true, naverPlace: true, googleReview: true });
     process.env.REVIEW_DRAFT_PROVIDER = "gemini";
     process.env.GEMINI_API_KEY = "test-gemini-api-key";
     vi.stubGlobal(
@@ -200,7 +235,7 @@ describe("campaign review draft generator", () => {
   });
 
   it("limits Gemini output to three sentences", async () => {
-    const { reviewer, receipt } = await createAssignment({ googlePlace: true, naverPlace: true });
+    const { reviewer, receipt } = await createAssignment({ googlePlace: true, naverPlace: true, googleReview: true });
     process.env.REVIEW_DRAFT_PROVIDER = "gemini";
     process.env.GEMINI_API_KEY = "test-gemini-api-key";
     vi.stubGlobal(
@@ -229,5 +264,41 @@ describe("campaign review draft generator", () => {
     const result = await generateCampaignReviewDraftForAssignment(reviewer.id, receipt.id);
 
     expect(result.text.match(/[.!?]+/g)?.length ?? 0).toBeLessThanOrEqual(3);
+  });
+
+  it("rejects restaurant-style Gemini output for a beauty clinic", async () => {
+    const { reviewer, receipt } = await createAssignment({
+      googlePlace: true,
+      googleReview: true,
+      category: "피부과",
+    });
+    process.env.REVIEW_DRAFT_PROVIDER = "gemini";
+    process.env.GEMINI_API_KEY = "test-gemini-api-key";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            candidates: [
+              {
+                content: {
+                  parts: [
+                    {
+                      text: "메뉴도 다양하고 매장 분위기를 함께 즐기기 좋은 곳이에요. 음식도 맛있어서 다음에도 방문하고 싶습니다.",
+                    },
+                  ],
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      ),
+    );
+
+    await expect(generateCampaignReviewDraftForAssignment(reviewer.id, receipt.id)).rejects.toMatchObject({
+      code: "UNSUITABLE_GENERATED_DRAFT",
+      status: 422,
+    });
   });
 });

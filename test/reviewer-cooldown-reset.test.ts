@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import { generateUniqueSlug } from "@/lib/domain/codes";
-import { resetReviewerCampaignCooldownByEmail } from "@/lib/domain/reviewer-cooldown-reset";
+import { resetReviewerCampaignCooldownByReviewerId } from "@/lib/domain/reviewer-cooldown-reset";
 
 let sequence = 0;
 const unique = () => `${Date.now()}-${sequence++}-${Math.floor(Math.random() * 1_000_000)}`;
@@ -51,7 +51,7 @@ describe("reviewer campaign cooldown reset", () => {
     const target = await createReceipt(`target-${unique()}@test.local`, recentAt);
     const other = await createReceipt(`other-${unique()}@test.local`, recentAt);
 
-    const result = await resetReviewerCampaignCooldownByEmail(target.reviewer.email!, now);
+    const result = await resetReviewerCampaignCooldownByReviewerId(target.reviewer.id, now);
 
     expect(result).toMatchObject({
       reviewerId: target.reviewer.id,
@@ -68,9 +68,9 @@ describe("reviewer campaign cooldown reset", () => {
     expect(untouchedReceipt.createdAt).toEqual(recentAt);
   });
 
-  it("returns null when the reviewer email does not exist", async () => {
+  it("returns null when the reviewer id does not exist", async () => {
     await expect(
-      resetReviewerCampaignCooldownByEmail(`missing-${unique()}@test.local`),
+      resetReviewerCampaignCooldownByReviewerId(`missing-${unique()}`),
     ).resolves.toBeNull();
   });
 });

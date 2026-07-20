@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { GoogleSignInButton } from "@/components/auth/GoogleSignInButton";
-import { Button, Card, StepBar, TextInput } from "@/components/ui";
-import { formatPhoneInput, isFixedKoreanMobilePhone } from "@/lib/phone";
+import { Button, Card, StepBar } from "@/components/ui";
+import { getInitialReviewerStep } from "@/lib/auth/reviewer-entry";
 
 interface AssignedCampaign {
   id: string;
@@ -24,12 +25,11 @@ interface Props {
   initialTotalRewardPoints: number;
   initialCategoryCounts: CategoryCount[];
   cooldownDays: number;
+  initialReviewerSignedIn: boolean;
 }
+type Step = "signIn" | "summary" | "assigned" | "draft" | "complete";
 
-type Step = "phone" | "otp" | "summary" | "assigned" | "draft" | "complete";
-
-const FLOW: Step[] = ["phone", "otp", "summary", "assigned", "draft", "complete"];
-const SHOW_DEV_OTP_BYPASS = process.env.NODE_ENV !== "production";
+const FLOW: Step[] = ["signIn", "summary", "assigned", "draft", "complete"];
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
   const res = await fetch(url, {
@@ -85,6 +85,7 @@ interface CompleteResponse {
   paidAmount?: number;
   pendingApproval?: boolean;
   hasProofImage?: boolean;
+  settlementProfileRequired?: boolean;
   analysis?: {
     status: string;
     similarity: number;
@@ -113,14 +114,11 @@ export function ReviewFlow({
   initialTotalRewardPoints,
   initialCategoryCounts,
   cooldownDays: initialCooldownDays,
+  initialReviewerSignedIn,
 }: Props) {
-  const [step, setStep] = useState<Step>("phone");
+  const [step, setStep] = useState<Step>(() => getInitialReviewerStep(initialReviewerSignedIn));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [phone, setPhone] = useState("");
-  const [requestId, setRequestId] = useState("");
-  const [devCode, setDevCode] = useState<string | null>(null);
-  const [code, setCode] = useState("");
   const [availableCount, setAvailableCount] = useState(initialAvailableCount);
   const [totalRewardPoints, setTotalRewardPoints] = useState(initialTotalRewardPoints);
   const [categoryCounts, setCategoryCounts] = useState(initialCategoryCounts);
@@ -132,13 +130,14 @@ export function ReviewFlow({
   const [copied, setCopied] = useState(false);
   const [completion, setCompletion] = useState<CompleteResponse | null>(null);
   const [screenshot, setScreenshot] = useState<File | null>(null);
+  const [reviewGuideOpen, setReviewGuideOpen] = useState(false);
+  const [reviewGuideAcknowledged, setReviewGuideAcknowledged] = useState(false);
 
   useEffect(() => {
     document.documentElement.lang = "ko";
   }, []);
 
   const currentCampaign = assignedCampaign ?? initialCampaign;
-  const phoneOk = isFixedKoreanMobilePhone(phone);
   const stepIndex = Math.max(FLOW.indexOf(step), 0);
   const ctaPoints = formatPoints(totalRewardPoints);
 
@@ -167,30 +166,39 @@ export function ReviewFlow({
     setStep("summary");
   };
 
-  const requestOtp = () =>
-    run(async () => {
-      const data = await postJson<{ requestId: string; devCode?: string }>("/api/auth/otp/request", { phone });
-      setRequestId(data.requestId);
-      setDevCode(data.devCode ?? null);
-      setStep("otp");
-    });
+  useEffect(() => {
+    if (!initialReviewerSignedIn) return;
+    let cancelled = false;
 
-  const verifyOtp = () =>
-    run(async () => {
-      await postJson("/api/auth/otp/verify", { requestId, code, phone });
-      await loadAvailability();
-    });
+    void (async () => {
+      setBusy(true);
+      setError(null);
+      try {
+        const data = await getJson<AvailabilityResponse>("/api/reviewer/campaigns/available");
+        if (cancelled) return;
+        setAvailableCount(data.availableCount);
+        setTotalRewardPoints(data.totalRewardPoints);
+        setCategoryCounts(data.categoryCounts ?? []);
+        setCooldownDays(data.cooldownDays);
+        setStep("summary");
+      } catch (error) {
+        if (!cancelled) {
+          setError(error instanceof Error ? error.message : "로그인 상태를 확인하지 못했어요");
+          setStep("signIn");
+        }
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialReviewerSignedIn]);
 
   const continueWithGoogle = () => {
     void run(loadAvailability);
   };
-
-  const devBypassOtp = () =>
-    run(async () => {
-      await postJson("/api/auth/otp/verify", { requestId, code: "000000", phone });
-      setCode("000000");
-      await loadAvailability();
-    });
 
   const assignCampaign = () =>
     run(async () => {
@@ -201,6 +209,9 @@ export function ReviewFlow({
       setDraft("");
       setDraftMeta(null);
       setCompletion(null);
+      setScreenshot(null);
+      setReviewGuideOpen(false);
+      setReviewGuideAcknowledged(false);
       if (!data.assignedCampaign) {
         setError("지금 참여 가능한 캠페인이 없어요");
         return;
@@ -227,6 +238,8 @@ export function ReviewFlow({
       setDraft(data.text);
       setDraftMeta(data);
       setScreenshot(null);
+      setReviewGuideOpen(false);
+      setReviewGuideAcknowledged(false);
       await copyText(data.text);
       setStep("draft");
     });
@@ -265,11 +278,13 @@ export function ReviewFlow({
       setDraftMeta(null);
       setScreenshot(null);
       setCompletion(null);
+      setReviewGuideOpen(false);
+      setReviewGuideAcknowledged(false);
       await loadAvailability();
     });
 
   const headerTitle = useMemo(() => {
-    if (step === "phone" || step === "otp") return "리뷰어 참여";
+    if (step === "signIn") return "리뷰어 참여";
     if (step === "summary") return "캠페인 배정";
     if (step === "assigned") return "캠페인 배정 완료";
     if (step === "complete") return "적립 완료";
@@ -290,54 +305,18 @@ export function ReviewFlow({
       </div>
 
       <div className="flex-1">
-        {step === "phone" && (
-          <Step title="휴대폰 번호를 입력해 주세요" desc="참여 가능 캠페인을 사용자별로 확인해요.">
-            <GoogleSignInButton className="mb-5" onSuccess={continueWithGoogle} onError={setError} />
-            <div className="mb-5 flex items-center gap-3">
-              <span className="h-px flex-1 bg-line" />
-              <span className="text-xs font-medium text-ink-weak">또는 휴대폰 인증</span>
-              <span className="h-px flex-1 bg-line" />
-            </div>
-            <TextInput
-              type="tel"
-              inputMode="numeric"
-              autoComplete="tel-national"
-              maxLength={13}
-              pattern="010-[0-9]{4}-[0-9]{4}"
-              aria-label="휴대폰 번호"
-              placeholder="010-0000-0000"
-              value={phone}
-              onChange={(e) => setPhone(formatPhoneInput(e.target.value))}
-            />
+        {step === "signIn" && (
+          <Step
+            title="Google 계정으로 시작해 주세요"
+            desc="한 번 로그인하면 다음 방문부터 자동 로그인으로 참여 가능한 캠페인을 확인해요."
+          >
+            <GoogleSignInButton onSuccess={continueWithGoogle} onError={setError} />
             <SummaryStrip
               className="mt-5"
               count={availableCount}
               points={totalRewardPoints}
               cooldownDays={cooldownDays}
             />
-          </Step>
-        )}
-
-        {step === "otp" && (
-          <Step title="인증번호를 입력해 주세요" desc="문자로 받은 6자리 숫자를 입력하세요.">
-            {devCode && (
-              <p className="mb-3 rounded-field bg-brand-tint px-3 py-2 text-sm text-brand">
-                개발용 인증번호 <b>{devCode}</b>
-              </p>
-            )}
-            <TextInput
-              inputMode="numeric"
-              maxLength={6}
-              aria-label="인증번호"
-              placeholder="000000"
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-            />
-            {SHOW_DEV_OTP_BYPASS && (
-              <Button variant="secondary" fullWidth className="mt-3" loading={busy} onClick={devBypassOtp}>
-                개발용으로 바로 진행
-              </Button>
-            )}
           </Step>
         )}
 
@@ -376,6 +355,30 @@ export function ReviewFlow({
                 </p>
               )}
               {copied && <p className="text-xs font-medium text-brand">클립보드에 복사했어요.</p>}
+              <div className="grid gap-2 pt-2">
+                <Button
+                  fullWidth
+                  variant="secondary"
+                  loading={busy}
+                  disabled={(draftMeta?.version ?? 0) >= 3}
+                  onClick={() => requestDraft(true)}
+                >
+                  원고 다시 생성
+                </Button>
+                <Button fullWidth variant="secondary" loading={busy} onClick={() => copyText(draft)}>
+                  원고 복사 하기
+                </Button>
+                <Button
+                  fullWidth
+                  loading={busy}
+                  onClick={() => {
+                    setReviewGuideAcknowledged(false);
+                    setReviewGuideOpen(true);
+                  }}
+                >
+                  리뷰등록 하기
+                </Button>
+              </div>
             </Card>
           </Step>
         )}
@@ -389,7 +392,7 @@ export function ReviewFlow({
                   ? "AI 검수로 포인트가 적립됐어요"
                   : proofRejected
                     ? "AI 검수에서 반려됐어요"
-                    : "검수 요청이 접수됐어요"
+                    : "리뷰 캡처 제출이 완료됐어요"
             }
             desc={
               completion?.alreadyCompleted
@@ -451,28 +454,35 @@ export function ReviewFlow({
               )}
               {assignmentId && <p className="text-xs text-ink-weak">참여번호 {assignmentId.slice(-8).toUpperCase()}</p>}
             </Card>
+            {completion?.settlementProfileRequired && (
+              <Card className="mt-4 border-brand/30 bg-brand-tint">
+                <p className="text-sm font-bold text-ink">정산받을 정보를 등록해 주세요</p>
+                <p className="mt-1 text-sm leading-6 text-ink-sub">
+                  이름, 연락처, 정산 계좌를 최초 1회 등록하면 이후 정산 신청에 사용할 수 있어요.
+                </p>
+                <Link
+                  href="/me"
+                  className="mt-4 inline-flex h-[52px] w-full items-center justify-center rounded-btn bg-brand px-5 text-base font-medium text-white"
+                >
+                  정산받을 정보 등록하러가기!
+                </Link>
+              </Card>
+            )}
           </Step>
         )}
       </div>
 
+      <ReviewProofGuideModal
+        open={reviewGuideOpen}
+        acknowledged={reviewGuideAcknowledged}
+        googleMapsUrl={currentCampaign.googleMapsUrl}
+        onAcknowledge={setReviewGuideAcknowledged}
+        onClose={() => setReviewGuideOpen(false)}
+      />
+
       {error && <p className="mb-3 rounded-field bg-danger/10 px-3 py-2 text-center text-sm text-danger">{error}</p>}
 
       <div className="space-y-2 pt-4">
-        {step === "otp" && (
-          <Button fullWidth variant="secondary" disabled={busy} onClick={() => setStep("phone")}>
-            이전
-          </Button>
-        )}
-        {step === "phone" && (
-          <Button fullWidth loading={busy} disabled={!phoneOk} onClick={requestOtp}>
-            인증번호 받기
-          </Button>
-        )}
-        {step === "otp" && (
-          <Button fullWidth loading={busy} disabled={code.length < 6} onClick={verifyOtp}>
-            확인
-          </Button>
-        )}
         {step === "summary" && (
           <>
             <p className="text-center text-xs font-medium text-ink-weak">
@@ -490,7 +500,6 @@ export function ReviewFlow({
         )}
         {step === "draft" && (
           <>
-            <MapsButton href={currentCampaign.googleMapsUrl} label="구글맵 열기" variant="secondary" />
             <label className="block rounded-card border border-line bg-surface p-3 text-sm">
               <span className="block font-semibold text-ink">구글맵 리뷰 캡처본</span>
               <span className="mt-1 block text-xs leading-5 text-ink-weak">
@@ -506,21 +515,8 @@ export function ReviewFlow({
                 <span className="mt-2 block text-xs font-semibold text-brand">{screenshot.name}</span>
               )}
             </label>
-            <ReviewProofGuide />
             <Button fullWidth loading={busy} disabled={!screenshot} onClick={completeAssignment}>
-              캡처 제출하고 검수 요청
-            </Button>
-            <Button
-              fullWidth
-              variant="secondary"
-              loading={busy}
-              disabled={(draftMeta?.version ?? 0) >= 3}
-              onClick={() => requestDraft(true)}
-            >
-              원고 다시 생성
-            </Button>
-            <Button fullWidth variant="secondary" loading={busy} onClick={() => copyText(draft)}>
-              원고 다시 복사
+              리뷰 캡처 제출하기
             </Button>
             <Button fullWidth variant="text" loading={busy} onClick={refreshForNextCampaign}>
               다른 캠페인 참여하기
@@ -537,11 +533,34 @@ export function ReviewFlow({
   );
 }
 
-function ReviewProofGuide() {
+function ReviewProofGuideModal({
+  open,
+  acknowledged,
+  googleMapsUrl,
+  onAcknowledge,
+  onClose,
+}: {
+  open: boolean;
+  acknowledged: boolean;
+  googleMapsUrl: string;
+  onAcknowledge: (value: boolean) => void;
+  onClose: () => void;
+}) {
+  if (!open) return null;
+
   return (
-    <details className="rounded-card border border-line bg-white px-3 py-2 text-sm">
-      <summary className="cursor-pointer select-none font-semibold text-brand">캡처 예시 보기</summary>
-      <div className="mt-3 grid gap-3">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 px-5 py-6" role="dialog" aria-modal="true" aria-labelledby="review-proof-guide-title">
+      <div className="mx-auto max-w-md rounded-card bg-white p-5 shadow-xl">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 id="review-proof-guide-title" className="text-lg font-bold text-ink">리뷰 캡처 예시 확인</h2>
+            <p className="mt-1 text-sm leading-6 text-ink-sub">아래 둘 중 한 가지 방식으로 내 리뷰가 보이게 캡처해 주세요.</p>
+          </div>
+          <button type="button" className="text-sm font-semibold text-ink-weak" onClick={onClose}>
+            닫기
+          </button>
+        </div>
+        <div className="mt-4 grid gap-3">
         <figure className="overflow-hidden rounded-xl border border-line bg-surface">
           <img
             src="/review-proof-guides/before-readmore.png"
@@ -564,8 +583,31 @@ function ReviewProofGuide() {
             더보기 후: 전체 리뷰가 보이는 화면도 가능합니다.
           </figcaption>
         </figure>
+        </div>
+        <label className="mt-4 flex cursor-pointer items-start gap-2 rounded-field border border-line bg-surface p-3 text-sm text-ink-sub">
+          <input
+            type="checkbox"
+            checked={acknowledged}
+            onChange={(event) => onAcknowledge(event.target.checked)}
+            className="mt-0.5 size-4 accent-brand"
+          />
+          <span>캡처 예시와 제출 기준을 확인했어요.</span>
+        </label>
+        <a
+          {...(acknowledged ? { href: googleMapsUrl, target: "_blank", rel: "noreferrer" } : {})}
+          onClick={(event) => {
+            if (!acknowledged) event.preventDefault();
+            else onClose();
+          }}
+          aria-disabled={!acknowledged}
+          className={`mt-4 inline-flex h-[52px] w-full items-center justify-center rounded-btn px-5 text-base font-medium transition ${
+            acknowledged ? "bg-brand text-white" : "cursor-not-allowed bg-line text-ink-weak"
+          }`}
+        >
+          구글맵 이동
+        </a>
       </div>
-    </details>
+    </div>
   );
 }
 
@@ -672,30 +714,5 @@ function CampaignCard({
       </div>
       {assignmentId && <p className="text-xs text-ink-weak">참여번호 {assignmentId.slice(-8).toUpperCase()}</p>}
     </Card>
-  );
-}
-
-function MapsButton({
-  href,
-  label,
-  variant = "primary",
-}: {
-  href: string;
-  label: string;
-  variant?: "primary" | "secondary";
-}) {
-  const classes =
-    variant === "primary"
-      ? "bg-brand text-white hover:bg-brand-pressed"
-      : "bg-brand-tint text-brand hover:brightness-95";
-  return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className={`inline-flex h-[52px] w-full select-none items-center justify-center rounded-btn px-5 text-base font-medium transition active:scale-[0.98] ${classes}`}
-    >
-      {label}
-    </a>
   );
 }

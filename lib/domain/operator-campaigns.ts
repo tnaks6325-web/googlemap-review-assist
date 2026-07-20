@@ -4,7 +4,11 @@ import {
   toAdminCampaignBlogReference,
   type AdminCampaignBlogReference,
 } from "@/lib/domain/campaign-blog-references";
-import { summarizeCampaignReviewDraftSources } from "@/lib/domain/campaign-review-draft";
+import {
+  normalizeCampaignDraftGuidance,
+  summarizeCampaignReviewDraftSources,
+  type CampaignDraftGuidance,
+} from "@/lib/domain/campaign-review-draft";
 
 export interface PublicCampaignCard {
   id: string;
@@ -49,6 +53,7 @@ export interface AdminCampaignRow extends PublicCampaignCard {
   reviewReferenceCount: number;
   draftSourceGroupCount: number;
   canGenerateReviewDraft: boolean;
+  draftGuidance: CampaignDraftGuidance;
   draftSourceGroups: {
     googlePlace: boolean;
     googleReviews: boolean;
@@ -149,6 +154,7 @@ async function fetchCampaigns(includeInactive = false) {
           createdAt: true,
         },
       },
+      draftGuidance: true,
       _count: { select: { codes: true, blogReferences: true } },
     },
   });
@@ -357,11 +363,16 @@ export async function listAdminCampaigns(): Promise<AdminCampaignRow[]> {
     const naverReviewCount = campaign.business.externalReviews.filter(
       (review) => review.platform === "NAVER",
     ).length;
+    const draftGuidance = normalizeCampaignDraftGuidance(campaign.draftGuidance);
     const draftSummary = summarizeCampaignReviewDraftSources({
       googlePlace,
       googleReviewCount,
       naverPlace,
       naverReferenceCount: campaign._count.blogReferences + naverReviewCount,
+      category: googlePlace?.category ?? naverPlace?.category,
+      businessName: googlePlace?.name ?? naverPlace?.name ?? campaign.business.name,
+      industry: draftGuidance.industry,
+      approvedFactCount: draftGuidance.approvedFacts.length,
     });
     return {
       ...toPublicCampaign(campaign, stats),
@@ -374,6 +385,10 @@ export async function listAdminCampaigns(): Promise<AdminCampaignRow[]> {
       reviewReferenceCount: draftSummary.reviewReferenceCount,
       draftSourceGroupCount: draftSummary.sourceGroupCount,
       canGenerateReviewDraft: draftSummary.canGenerateReviewDraft,
+      draftGuidance: {
+        ...draftGuidance,
+        industry: draftGuidance.industry ?? draftSummary.industry,
+      },
       draftSourceGroups: draftSummary.sourceGroups,
       blogReferences: campaign.blogReferences.map(toAdminCampaignBlogReference),
       hasGooglePlace: Boolean(googlePlace),

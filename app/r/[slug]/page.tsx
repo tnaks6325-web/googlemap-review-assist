@@ -1,5 +1,6 @@
 import { ReviewFlow } from "@/components/flow/ReviewFlow";
 import { Footer } from "@/components/Footer";
+import { getReviewerId } from "@/lib/auth/session";
 import { getPublicCampaignDetail, listPublicCampaigns } from "@/lib/domain/operator-campaigns";
 import { getPublicCampaignAvailabilitySummary } from "@/lib/domain/reviewer-campaigns";
 
@@ -26,7 +27,10 @@ export default async function CampaignPage({
     );
   }
 
-  const summary = await getPublicCampaignAvailabilitySummary();
+  const [summary, reviewerId] = await Promise.all([
+    getPublicCampaignAvailabilitySummary(),
+    getReviewerId(),
+  ]);
 
   return (
     <>
@@ -47,6 +51,7 @@ export default async function CampaignPage({
         initialTotalRewardPoints={summary.totalRewardPoints}
         initialCategoryCounts={summary.categoryCounts}
         cooldownDays={summary.cooldownDays}
+        initialReviewerSignedIn={Boolean(reviewerId)}
       />
       <Footer />
     </>
