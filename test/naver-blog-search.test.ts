@@ -14,6 +14,10 @@ function responseJson(body: unknown) {
   });
 }
 
+function errorResponse(status: number) {
+  return new Response(null, { status });
+}
+
 describe("naver blog search", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -116,5 +120,27 @@ describe("naver blog search", () => {
         }),
       })
     );
+  });
+
+  it("waits and retries when Naver temporarily rate limits a blog search", async () => {
+    process.env.NAVER_CLIENT_ID = "test-client-id";
+    process.env.NAVER_CLIENT_SECRET = "test-client-secret";
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(errorResponse(429))
+      .mockResolvedValueOnce(responseJson({ items: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await findNaverBlogReferences(
+      {
+        businessName: "Chaidele Insadong",
+        address: null,
+        category: null,
+      },
+      { retryBaseDelayMs: 0 },
+    );
+
+    expect(result.providerConfigured).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

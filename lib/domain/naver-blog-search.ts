@@ -1,3 +1,5 @@
+import { retryExternalOperation } from "@/lib/resilience";
+
 export interface NaverBlogReferenceSearchTarget {
   businessName: string;
   googlePlaceName?: string | null;
@@ -27,11 +29,19 @@ export interface NaverBlogReferenceResult {
 interface NaverBlogSearchOptions {
   maxResults?: number;
   displayPerQuery?: number;
+  retryBaseDelayMs?: number;
+  queryDelayMs?: number;
 }
 
 const FETCH_TIMEOUT_MS = 8000;
 const DEFAULT_MAX_RESULTS = 10;
 const DEFAULT_DISPLAY_PER_QUERY = 5;
+const DEFAULT_RETRY_BASE_DELAY_MS = 750;
+const DEFAULT_QUERY_DELAY_MS = 300;
+
+function wait(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
+}
 
 function cleanText(value: unknown, max = 240) {
   return String(value ?? "")
@@ -126,26 +136,45 @@ export async function findNaverBlogReferences(
 
   const maxResults = Math.max(1, Math.min(30, options.maxResults ?? DEFAULT_MAX_RESULTS));
   const displayPerQuery = Math.max(1, Math.min(10, options.displayPerQuery ?? DEFAULT_DISPLAY_PER_QUERY));
+  const retryBaseDelayMs = Math.max(
+    0,
+    options.retryBaseDelayMs ?? DEFAULT_RETRY_BASE_DELAY_MS,
+  );
+  const queryDelayMs = Math.max(0, options.queryDelayMs ?? DEFAULT_QUERY_DELAY_MS);
   const references: NaverBlogReference[] = [];
   const seenLinks = new Set<string>();
 
-  for (const query of queries) {
+  for (let queryIndex = 0; queryIndex < queries.length; queryIndex += 1) {
     if (references.length >= maxResults) break;
+    if (queryIndex > 0 && queryDelayMs > 0) await wait(queryDelayMs);
 
+    const query = queries[queryIndex];
     const url = new URL("https://openapi.naver.com/v1/search/blog.json");
     url.searchParams.set("query", query);
     url.searchParams.set("display", String(Math.min(displayPerQuery, maxResults - references.length)));
     url.searchParams.set("start", "1");
     url.searchParams.set("sort", "sim");
 
-    const res = await fetch(url, {
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      headers: {
-        "X-Naver-Client-Id": id,
-        "X-Naver-Client-Secret": secret,
-      },
+    const res = await retryExternalOperation(async () => {
+      const response = await fetch(url, {
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        headers: {
+          "X-Naver-Client-Id": id,
+          "X-Naver-Client-Secret": secret,
+        },
+      });
+      if (!response.ok) {
+        throw Object.assign(
+          new Error(`NAVER_BLOG_SEARCH_${response.status}`),
+          { status: response.status },
+        );
+      }
+      return response;
+    }, {
+      attempts: 4,
+      baseDelayMs: retryBaseDelayMs,
+      maxDelayMs: Math.max(retryBaseDelayMs, 3_000),
     });
-    if (!res.ok) throw new Error(`NAVER_BLOG_SEARCH_${res.status}`);
 
     const data = (await res.json()) as { items?: Record<string, unknown>[] };
     for (const item of data.items ?? []) {

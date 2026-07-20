@@ -30,6 +30,11 @@ export interface AdminCampaignNaverAutoLinkRow {
   naverPlace: { matchStatus: string } | null;
 }
 
+export interface AdminCampaignAutomationRow
+  extends AdminCampaignNaverAutoLinkRow {
+  blogReferenceCount: number;
+}
+
 export function hasSavedNaverPlaceId(
   place: { externalId?: string | null; matchStatus: string } | null,
 ) {
@@ -64,11 +69,17 @@ export function automaticNaverCampaignIds(
 }
 
 export function adminCampaignAutomationPlan(
-  campaigns: AdminCampaignNaverAutoLinkRow[],
+  campaigns: AdminCampaignAutomationRow[],
 ) {
   return {
     naverCampaignIds: automaticNaverCampaignIds(campaigns),
-    referenceCampaignIds: [...new Set(campaigns.map((campaign) => campaign.id))],
+    referenceCampaignIds: [
+      ...new Set(
+        campaigns
+          .filter((campaign) => campaign.blogReferenceCount === 0)
+          .map((campaign) => campaign.id),
+      ),
+    ],
   };
 }
 

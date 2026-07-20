@@ -79,8 +79,9 @@ async function requestBlogReferenceCollection(campaignId: string) {
     if (!response.ok) return false;
     const data = (await response.json().catch(() => null)) as {
       providerConfigured?: boolean;
+      totalCount?: number;
     } | null;
-    return Boolean(data?.providerConfigured);
+    return Boolean(data?.providerConfigured && Number(data.totalCount) > 0);
   } catch {
     return false;
   }
@@ -119,13 +120,8 @@ export function AdminCampaignOperationsTable({
 
     const promise = (async () => {
       let savedCount = 0;
-      for (let index = 0; index < campaignIds.length; index += 3) {
-        const results = await Promise.all(
-          campaignIds
-            .slice(index, index + 3)
-            .map((campaignId) => requestNaverAutoLink(campaignId)),
-        );
-        savedCount += results.filter(Boolean).length;
+      for (const campaignId of campaignIds) {
+        if (await requestNaverAutoLink(campaignId)) savedCount += 1;
       }
       return savedCount;
     })();
@@ -169,21 +165,15 @@ export function AdminCampaignOperationsTable({
       let collectedCount = 0;
       let failedCount = 0;
 
-      for (
-        let index = 0;
-        index < plan.referenceCampaignIds.length;
-        index += 3
-      ) {
+      for (let index = 0; index < plan.referenceCampaignIds.length; index += 1) {
         setAutomationProgress(
-          `참고자료 수집 중 ${Math.min(index + 3, plan.referenceCampaignIds.length)}/${plan.referenceCampaignIds.length}`,
+          `참고자료 수집 중 ${index + 1}/${plan.referenceCampaignIds.length}`,
         );
-        const results = await Promise.all(
-          plan.referenceCampaignIds
-            .slice(index, index + 3)
-            .map((campaignId) => requestBlogReferenceCollection(campaignId)),
+        const success = await requestBlogReferenceCollection(
+          plan.referenceCampaignIds[index],
         );
-        collectedCount += results.filter(Boolean).length;
-        failedCount += results.filter((success) => !success).length;
+        if (success) collectedCount += 1;
+        else failedCount += 1;
       }
 
       setAutomationMessage({

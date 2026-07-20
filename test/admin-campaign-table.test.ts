@@ -92,23 +92,26 @@ describe("admin campaign table", () => {
           businessId: "business-1",
           hasGooglePlace: true,
           naverPlace: null,
+          blogReferenceCount: 0,
         },
         {
           id: "campaign-2",
           businessId: "business-1",
           hasGooglePlace: true,
           naverPlace: { matchStatus: "NEEDS_REVIEW" },
+          blogReferenceCount: 10,
         },
         {
           id: "campaign-3",
           businessId: "business-2",
           hasGooglePlace: true,
           naverPlace: { matchStatus: "LINKED" },
+          blogReferenceCount: 0,
         },
       ]),
     ).toEqual({
       naverCampaignIds: ["campaign-1"],
-      referenceCampaignIds: ["campaign-1", "campaign-2", "campaign-3"],
+      referenceCampaignIds: ["campaign-1", "campaign-3"],
     });
   });
 
