@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
+import { formatAdminDateTime } from "@/lib/admin-date-format";
 import { filterAdminReviewProofs, type AdminReviewProofFilter } from "@/lib/domain/admin";
 
 type ReviewProofCheckStatus = "PASS" | "FAIL" | "UNKNOWN";
@@ -136,7 +137,7 @@ export function ReviewProofQueue({ items }: { items: ReviewProofItem[] }) {
                 <p className="text-xs font-semibold text-brand">검수 대기</p>
                 <h3 className="mt-1 text-base font-bold text-ink">{item.businessName}</h3>
                 <p className="mt-1 text-xs text-ink-weak">
-                  {item.campaignName} · {item.maskedPhone} · {new Date(item.submittedAt).toLocaleString("ko-KR")}
+                  {item.campaignName} · {item.maskedPhone} · {formatAdminDateTime(item.submittedAt)}
                 </p>
                 <p className="mt-2 text-sm font-semibold text-ink">
                   {item.rewardPoints.toLocaleString("ko-KR")}P 승인 대기

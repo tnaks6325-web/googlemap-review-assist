@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
+import { formatAdminDate } from "@/lib/admin-date-format";
 
 interface SettlementRow {
   id: string;
@@ -131,7 +132,7 @@ export function AdminSettlementBulkActions({ items }: { items: SettlementRow[] }
                 </p>
               </div>
               <p className="text-xs text-ink-weak">
-                {new Date(item.createdAt).toLocaleDateString("ko-KR")}
+                {formatAdminDate(item.createdAt)}
               </p>
             </label>
           ))}
