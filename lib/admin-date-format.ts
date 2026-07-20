@@ -15,6 +15,7 @@ const adminDateTimeFormatter = new Intl.DateTimeFormat("ko-KR", {
   hour: "numeric",
   minute: "2-digit",
   second: "2-digit",
+  hourCycle: "h23",
 });
 
 export function formatAdminDate(value: string | Date) {

@@ -22,7 +22,7 @@ describe("admin date formatting", () => {
     process.env.TZ = "America/New_York";
     const newYorkServer = formatAdminDateTime("2026-07-20T13:30:00.000Z");
 
-    expect(utcServer).toBe("2026. 7. 20. 오후 10:30:00");
+    expect(utcServer).toBe("2026. 7. 20. 22:30:00");
     expect(newYorkServer).toBe(utcServer);
   });
 
