@@ -82,7 +82,7 @@ export function ReviewerHero({
           >
             {account ? `${displayName}님,` : "오늘,"}
             <br />
-            참여할 캠페인을 골라보세요
+            {account ? "오늘도 반가워요" : "참여할 캠페인을 골라보세요"}
           </h1>
         </div>
 

@@ -1,12 +1,42 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import { DEFAULT_REWARD_POINTS } from "@/lib/domain/operator-campaigns";
 
 type DbClient = PrismaClient | Prisma.TransactionClient;
+const REVIEWER_ASSIGNMENT_SOURCE = "CAMPAIGN_ASSIGNMENT";
+const REVIEWER_HISTORY_LIMIT = 20;
 
 export interface ReviewerHomeAccount {
   name: string | null;
   email: string | null;
   avatarUrl: string | null;
+}
+
+export interface ReviewerHomeParticipationItem {
+  id: string;
+  businessName: string;
+  campaignName: string;
+  campaignSlug: string;
+  status: string;
+  rewardPoints: number;
+  reviewNote: string | null;
+  occurredAt: string;
+}
+
+export interface ReviewerHomeDashboard {
+  profile: {
+    phone: string | null;
+    payoutAccountRegistered: boolean;
+  };
+  points: {
+    balance: number;
+  };
+  participation: {
+    totalCount: number;
+    reviewPendingCount: number;
+    completedCount: number;
+    items: ReviewerHomeParticipationItem[];
+  };
 }
 
 function safeGoogleAvatarUrl(value: string | null) {
@@ -43,5 +73,85 @@ export async function getReviewerHomeAccount(
     name: reviewer.name,
     email: reviewer.email,
     avatarUrl: safeGoogleAvatarUrl(reviewer.avatarUrl),
+  };
+}
+
+export async function getReviewerHomeDashboard(
+  reviewerId: string,
+  db: DbClient = prisma,
+): Promise<ReviewerHomeDashboard> {
+  const [reviewer, receipts, totalCount, reviewPendingCount, completedCount] = await Promise.all([
+    db.reviewer.findUnique({
+      where: { id: reviewerId },
+      select: {
+        phone: true,
+        wallet: { select: { balance: true } },
+        payoutAccount: { select: { id: true } },
+      },
+    }),
+    db.receipt.findMany({
+      where: {
+        reviewerId,
+        source: REVIEWER_ASSIGNMENT_SOURCE,
+      },
+      orderBy: { createdAt: "desc" },
+      take: REVIEWER_HISTORY_LIMIT,
+      select: {
+        id: true,
+        status: true,
+        reviewProofSubmittedAt: true,
+        reviewReviewedAt: true,
+        reviewReviewNote: true,
+        createdAt: true,
+        business: { select: { name: true } },
+        campaign: { select: { name: true, slug: true } },
+      },
+    }),
+    db.receipt.count({
+      where: { reviewerId, source: REVIEWER_ASSIGNMENT_SOURCE },
+    }),
+    db.receipt.count({
+      where: {
+        reviewerId,
+        source: REVIEWER_ASSIGNMENT_SOURCE,
+        status: "REVIEW_SUBMITTED",
+      },
+    }),
+    db.receipt.count({
+      where: {
+        reviewerId,
+        source: REVIEWER_ASSIGNMENT_SOURCE,
+        status: "COMPLETED",
+      },
+    }),
+  ]);
+
+  return {
+    profile: {
+      phone: reviewer?.phone ?? null,
+      payoutAccountRegistered: Boolean(reviewer?.payoutAccount),
+    },
+    points: {
+      balance: reviewer?.wallet?.balance ?? 0,
+    },
+    participation: {
+      totalCount,
+      reviewPendingCount,
+      completedCount,
+      items: receipts.map((receipt) => ({
+        id: receipt.id,
+        businessName: receipt.business.name,
+        campaignName: receipt.campaign.name,
+        campaignSlug: receipt.campaign.slug,
+        status: receipt.status,
+        rewardPoints: DEFAULT_REWARD_POINTS,
+        reviewNote: receipt.reviewReviewNote,
+        occurredAt: (
+          receipt.reviewReviewedAt ??
+          receipt.reviewProofSubmittedAt ??
+          receipt.createdAt
+        ).toISOString(),
+      })),
+    },
   };
 }

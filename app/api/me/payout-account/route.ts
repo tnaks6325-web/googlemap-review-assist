@@ -14,7 +14,9 @@ export async function GET() {
   if (!reviewerId) return err("UNAUTHORIZED", "로그인이 필요해요", 401);
 
   const payoutAccount = await getReviewerPayoutAccount(reviewerId);
-  return ok({ payoutAccount });
+  const response = ok({ payoutAccount });
+  response.headers.set("Cache-Control", "private, no-store");
+  return response;
 }
 
 export async function PUT(req: Request) {
@@ -29,7 +31,9 @@ export async function PUT(req: Request) {
       accountNumber: body?.accountNumber,
       accountHolder: body?.accountHolder,
     });
-    return ok({ payoutAccount });
+    const response = ok({ payoutAccount });
+    response.headers.set("Cache-Control", "private, no-store");
+    return response;
   } catch (e) {
     if (e instanceof SettlementError) return err(e.code, e.message, e.status);
     throw e;

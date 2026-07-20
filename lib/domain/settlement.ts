@@ -41,8 +41,9 @@ export interface ReviewerSettlementProfile {
   settlementProfileRequired: boolean;
 }
 
-export interface SafeReviewerPayoutAccount {
+export interface ReviewerPayoutAccountView {
   bankName: string;
+  accountNumber: string;
   accountLast4: string;
   maskedAccountNumber: string;
   accountHolder: string;
@@ -138,16 +139,17 @@ function maskAccountNumber(accountNumber: string): string {
   return `${"*".repeat(Math.max(accountNumber.length - 4, 0))}${accountNumber.slice(-4)}`;
 }
 
-function toSafePayoutAccount(account: {
+function toReviewerPayoutAccountView(account: {
   bankName: string;
   accountNumberEnc: string;
   accountLast4: string;
   accountHolder: string;
   updatedAt: Date;
-}): SafeReviewerPayoutAccount {
+}): ReviewerPayoutAccountView {
   const accountNumber = decryptAccountNumber(account.accountNumberEnc);
   return {
     bankName: account.bankName,
+    accountNumber,
     accountLast4: account.accountLast4,
     maskedAccountNumber: maskAccountNumber(accountNumber),
     accountHolder: account.accountHolder,
@@ -190,7 +192,7 @@ export function decodeSettlementPayoutInfo(value: string | null | undefined): Se
 export async function upsertReviewerPayoutAccount(
   reviewerId: string,
   input: ReviewerPayoutAccountInput,
-): Promise<SafeReviewerPayoutAccount> {
+): Promise<ReviewerPayoutAccountView> {
   const bankName = trimRequired(input.bankName, "은행", 40);
   const accountHolder = trimRequired(input.accountHolder, "예금주", 40);
   const accountNumber = normalizeAccountNumber(input.accountNumber);
@@ -210,14 +212,14 @@ export async function upsertReviewerPayoutAccount(
       accountHolder,
     },
   });
-  return toSafePayoutAccount(account);
+  return toReviewerPayoutAccountView(account);
 }
 
 export async function getReviewerPayoutAccount(
   reviewerId: string,
-): Promise<SafeReviewerPayoutAccount | null> {
+): Promise<ReviewerPayoutAccountView | null> {
   const account = await prisma.reviewerPayoutAccount.findUnique({ where: { reviewerId } });
-  return account ? toSafePayoutAccount(account) : null;
+  return account ? toReviewerPayoutAccountView(account) : null;
 }
 
 export async function getReviewerSettlementProfile(

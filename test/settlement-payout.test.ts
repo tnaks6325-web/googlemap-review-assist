@@ -26,6 +26,22 @@ async function createReviewer(balance = 10000) {
 }
 
 describe("settlement payout account", () => {
+  it("returns the full normalized account number to the authenticated reviewer view", async () => {
+    const reviewer = await createReviewer();
+    const payoutAccount = await upsertReviewerPayoutAccount(reviewer.id, {
+      bankName: "하나은행",
+      accountNumber: "123-456789-01-234",
+      accountHolder: "김리뷰",
+    });
+
+    expect(payoutAccount).toMatchObject({
+      bankName: "하나은행",
+      accountNumber: "12345678901234",
+      accountLast4: "1234",
+      accountHolder: "김리뷰",
+    });
+  });
+
   it("requires a saved payout account before requesting settlement", async () => {
     const reviewer = await createReviewer();
 
