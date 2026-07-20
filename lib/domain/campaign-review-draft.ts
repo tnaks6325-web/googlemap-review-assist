@@ -1056,8 +1056,6 @@ async function geminiMatrixDrafts(
               properties: {
                 items: {
                   type: "array",
-                  minItems: 25,
-                  maxItems: 25,
                   items: {
                     type: "object",
                     properties: {
