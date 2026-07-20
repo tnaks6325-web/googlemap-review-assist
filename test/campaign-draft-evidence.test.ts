@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import {
   CAMPAIGN_DRAFT_EVIDENCE_FACETS,
+  CAMPAIGN_DRAFT_EVIDENCE_TIMEOUT_MS,
   normalizeExtractedEvidence,
   extractCampaignDraftEvidence,
   summarizeEvidenceReadiness,
@@ -12,6 +13,10 @@ import { generateUniqueSlug } from "@/lib/domain/codes";
 let evidenceSequence = 0;
 
 describe("campaign draft evidence", () => {
+  it("allows long structured Gemini extraction for large campaign source sets", () => {
+    expect(CAMPAIGN_DRAFT_EVIDENCE_TIMEOUT_MS).toBe(45_000);
+  });
+
   it("accepts only allowlisted source references and facets", () => {
     const normalized = normalizeExtractedEvidence(
       [

@@ -11,6 +11,8 @@ export const CAMPAIGN_DRAFT_EVIDENCE_FACETS = [
   "OTHER",
 ] as const;
 
+export const CAMPAIGN_DRAFT_EVIDENCE_TIMEOUT_MS = 45_000;
+
 export const CAMPAIGN_DRAFT_EVIDENCE_STATUSES = ["PENDING", "APPROVED", "REJECTED"] as const;
 export const MIN_APPROVED_EVIDENCE = 6;
 export const MIN_APPROVED_EVIDENCE_FACETS = 3;
@@ -251,7 +253,7 @@ async function extractWithGemini(
             },
           },
         }),
-        signal: AbortSignal.timeout(20_000),
+        signal: AbortSignal.timeout(CAMPAIGN_DRAFT_EVIDENCE_TIMEOUT_MS),
       },
     );
     const data = (await response.json().catch(() => ({}))) as {
