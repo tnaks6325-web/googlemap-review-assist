@@ -63,6 +63,7 @@ export interface AdminConnectedNaverPlace {
 }
 
 export interface AdminCampaignRow extends PublicCampaignCard {
+  businessId: string;
   active: boolean;
   assignedCount: number;
   paidPointAmount: number;
@@ -393,6 +394,7 @@ export async function listAdminCampaigns(): Promise<AdminCampaignRow[]> {
     });
     return {
       ...toPublicCampaign(campaign, stats, now, draftSummary.canGenerateReviewDraft),
+      businessId: campaign.businessId,
       active: campaign.active,
       assignedCount: stats.assignedCount,
       paidPointAmount: stats.paidPointAmount,

@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AdminCampaignBlogReferences } from "@/components/admin/AdminCampaignBlogReferences";
 import { AdminCampaignDraftPreview } from "@/components/admin/AdminCampaignDraftPreview";
 import { AdminCampaignDraftGuidance } from "@/components/admin/AdminCampaignDraftGuidance";
 import { AdminCampaignNaverCandidates } from "@/components/admin/AdminCampaignNaverCandidates";
 import {
+  automaticNaverCampaignIds,
   filterAdminCampaignRows,
   operationalCampaignStatus,
   type AdminCampaignStatusFilter,
@@ -38,6 +40,8 @@ export function AdminCampaignOperationsTable({
 }: {
   campaigns: AdminCampaignOperationsRow[];
 }) {
+  const router = useRouter();
+  const autoLinkStarted = useRef(false);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<AdminCampaignStatusFilter>("all");
   const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(
@@ -48,6 +52,52 @@ export function AdminCampaignOperationsTable({
     () => filterAdminCampaignRows(campaigns, query, status),
     [campaigns, query, status],
   );
+
+  useEffect(() => {
+    if (autoLinkStarted.current) return;
+    autoLinkStarted.current = true;
+
+    const campaignIds = automaticNaverCampaignIds(campaigns);
+    if (!campaignIds.length) return;
+
+    let cancelled = false;
+    const autoLink = async () => {
+      let updated = false;
+
+      for (let index = 0; index < campaignIds.length; index += 3) {
+        const batch = campaignIds.slice(index, index + 3);
+        const results = await Promise.all(
+          batch.map(async (campaignId) => {
+            try {
+              const response = await fetch(
+                `/api/admin/campaigns/${campaignId}/naver-candidates`,
+                {
+                  method: "POST",
+                  headers: { "content-type": "application/json" },
+                  body: JSON.stringify({}),
+                },
+              );
+              if (!response.ok) return false;
+              const data = (await response.json().catch(() => null)) as {
+                place?: unknown;
+              } | null;
+              return Boolean(data?.place);
+            } catch {
+              return false;
+            }
+          }),
+        );
+        updated = results.some(Boolean) || updated;
+      }
+
+      if (updated && !cancelled) router.refresh();
+    };
+
+    void autoLink();
+    return () => {
+      cancelled = true;
+    };
+  }, [campaigns, router]);
 
   return (
     <section>

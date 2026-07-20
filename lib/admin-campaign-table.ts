@@ -23,6 +23,36 @@ export interface AdminCampaignFilterRow {
   naverPlace: { matchStatus: string } | null;
 }
 
+export interface AdminCampaignNaverAutoLinkRow {
+  id: string;
+  businessId: string;
+  hasGooglePlace: boolean;
+  naverPlace: { matchStatus: string } | null;
+}
+
+export function automaticNaverCampaignIds(
+  campaigns: AdminCampaignNaverAutoLinkRow[],
+) {
+  const selectedBusinessIds = new Set<string>();
+  const campaignIds: string[] = [];
+
+  for (const campaign of campaigns) {
+    if (
+      !campaign.hasGooglePlace ||
+      (campaign.naverPlace &&
+        campaign.naverPlace.matchStatus !== "NEEDS_REVIEW") ||
+      selectedBusinessIds.has(campaign.businessId)
+    ) {
+      continue;
+    }
+
+    selectedBusinessIds.add(campaign.businessId);
+    campaignIds.push(campaign.id);
+  }
+
+  return campaignIds;
+}
+
 export function operationalCampaignStatus(
   campaign: AdminCampaignFilterRow,
 ) {

@@ -163,7 +163,13 @@ export function AdminCampaignNaverCandidates({
           disabled={!hasGooglePlace && !connectedPlace}
           className="h-10 shrink-0 px-3 text-xs"
         >
-          {connectedPlace ? "수정" : hasGooglePlace ? "자동 연결 재시도" : "Google 장소 없음"}
+          {connectedPlace?.matchStatus === "NEEDS_REVIEW"
+            ? "관리자 보정"
+            : connectedPlace
+              ? "수정"
+              : hasGooglePlace
+                ? "관리자 보정"
+                : "Google 장소 없음"}
         </Button>
       </div>
 
