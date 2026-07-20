@@ -484,6 +484,7 @@ function CampaignRows({
           <td colSpan={9} className="border-t border-line bg-[#f8fbff] p-4">
             <div className="grid gap-3 xl:grid-cols-3">
               <AdminCampaignNaverCandidates
+                key={`${campaign.id}:${campaign.naverPlace?.externalId ?? "unlinked"}:${campaign.naverPlace?.matchStatus ?? "none"}`}
                 campaignId={campaign.id}
                 initialPlace={campaign.naverPlace}
                 hasGooglePlace={campaign.hasGooglePlace}

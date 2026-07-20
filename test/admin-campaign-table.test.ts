@@ -3,6 +3,7 @@ import {
   adminCampaignAutomationPlan,
   automaticNaverCampaignIds,
   filterAdminCampaignRows,
+  hasSavedNaverPlaceId,
   operationalCampaignStatus,
   type AdminCampaignFilterRow,
 } from "@/lib/admin-campaign-table";
@@ -25,6 +26,27 @@ function campaign(
 }
 
 describe("admin campaign table", () => {
+  it("treats only linked numeric Naver Place IDs as saved", () => {
+    expect(
+      hasSavedNaverPlaceId({
+        externalId: "2059222523",
+        matchStatus: "LINKED",
+      }),
+    ).toBe(true);
+    expect(
+      hasSavedNaverPlaceId({
+        externalId: "2059222523",
+        matchStatus: "NEEDS_REVIEW",
+      }),
+    ).toBe(false);
+    expect(
+      hasSavedNaverPlaceId({
+        externalId: null,
+        matchStatus: "LINKED",
+      }),
+    ).toBe(false);
+  });
+
   it("selects unresolved Naver campaigns for automatic linking once per business", () => {
     expect(
       automaticNaverCampaignIds([

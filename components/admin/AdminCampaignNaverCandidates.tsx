@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui";
+import { hasSavedNaverPlaceId } from "@/lib/admin-campaign-table";
 import { naverSmartPlaceLink } from "@/lib/domain/naver-smartplace-link";
 import type { NaverCandidate } from "@/lib/domain/external-place-providers";
 import type { AdminConnectedNaverPlace } from "@/lib/domain/operator-campaigns";
@@ -31,12 +32,12 @@ function isSamePlace(place: AdminConnectedNaverPlace | null, candidate: NaverCan
 
 function statusLabel(place: AdminConnectedNaverPlace | null) {
   if (!place) return "미연결";
-  return place.matchStatus === "NEEDS_REVIEW" ? "자동 후보 확인 필요" : "연결됨";
+  return hasSavedNaverPlaceId(place) ? "연결됨" : "자동 후보 확인 필요";
 }
 
 function statusClass(place: AdminConnectedNaverPlace | null) {
   if (!place) return "text-ink-weak";
-  return place.matchStatus === "NEEDS_REVIEW" ? "text-danger" : "text-brand";
+  return hasSavedNaverPlaceId(place) ? "text-brand" : "text-danger";
 }
 
 export function AdminCampaignNaverCandidates({
@@ -56,6 +57,7 @@ export function AdminCampaignNaverCandidates({
   const [savingIndex, setSavingIndex] = useState<number | null>(null);
   const [manualPlaceId, setManualPlaceId] = useState("");
   const [manualSaving, setManualSaving] = useState(false);
+  const hasSavedPlaceId = hasSavedNaverPlaceId(connectedPlace);
 
   const loadCandidates = async () => {
     if (!hasGooglePlace) {
@@ -143,10 +145,20 @@ export function AdminCampaignNaverCandidates({
   };
 
   const connectedUrl = naverSmartPlaceLink({
+    placeId: connectedPlace?.externalId,
     url: connectedPlace?.url,
     name: connectedPlace?.name,
     address: connectedPlace?.address,
   });
+  const toggleCorrection = () => {
+    if (!hasSavedPlaceId) {
+      void loadCandidates();
+      return;
+    }
+    setEditing((current) => !current);
+    setResult(null);
+    setError(null);
+  };
 
   return (
     <div className="rounded-card border border-line bg-canvas p-3">
@@ -159,17 +171,19 @@ export function AdminCampaignNaverCandidates({
           type="button"
           variant="secondary"
           loading={loading}
-          onClick={loadCandidates}
+          onClick={toggleCorrection}
           disabled={!hasGooglePlace && !connectedPlace}
           className="h-10 shrink-0 px-3 text-xs"
         >
-          {connectedPlace?.matchStatus === "NEEDS_REVIEW"
+          {hasSavedPlaceId
+            ? editing
+              ? "닫기"
+              : "수정"
+            : connectedPlace?.matchStatus === "NEEDS_REVIEW"
             ? "관리자 보정"
-            : connectedPlace
-              ? "수정"
-              : hasGooglePlace
-                ? "관리자 보정"
-                : "Google 장소 없음"}
+            : hasGooglePlace
+              ? "관리자 보정"
+              : "Google 장소 없음"}
         </Button>
       </div>
 
@@ -200,6 +214,14 @@ export function AdminCampaignNaverCandidates({
               <p className="mt-1 text-xs text-ink-weak">
                 {[connectedPlace.category, connectedPlace.address].filter(Boolean).join(" · ") || "상세 정보 없음"}
               </p>
+              {hasSavedPlaceId ? (
+                <p className="mt-2 inline-flex rounded-[8px] bg-canvas px-2 py-1 text-xs text-ink-sub">
+                  저장된 Place ID&nbsp;
+                  <strong className="font-semibold text-ink">
+                    {connectedPlace.externalId}
+                  </strong>
+                </p>
+              ) : null}
             </div>
           </div>
         ) : (
@@ -211,47 +233,49 @@ export function AdminCampaignNaverCandidates({
         )}
       </div>
 
-      <div className="mt-3 rounded-card border border-line bg-surface p-3">
-        <p className="text-xs font-semibold text-ink">관리자 보정</p>
-        <p className="mt-1 text-xs text-ink-weak">
-          네이버 상세페이지 주소의 <strong>/place/</strong> 또는{" "}
-          <strong>/restaurant/</strong> 뒤에 있는 숫자만 입력하세요.
-        </p>
-        <p className="mt-1 rounded-[8px] bg-canvas px-2 py-1.5 text-[11px] leading-5 text-ink-weak">
-          입력 예시: <strong className="text-ink-sub">2059222523</strong>
-        </p>
-        <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-          <input
-            type="text"
-            value={manualPlaceId}
-            onChange={(event) => {
-              if (/^\d*$/.test(event.target.value)) {
-                setManualPlaceId(event.target.value);
-                setError(null);
-              } else {
-                setError("네이버 플레이스 ID는 숫자만 입력해 주세요.");
-              }
-            }}
-            inputMode="numeric"
-            pattern="[0-9]*"
-            maxLength={20}
-            autoComplete="off"
-            aria-label="네이버 플레이스 ID"
-            placeholder="예: 2059222523"
-            className="h-10 min-w-0 flex-1 rounded-btn border border-line bg-canvas px-3 text-sm text-ink outline-none focus:border-brand"
-          />
-          <Button
-            type="button"
-            variant="secondary"
-            loading={manualSaving}
-            disabled={manualSaving || savingIndex !== null || !manualPlaceId}
-            onClick={saveManualPlaceId}
-            className="h-10 shrink-0 px-3 text-xs"
-          >
-            Place ID 저장
-          </Button>
+      {!hasSavedPlaceId || editing ? (
+        <div className="mt-3 rounded-card border border-line bg-surface p-3">
+          <p className="text-xs font-semibold text-ink">관리자 보정</p>
+          <p className="mt-1 text-xs text-ink-weak">
+            네이버 상세페이지 주소의 <strong>/place/</strong> 또는{" "}
+            <strong>/restaurant/</strong> 뒤에 있는 숫자만 입력하세요.
+          </p>
+          <p className="mt-1 rounded-[8px] bg-canvas px-2 py-1.5 text-[11px] leading-5 text-ink-weak">
+            입력 예시: <strong className="text-ink-sub">2059222523</strong>
+          </p>
+          <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+            <input
+              type="text"
+              value={manualPlaceId}
+              onChange={(event) => {
+                if (/^\d*$/.test(event.target.value)) {
+                  setManualPlaceId(event.target.value);
+                  setError(null);
+                } else {
+                  setError("네이버 플레이스 ID는 숫자만 입력해 주세요.");
+                }
+              }}
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={20}
+              autoComplete="off"
+              aria-label="네이버 플레이스 ID"
+              placeholder="예: 2059222523"
+              className="h-10 min-w-0 flex-1 rounded-btn border border-line bg-canvas px-3 text-sm text-ink outline-none focus:border-brand"
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              loading={manualSaving}
+              disabled={manualSaving || savingIndex !== null || !manualPlaceId}
+              onClick={saveManualPlaceId}
+              className="h-10 shrink-0 px-3 text-xs"
+            >
+              Place ID 저장
+            </Button>
+          </div>
         </div>
-      </div>
+      ) : null}
 
       {error ? <p className="mt-3 text-sm text-danger">{error}</p> : null}
 

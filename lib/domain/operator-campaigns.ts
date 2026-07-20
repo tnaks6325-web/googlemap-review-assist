@@ -53,6 +53,7 @@ export interface PublicCampaignDetail extends PublicCampaignCard {
 }
 
 export interface AdminConnectedNaverPlace {
+  externalId: string | null;
   name: string;
   url: string | null;
   address: string | null;
@@ -243,6 +244,7 @@ function toAdminNaverPlace(campaign: CampaignWithBusiness): AdminConnectedNaverP
   const naverPlace = campaign.business.externalPlaces.find((place) => place.platform === "NAVER") ?? null;
   if (!naverPlace) return null;
   return {
+    externalId: naverPlace.externalId,
     name: naverPlace.name,
     url: naverPlace.url,
     address: naverPlace.address,

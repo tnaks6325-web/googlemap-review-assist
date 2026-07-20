@@ -30,6 +30,16 @@ export interface AdminCampaignNaverAutoLinkRow {
   naverPlace: { matchStatus: string } | null;
 }
 
+export function hasSavedNaverPlaceId(
+  place: { externalId?: string | null; matchStatus: string } | null,
+) {
+  return Boolean(
+    place?.externalId &&
+      /^\d{1,20}$/.test(place.externalId) &&
+      (place.matchStatus === "LINKED" || place.matchStatus === "CONFIRMED"),
+  );
+}
+
 export function automaticNaverCampaignIds(
   campaigns: AdminCampaignNaverAutoLinkRow[],
 ) {

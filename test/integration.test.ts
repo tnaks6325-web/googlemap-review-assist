@@ -464,6 +464,16 @@ describe("운영자형 캠페인 목록", () => {
         endDate: "2099-12-31",
       },
     });
+    await prisma.externalPlace.create({
+      data: {
+        businessId: biz.id,
+        platform: "NAVER",
+        externalId: "2059222523",
+        url: "https://map.naver.com/p/entry/place/2059222523",
+        name: "블리비의원 건대점",
+        matchStatus: "LINKED",
+      },
+    });
     await prisma.campaignCode.createMany({
       data: [
         { campaignId: campaign.id, code: `A${uniq()}` },
@@ -521,6 +531,10 @@ describe("운영자형 캠페인 목록", () => {
       menuCount: 1,
       issuedCodeCount: 2,
       statusLabel: "중지됨",
+      naverPlace: {
+        externalId: "2059222523",
+        matchStatus: "LINKED",
+      },
     });
     expect(row?.assignedCount).toBeGreaterThan(row?.completedCount ?? 0);
     expect(assignedReceipt.status).toBe("ASSIGNED");

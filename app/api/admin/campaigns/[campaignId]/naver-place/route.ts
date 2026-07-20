@@ -14,6 +14,7 @@ export const runtime = "nodejs";
 const HOUR = 60 * 60 * 1000;
 
 function placeResponse(place: {
+  externalId: string | null;
   name: string;
   url: string | null;
   address: string | null;
@@ -23,6 +24,7 @@ function placeResponse(place: {
   syncedAt: Date | null;
 }) {
   return {
+    externalId: place.externalId,
     name: place.name,
     url: place.url,
     address: place.address,
