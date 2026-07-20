@@ -104,10 +104,21 @@ export function AdminCampaignOperationsTable({
 
       <div className="mt-3 overflow-hidden rounded-[14px] border border-line bg-surface shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1260px] border-separate border-spacing-0">
+          <table className="w-full min-w-[1260px] table-fixed border-separate border-spacing-0">
             <caption className="sr-only">
               관리자 캠페인 운영 상태 및 자료 연결 현황
             </caption>
+            <colgroup>
+              <col className="w-[300px]" />
+              <col className="w-[104px]" />
+              <col className="w-[150px]" />
+              <col className="w-[70px]" />
+              <col className="w-[70px]" />
+              <col className="w-[130px]" />
+              <col className="w-[80px]" />
+              <col className="w-[110px]" />
+              <col className="w-[246px]" />
+            </colgroup>
             <thead>
               <tr className="bg-surface-alt">
                 <TableHeading>캠페인</TableHeading>
@@ -191,8 +202,8 @@ function CampaignRows({
 
   return (
     <>
-      <tr className="group">
-        <td className="min-w-[260px] border-t border-line px-4 py-4 group-first:border-t-0">
+      <tr className="group h-[92px]">
+        <td className="border-t border-line px-4 py-4 group-first:border-t-0">
           {googleMapsUrl ? (
             <a
               href={googleMapsUrl}
@@ -384,7 +395,7 @@ function StatusBadge({
 
   return (
     <span
-      className={`inline-flex min-h-6 items-center rounded-full px-2 text-[11px] font-bold ${toneClass}`}
+      className={`inline-flex min-h-6 whitespace-nowrap items-center rounded-full px-2 text-[11px] font-bold ${toneClass}`}
     >
       {status.label}
     </span>
