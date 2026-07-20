@@ -24,6 +24,7 @@ interface SettlementItem {
 
 interface PayoutAccount {
   bankName: string;
+  accountNumber: string;
   accountLast4: string;
   maskedAccountNumber: string;
   accountHolder: string;
@@ -265,9 +266,18 @@ export default function MePage() {
 
   return (
     <main className="mx-auto max-w-md space-y-5 px-5 py-8">
-      <header>
-        <h1 className="text-[22px] font-bold text-ink">내 적립금</h1>
-        <p className="mt-1 text-sm text-ink-sub">계좌 등록 후 정산 신청을 진행할 수 있어요.</p>
+      <header className="space-y-5">
+        <Link
+          href="/campaigns"
+          className="inline-flex min-h-11 items-center gap-1 rounded-full border border-line bg-surface px-4 text-sm font-semibold text-ink transition hover:border-brand/40 hover:text-brand"
+        >
+          <span aria-hidden="true">←</span>
+          홈으로
+        </Link>
+        <div>
+          <h1 className="text-[22px] font-bold text-ink">내 적립금</h1>
+          <p className="mt-1 text-sm text-ink-sub">계좌 등록 후 정산 신청을 진행할 수 있어요.</p>
+        </div>
       </header>
 
       {latestPaidNotice && (
@@ -343,8 +353,8 @@ export default function MePage() {
 
         {summary?.payoutAccount && !editingAccount ? (
           <div className="rounded-card bg-canvas p-3 text-sm">
-            <p className="font-semibold text-ink">
-              {summary.payoutAccount.bankName} {summary.payoutAccount.maskedAccountNumber}
+            <p className="break-all font-semibold tabular-nums text-ink">
+              {summary.payoutAccount.bankName} {summary.payoutAccount.accountNumber}
             </p>
             <p className="mt-1 text-ink-sub">예금주 {summary.payoutAccount.accountHolder}</p>
           </div>

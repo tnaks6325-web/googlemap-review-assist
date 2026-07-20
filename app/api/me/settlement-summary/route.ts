@@ -9,5 +9,7 @@ export async function GET() {
   if (!reviewerId) return err("UNAUTHORIZED", "로그인이 필요해요", 401);
 
   const summary = await getReviewerSettlementSummary(reviewerId);
-  return ok(summary);
+  const response = ok(summary);
+  response.headers.set("Cache-Control", "private, no-store");
+  return response;
 }

@@ -1,6 +1,10 @@
-import Link from "next/link";
 import { connection } from "next/server";
-import { CampaignList } from "@/components/campaign/CampaignList";
+import {
+  ReviewerCampaignPanel,
+  ReviewerHistoryPanel,
+  ReviewerProfilePanel,
+} from "@/components/campaign/ReviewerDashboardPanels";
+import { ReviewerDashboardTabs } from "@/components/campaign/ReviewerDashboardTabs";
 import { ReviewerHero } from "@/components/campaign/ReviewerHero";
 import { Footer } from "@/components/Footer";
 import { ReviewerLogoutButton } from "@/components/auth/ReviewerLogoutButton";
@@ -10,18 +14,23 @@ import {
   getPublicCampaignAvailabilitySummary,
   getReviewerCampaignAvailability,
 } from "@/lib/domain/reviewer-campaigns";
-import { getReviewerHomeAccount } from "@/lib/domain/reviewer-home";
+import {
+  getReviewerHomeAccount,
+  getReviewerHomeDashboard,
+} from "@/lib/domain/reviewer-home";
 
 export const runtime = "nodejs";
 
 async function loadReviewerHome(reviewerId: string | null) {
   if (reviewerId) {
-    const [account, availability] = await Promise.all([
+    const [account, availability, dashboard] = await Promise.all([
       getReviewerHomeAccount(reviewerId),
       getReviewerCampaignAvailability(reviewerId),
+      getReviewerHomeDashboard(reviewerId),
     ]);
     return {
       account,
+      dashboard,
       campaigns: availability.campaigns,
       availableCount: availability.availableCount,
       totalRewardPoints: availability.totalRewardPoints,
@@ -34,6 +43,7 @@ async function loadReviewerHome(reviewerId: string | null) {
   ]);
   return {
     account: null,
+    dashboard: null,
     campaigns,
     availableCount: availability.availableCount,
     totalRewardPoints: availability.totalRewardPoints,
@@ -53,30 +63,27 @@ export default async function CampaignsPage() {
           totalRewardPoints={home.totalRewardPoints}
         />
 
-        <section aria-labelledby="campaign-list-title" className="mt-8">
-          <div className="mb-4 flex items-end justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold text-brand">GOOGLE MAPS CAMPAIGN</p>
-              <h2 id="campaign-list-title" className="mt-1 text-xl font-bold text-ink">
-                오늘 참여 가능한 캠페인
-              </h2>
-            </div>
-            <span className="shrink-0 text-sm font-semibold text-ink-weak">
-              {home.availableCount.toLocaleString("ko-KR")}개
-            </span>
+        {home.account && home.dashboard ? (
+          <ReviewerDashboardTabs
+            campaignPanel={
+              <ReviewerCampaignPanel
+                campaigns={home.campaigns}
+                availableCount={home.availableCount}
+              />
+            }
+            historyPanel={<ReviewerHistoryPanel dashboard={home.dashboard} />}
+            profilePanel={
+              <ReviewerProfilePanel account={home.account} dashboard={home.dashboard} />
+            }
+          />
+        ) : (
+          <div className="mt-8">
+            <ReviewerCampaignPanel
+              campaigns={home.campaigns}
+              availableCount={home.availableCount}
+            />
           </div>
-
-          <div className="mb-4 flex items-center gap-3 text-sm">
-            <Link href="/me" className="font-semibold text-brand">
-              내 적립금
-            </Link>
-            <Link href="/legal/reviews" className="text-ink-weak hover:text-ink-sub">
-              리뷰·적립 정책
-            </Link>
-          </div>
-
-          <CampaignList campaigns={home.campaigns} />
-        </section>
+        )}
       </main>
       {home.account && <ReviewerLogoutButton />}
       <Footer />
