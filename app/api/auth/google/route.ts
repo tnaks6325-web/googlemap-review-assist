@@ -10,6 +10,7 @@ import { clientIp, rateLimit } from "@/lib/rate-limit";
 import {
   authenticateGoogleReviewer,
   GoogleAuthError,
+  verifyGoogleAccessToken,
   verifyGoogleIdToken,
 } from "@/lib/domain/google-auth";
 
@@ -32,14 +33,17 @@ export async function POST(req: Request) {
 
   const body = await req.json().catch(() => null);
   const credential = typeof body?.credential === "string" ? body.credential : "";
+  const accessToken = typeof body?.accessToken === "string" ? body.accessToken : "";
   const mode = body?.mode === "switch" ? "switch" : "login";
-  if (!credential) {
+  if ((!credential && !accessToken) || (credential && accessToken)) {
     return err("GOOGLE_TOKEN_REQUIRED", "Google 로그인 토큰이 필요합니다", 400);
   }
 
   try {
     const currentReviewerId = await getReviewerId();
-    const profile = await verifyGoogleIdToken(credential);
+    const profile = accessToken
+      ? await verifyGoogleAccessToken(accessToken)
+      : await verifyGoogleIdToken(credential);
     const result = await authenticateGoogleReviewer(profile, currentReviewerId, { mode });
     const res = ok({
       reviewerId: result.reviewer.id,

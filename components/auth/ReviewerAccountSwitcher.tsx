@@ -2,26 +2,23 @@
 
 import { useEffect, useReducer } from "react";
 import { createPortal } from "react-dom";
-import { ReviewerGoogleSignIn } from "@/components/auth/ReviewerGoogleSignIn";
+import { GoogleAccountChooserButton } from "@/components/auth/GoogleAccountChooserButton";
 
 export interface ReviewerAccountSwitcherState {
   open: boolean;
-  addingAccount: boolean;
 }
 
-type ReviewerAccountSwitcherAction = "open" | "add-account" | "close";
+type ReviewerAccountSwitcherAction = "open" | "close";
 
 const INITIAL_STATE: ReviewerAccountSwitcherState = {
   open: false,
-  addingAccount: false,
 };
 
 export function reviewerAccountSwitcherReducer(
   state: ReviewerAccountSwitcherState,
   action: ReviewerAccountSwitcherAction,
 ): ReviewerAccountSwitcherState {
-  if (action === "open") return { open: true, addingAccount: false };
-  if (action === "add-account") return { ...state, addingAccount: true };
+  if (action === "open") return { open: true };
   return INITIAL_STATE;
 }
 
@@ -90,30 +87,7 @@ export function ReviewerAccountSwitcher() {
               </div>
 
               <div className="mt-5">
-                {!state.addingAccount ? (
-                  <button
-                    type="button"
-                    onClick={() => dispatch("add-account")}
-                    className="flex w-full items-center justify-center gap-2 rounded-[14px] border border-line bg-white px-4 py-3.5 text-sm font-bold text-brand transition hover:border-brand/40 hover:bg-blue-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
-                  >
-                    <span aria-hidden className="text-xl font-normal leading-none">
-                      +
-                    </span>
-                    다른 계정 추가
-                  </button>
-                ) : (
-                  <div>
-                    <p className="mb-2 text-xs font-semibold text-ink-sub">
-                      추가할 Google 계정을 선택해 주세요
-                    </p>
-                    <div className="rounded-[14px] border border-line p-1">
-                      <ReviewerGoogleSignIn
-                        mode="switch"
-                        onSuccess={() => dispatch("close")}
-                      />
-                    </div>
-                  </div>
-                )}
+                <GoogleAccountChooserButton onSuccess={() => dispatch("close")} />
               </div>
             </div>
           </div>,

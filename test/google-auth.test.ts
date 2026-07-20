@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import {
   authenticateGoogleReviewer,
+  verifyGoogleAccessTokenWithFetch,
   verifyGoogleIdTokenWithJwks,
 } from "@/lib/domain/google-auth";
 
@@ -43,6 +44,64 @@ function signedGoogleToken(input: {
 }
 
 describe("Google reviewer auth", () => {
+  it("verifies a Google access token before accepting its user profile", async () => {
+    const requests: Array<{ url: string; authorization: string | null }> = [];
+    const fetchGoogle = async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      const headers = new Headers(init?.headers);
+      requests.push({ url, authorization: headers.get("authorization") });
+
+      if (url.startsWith("https://oauth2.googleapis.com/tokeninfo")) {
+        return Response.json({
+          aud: CLIENT_ID,
+          expires_in: "3599",
+          scope: "openid email profile",
+        });
+      }
+
+      return Response.json({
+        sub: "google-sub-access-token",
+        email: "chooser@example.com",
+        email_verified: true,
+        name: "계정 선택 사용자",
+        picture: "https://example.com/chooser.png",
+      });
+    };
+
+    const profile = await verifyGoogleAccessTokenWithFetch(
+      "access-token",
+      CLIENT_ID,
+      fetchGoogle,
+    );
+
+    expect(profile).toEqual({
+      googleSub: "google-sub-access-token",
+      email: "chooser@example.com",
+      name: "계정 선택 사용자",
+      avatarUrl: "https://example.com/chooser.png",
+    });
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toMatchObject({
+      url: "https://openidconnect.googleapis.com/v1/userinfo",
+      authorization: "Bearer access-token",
+    });
+  });
+
+  it("rejects an access token issued to another OAuth client", async () => {
+    const fetchGoogle = async () =>
+      Response.json({
+        aud: "other-client.apps.googleusercontent.com",
+        expires_in: "3599",
+        scope: "openid email profile",
+      });
+
+    await expect(
+      verifyGoogleAccessTokenWithFetch("access-token", CLIENT_ID, fetchGoogle),
+    ).rejects.toMatchObject({
+      code: "GOOGLE_AUDIENCE_MISMATCH",
+    });
+  });
+
   it("verifies a Google ID token and extracts a safe profile", async () => {
     const { token, jwks } = signedGoogleToken({ sub: "google-sub-ok" });
 
