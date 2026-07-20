@@ -291,10 +291,14 @@ describe("campaign review draft generator", () => {
 
     const requestBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
     const prompt = requestBody.contents[0].parts[0].text;
+    const itemSchema =
+      requestBody.generationConfig.responseSchema.properties.items.items;
     expect(prompt).toContain(evidence.id);
     expect(prompt).toContain("신선한 야채 구성이 안내되어 있다");
     expect(prompt).not.toContain("시트 리뷰작성 가이드 키워드");
     expect(prompt).not.toContain("야채가 신선하고 직원분들이 친절했어요.");
+    expect(itemSchema.properties.styleId).toEqual({ type: "string" });
+    expect(itemSchema.properties.evidenceIds.items.enum).toEqual([evidence.id]);
   });
 
   it("generates and stores a 30 to 200 non-space character draft from place data and a substantive source", async () => {

@@ -1062,10 +1062,7 @@ async function geminiMatrixDrafts(
                     type: "object",
                     properties: {
                       reviewText: { type: "string" },
-                      styleId: {
-                        type: "string",
-                        enum: REVIEW_DRAFT_STYLE_SLOTS.map((slot) => slot.id),
-                      },
+                      styleId: { type: "string" },
                       evidenceIds: {
                         type: "array",
                         minItems: 1,
