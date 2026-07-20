@@ -161,7 +161,11 @@ export function AdminCampaignNaverCandidates({
   };
 
   return (
-    <div className="rounded-card border border-line bg-canvas p-3">
+    <div
+      className={`rounded-card border bg-canvas p-3 ${
+        hasSavedPlaceId ? "border-line" : "border-amber-200"
+      }`}
+    >
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-ink">네이버 플레이스</p>

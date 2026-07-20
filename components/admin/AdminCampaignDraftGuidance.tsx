@@ -30,6 +30,10 @@ export function AdminCampaignDraftGuidance({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const needsAttention =
+    !approvedFacts.trim() &&
+    initialGuidance.guideKeywords.length === 0 &&
+    initialGuidance.reviewExamples.length === 0;
 
   const save = async () => {
     setSaving(true);
@@ -60,7 +64,11 @@ export function AdminCampaignDraftGuidance({
   };
 
   return (
-    <div className="rounded-card border border-line bg-canvas p-3">
+    <div
+      className={`rounded-card border bg-canvas p-3 ${
+        needsAttention ? "border-amber-200" : "border-line"
+      }`}
+    >
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-ink">원고 기준 보정</p>

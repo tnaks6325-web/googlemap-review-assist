@@ -80,7 +80,11 @@ export function AdminCampaignBlogReferences({
   };
 
   return (
-    <div className="rounded-card border border-line bg-canvas p-3">
+    <div
+      className={`rounded-card border bg-canvas p-3 ${
+        count > 0 ? "border-line" : "border-amber-200"
+      }`}
+    >
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-ink">블로그 참고자료</p>
