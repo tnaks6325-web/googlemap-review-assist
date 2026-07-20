@@ -26,6 +26,10 @@ const STATUS_OPTIONS: Array<{
   { value: "active", label: "진행 캠페인" },
   { value: "attention", label: "보정 필요" },
   { value: "ready", label: "원고 준비 완료" },
+  { value: "scheduled", label: "운영 예정" },
+  { value: "daily_full", label: "오늘 마감" },
+  { value: "total_full", label: "전체 마감" },
+  { value: "ended", label: "운영 종료" },
   { value: "inactive", label: "중지됨" },
 ];
 
@@ -108,7 +112,7 @@ export function AdminCampaignOperationsTable({
               <tr className="bg-surface-alt">
                 <TableHeading>캠페인</TableHeading>
                 <TableHeading>운영 상태</TableHeading>
-                <TableHeading>배정 / 완료</TableHeading>
+                <TableHeading>오늘 배정 / 일 한도</TableHeading>
                 <TableHeading>지급</TableHeading>
                 <TableHeading>코드</TableHeading>
                 <TableHeading>원고 자료</TableHeading>
@@ -215,16 +219,14 @@ function CampaignRows({
         </TableCell>
         <TableCell>
           <p className="font-bold tabular-nums text-ink">
-            {campaign.assignedCount} / {campaign.completedCount}
+            {campaign.assignedTodayCount} / {campaign.dailyQuota ?? "-"}
           </p>
           <p className="mt-1 text-[11px] text-ink-weak">
-            완료율{" "}
-            {campaign.assignedCount
-              ? Math.round(
-                  (campaign.completedCount / campaign.assignedCount) * 100,
-                )
-              : 0}
-            %
+            오늘 완료 {campaign.completedTodayCount}건
+          </p>
+          <p className="mt-0.5 whitespace-nowrap text-[11px] text-ink-weak">
+            누적 배정 {campaign.assignedCount}/{campaign.totalQuota ?? "-"} · 완료{" "}
+            {campaign.completedCount}건
           </p>
         </TableCell>
         <TableCell>

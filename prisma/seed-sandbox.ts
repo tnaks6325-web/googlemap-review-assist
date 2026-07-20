@@ -103,12 +103,24 @@ async function main() {
 
     const campaign = await prisma.campaign.upsert({
       where: { slug: campaignSlug },
-      update: { businessId: business.id, name: `${businessName} (샌드박스)`, active: true },
+      update: {
+        businessId: business.id,
+        name: `${businessName} (샌드박스)`,
+        active: true,
+        totalQuota: 25,
+        dailyQuota: 5,
+        startDate: "2020-01-01",
+        endDate: "2099-12-31",
+      },
       create: {
         businessId: business.id,
         slug: campaignSlug,
         name: `${businessName} (샌드박스)`,
         active: true,
+        totalQuota: 25,
+        dailyQuota: 5,
+        startDate: "2020-01-01",
+        endDate: "2099-12-31",
       },
     });
 

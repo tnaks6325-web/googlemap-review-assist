@@ -1,4 +1,4 @@
-import { get, put, type GetBlobResult } from "@vercel/blob";
+import { del, get, put, type GetBlobResult } from "@vercel/blob";
 
 export const MAX_REVIEW_PROOF_BYTES = 4 * 1024 * 1024;
 
@@ -110,6 +110,11 @@ export function isPrivateReviewProofUrl(value: string) {
   } catch {
     return false;
   }
+}
+
+export async function deleteReviewProof(url: string) {
+  if (!isPrivateReviewProofUrl(url)) return;
+  await del(url);
 }
 
 export async function getPrivateReviewProof(url: string, ifNoneMatch?: string | null): Promise<GetBlobResult> {

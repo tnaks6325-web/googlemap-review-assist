@@ -1,5 +1,8 @@
 import { getReviewerId } from "@/lib/auth/session";
-import { assignReviewerCampaign } from "@/lib/domain/reviewer-campaigns";
+import {
+  assignReviewerCampaign,
+  ReviewerCampaignError,
+} from "@/lib/domain/reviewer-campaigns";
 import { checkOrigin } from "@/lib/auth/origin";
 import { err, ok } from "@/lib/http";
 
@@ -12,7 +15,15 @@ export async function POST(req: Request) {
   const reviewerId = await getReviewerId();
   if (!reviewerId) return err("UNAUTHORIZED", "로그인이 필요해요", 401);
 
-  const result = await assignReviewerCampaign(reviewerId);
+  let result;
+  try {
+    result = await assignReviewerCampaign(reviewerId);
+  } catch (error) {
+    if (error instanceof ReviewerCampaignError) {
+      return err(error.code, error.message, error.status);
+    }
+    throw error;
+  }
   if (!result.assignedCampaign) {
     return ok({
       availableCount: 0,
@@ -20,6 +31,9 @@ export async function POST(req: Request) {
       cooldownDays: result.cooldownDays,
       categoryCounts: result.categoryCounts,
       assignmentId: null,
+      assignmentExpiresAt: null,
+      remainingSeconds: 0,
+      activeAssignment: null,
       assignedCampaign: null,
     });
   }
@@ -30,6 +44,16 @@ export async function POST(req: Request) {
     cooldownDays: result.cooldownDays,
     categoryCounts: result.categoryCounts,
     assignmentId: result.assignmentId,
+    assignmentExpiresAt: result.assignmentExpiresAt?.toISOString() ?? null,
+    remainingSeconds: result.remainingSeconds,
+    activeAssignment: result.activeAssignment
+      ? {
+          assignmentId: result.activeAssignment.assignmentId,
+          assignmentExpiresAt:
+            result.activeAssignment.assignmentExpiresAt.toISOString(),
+          remainingSeconds: result.activeAssignment.remainingSeconds,
+        }
+      : null,
     assignedCampaign: {
       id: result.assignedCampaign.id,
       slug: result.assignedCampaign.slug,

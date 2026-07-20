@@ -73,10 +73,72 @@ describe("google map review sheet import dry-run parser", () => {
       landingUrl: "https://maps.app.goo.gl/test",
       totalQuota: 30,
       dailyQuota: 5,
+      startDate: "2026-07-02",
+      endDate: "2026-07-10",
       guideKeywords: ["Mention side dishes and kind service"],
       examplePhrases: ["Kind service", "Good side dishes"],
       examplePhraseCount: 2,
     });
+  });
+
+  it("rejects invalid dates and an end date before the start date", () => {
+    const invalidDate = parseGoogleMapReviewSheet([
+      [],
+      [],
+      [],
+      [],
+      header,
+      [
+        "",
+        "2026-07-01",
+        "2026-02-30",
+        "2026-03-01",
+        "9",
+        "Advertiser A",
+        "Warm Table",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "https://maps.app.goo.gl/test",
+        "30",
+        "5",
+      ],
+    ]);
+    const reversed = parseGoogleMapReviewSheet([
+      [],
+      [],
+      [],
+      [],
+      header,
+      [
+        "",
+        "2026-07-01",
+        "2026. 7. 25.",
+        "2026. 7. 21.",
+        "9",
+        "Advertiser A",
+        "Warm Table",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "https://maps.app.goo.gl/test",
+        "30",
+        "5",
+      ],
+    ]);
+
+    expect(invalidDate.rows[0]).toMatchObject({ status: "ERROR", startDate: "" });
+    expect(invalidDate.rows[0].errors).toContain("광고 시작일 형식이 올바르지 않습니다");
+    expect(reversed.rows[0]).toMatchObject({
+      status: "ERROR",
+      startDate: "2026-07-25",
+      endDate: "2026-07-21",
+    });
+    expect(reversed.rows[0].errors).toContain("광고 종료일은 시작일보다 빠를 수 없습니다");
   });
 
   it("splits slash-separated review examples from the actual order sheet", () => {

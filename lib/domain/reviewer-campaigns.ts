@@ -1,6 +1,5 @@
 import { randomBytes } from "crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
-import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/db";
 import {
   DEFAULT_REWARD_POINTS,
@@ -12,14 +11,25 @@ import {
   summarizeCampaignReviewDraftSources,
 } from "@/lib/domain/campaign-review-draft";
 import type { ReviewProofAnalysis } from "@/lib/domain/review-proof-analysis";
+import {
+  assignmentExpiry,
+  campaignAvailability,
+} from "@/lib/domain/campaign-availability-policy";
+import {
+  effectiveCampaignAssignmentWhere,
+  emptyCampaignParticipationStats,
+  expireStaleCampaignAssignments,
+  fetchCampaignParticipationStats,
+  type CampaignParticipationStats,
+} from "@/lib/domain/campaign-participation-stats";
 
 export const REVIEWER_PLACE_COOLDOWN_DAYS = 7;
 export const REVIEWER_ASSIGNMENT_STATUS_ASSIGNED = "ASSIGNED";
 export const REVIEWER_ASSIGNMENT_STATUS_REVIEW_SUBMITTED = "REVIEW_SUBMITTED";
 export const REVIEWER_ASSIGNMENT_STATUS_COMPLETED = "COMPLETED";
 export const REVIEWER_ASSIGNMENT_STATUS_REJECTED = "REJECTED";
+export const REVIEWER_ASSIGNMENT_STATUS_EXPIRED = "EXPIRED";
 export const REVIEWER_ASSIGNMENT_SOURCE = "CAMPAIGN_ASSIGNMENT";
-const PUBLIC_AVAILABILITY_CACHE_SECONDS = 10;
 
 export interface ReviewerCampaignAssignment extends PublicCampaignCard {
   businessId: string;
@@ -32,6 +42,14 @@ export interface ReviewerCampaignAvailability {
   cooldownDays: number;
   categoryCounts: ReviewerCampaignCategoryCount[];
   campaigns: ReviewerCampaignAssignment[];
+  activeAssignment: ReviewerActiveAssignment | null;
+}
+
+export interface ReviewerActiveAssignment {
+  assignmentId: string;
+  assignmentExpiresAt: Date;
+  remainingSeconds: number;
+  assignedCampaign: ReviewerCampaignAssignment;
 }
 
 export interface ReviewerCampaignCategoryCount {
@@ -56,12 +74,32 @@ export interface ReviewerCampaignProofInput {
   draftText: string;
   analysis?: ReviewProofAnalysis;
   reprocess?: boolean;
+  submittedAt?: Date;
 }
 
 type DbClient = PrismaClient | Prisma.TransactionClient;
 
 type CampaignRow = Awaited<ReturnType<typeof fetchActiveCampaignRows>>[number];
 type ReceiptRow = Awaited<ReturnType<typeof fetchCooldownReceiptRows>>[number];
+
+function assertAssignmentNotExpired(
+  receipt: {
+    status: string;
+    createdAt: Date;
+    assignmentExpiresAt: Date | null;
+  },
+  now = new Date(),
+) {
+  if (receipt.status !== REVIEWER_ASSIGNMENT_STATUS_ASSIGNED) return;
+  const expiresAt = receipt.assignmentExpiresAt ?? assignmentExpiry(receipt.createdAt);
+  if (expiresAt.getTime() <= now.getTime()) {
+    throw new ReviewerCampaignError(
+      "ASSIGNMENT_EXPIRED",
+      "배정 시간이 만료되었습니다. 다시 배정받아 주세요.",
+      409,
+    );
+  }
+}
 
 function cooldownStart(now = new Date()) {
   return new Date(now.getTime() - REVIEWER_PLACE_COOLDOWN_DAYS * 24 * 60 * 60 * 1000);
@@ -81,10 +119,9 @@ function googlePlaceKeyForBusiness(
   );
 }
 
-function availabilityLabel(completedCount: number) {
-  if (completedCount === 0) return "참여 가능";
-  if (completedCount < 5) return "오늘 참여 가능";
-  return "참여 가능";
+function availabilityLabel(isAvailableToday: boolean, assignedTodayCount: number) {
+  if (!isAvailableToday) return "오늘 참여 마감";
+  return assignedTodayCount === 0 ? "오늘 참여 가능" : "참여 가능";
 }
 
 function statusLabel(active: boolean) {
@@ -161,16 +198,6 @@ async function fetchActiveCampaignRows(db: DbClient) {
         take: 5,
       },
       draftGuidance: true,
-      _count: {
-        select: {
-          receipts: {
-            where: {
-              source: REVIEWER_ASSIGNMENT_SOURCE,
-              status: REVIEWER_ASSIGNMENT_STATUS_COMPLETED,
-            },
-          },
-        },
-      },
     },
   });
 }
@@ -180,6 +207,7 @@ async function fetchCooldownReceiptRows(db: DbClient, reviewerId: string, now = 
     where: {
       reviewerId,
       createdAt: { gte: cooldownStart(now) },
+      ...effectiveCampaignAssignmentWhere(now),
     },
     select: {
       business: {
@@ -199,10 +227,6 @@ async function fetchCooldownReceiptRows(db: DbClient, reviewerId: string, now = 
 
 function toExcludedGooglePlaceKeys(receipts: ReceiptRow[]) {
   return new Set(receipts.map((receipt) => googlePlaceKeyForBusiness(receipt.business)));
-}
-
-function completedAssignmentCount(campaign: CampaignRow) {
-  return campaign._count.receipts;
 }
 
 function hasSufficientDraftSources(campaign: CampaignRow) {
@@ -246,12 +270,28 @@ function hasUsableReferenceText(value: string | null | undefined) {
   return normalized.length > 0;
 }
 
-function toReviewerCampaign(campaign: CampaignRow): ReviewerCampaignAssignment {
+function toReviewerCampaign(
+  campaign: CampaignRow,
+  stats: CampaignParticipationStats,
+  now: Date,
+): ReviewerCampaignAssignment {
   const googlePlace = campaign.business.externalPlaces.find((place) => place.platform === "GOOGLE") ?? null;
   const businessName = googlePlace?.name ?? campaign.business.name;
   const address = googlePlace?.address ?? campaign.business.address;
   const googlePlaceKey = googlePlaceKeyForBusiness(campaign.business);
-  const completedCount = completedAssignmentCount(campaign);
+  const availability = campaignAvailability(
+    {
+      active: campaign.active,
+      startDate: campaign.startDate,
+      endDate: campaign.endDate,
+      totalQuota: campaign.totalQuota,
+      dailyQuota: campaign.dailyQuota,
+      assignedCount: stats.assignedCount,
+      assignedTodayCount: stats.assignedTodayCount,
+      sourceReady: hasSufficientDraftSources(campaign),
+    },
+    now,
+  );
 
   return {
     id: campaign.id,
@@ -265,9 +305,22 @@ function toReviewerCampaign(campaign: CampaignRow): ReviewerCampaignAssignment {
       googlePlace?.url ?? googleMapsSearchUrl(businessName, address, campaign.business.googlePlaceId),
     rating: googlePlace?.rating ?? null,
     reviewCount: googlePlace?.reviewCount ?? null,
-    completedCount,
+    completedCount: stats.completedCount,
+    assignedTodayCount: stats.assignedTodayCount,
+    completedTodayCount: stats.completedTodayCount,
+    totalQuota: campaign.totalQuota,
+    dailyQuota: campaign.dailyQuota,
+    startDate: campaign.startDate,
+    endDate: campaign.endDate,
+    remainingTodayCount: availability.remainingTodayCount,
+    remainingTotalCount: availability.remainingTotalCount,
+    isAvailableToday: availability.isAvailableToday,
+    availabilityReason: availability.availabilityReason,
     rewardPoints: DEFAULT_REWARD_POINTS,
-    availabilityLabel: availabilityLabel(completedCount),
+    availabilityLabel: availabilityLabel(
+      availability.isAvailableToday,
+      stats.assignedTodayCount,
+    ),
     statusLabel: statusLabel(campaign.active),
     createdAt: campaign.createdAt,
     googlePlaceKey,
@@ -277,16 +330,62 @@ function toReviewerCampaign(campaign: CampaignRow): ReviewerCampaignAssignment {
 export async function getReviewerCampaignAvailability(
   reviewerId: string,
   db: DbClient = prisma,
+  now = new Date(),
 ): Promise<ReviewerCampaignAvailability> {
+  await expireStaleCampaignAssignments(db, now);
   const [campaigns, cooldownReceipts] = await Promise.all([
     fetchActiveCampaignRows(db),
-    fetchCooldownReceiptRows(db, reviewerId),
+    fetchCooldownReceiptRows(db, reviewerId, now),
   ]);
+  const statsByCampaignId = await fetchCampaignParticipationStats(
+    db,
+    campaigns.map((campaign) => campaign.id),
+    now,
+  );
   const excludedKeys = toExcludedGooglePlaceKeys(cooldownReceipts);
-  const eligible = campaigns
-    .filter(hasSufficientDraftSources)
-    .map(toReviewerCampaign)
-    .filter((campaign) => !excludedKeys.has(campaign.googlePlaceKey));
+  const allCampaigns = campaigns.map((campaign) =>
+    toReviewerCampaign(
+      campaign,
+      statsByCampaignId.get(campaign.id) ?? emptyCampaignParticipationStats(),
+      now,
+    ),
+  );
+  const eligible = allCampaigns.filter(
+    (campaign) =>
+      campaign.isAvailableToday && !excludedKeys.has(campaign.googlePlaceKey),
+  );
+  const activeReceipt = await db.receipt.findFirst({
+    where: {
+      reviewerId,
+      status: REVIEWER_ASSIGNMENT_STATUS_ASSIGNED,
+      ...effectiveCampaignAssignmentWhere(now),
+    },
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      campaignId: true,
+      createdAt: true,
+      assignmentExpiresAt: true,
+    },
+  });
+  const activeCampaign = activeReceipt
+    ? allCampaigns.find((campaign) => campaign.id === activeReceipt.campaignId) ?? null
+    : null;
+  const activeExpiresAt = activeReceipt
+    ? activeReceipt.assignmentExpiresAt ?? assignmentExpiry(activeReceipt.createdAt)
+    : null;
+  const activeAssignment =
+    activeReceipt && activeCampaign && activeExpiresAt
+      ? {
+          assignmentId: activeReceipt.id,
+          assignmentExpiresAt: activeExpiresAt,
+          remainingSeconds: Math.max(
+            0,
+            Math.ceil((activeExpiresAt.getTime() - now.getTime()) / 1000),
+          ),
+          assignedCampaign: activeCampaign,
+        }
+      : null;
 
   return {
     availableCount: eligible.length,
@@ -294,13 +393,27 @@ export async function getReviewerCampaignAvailability(
     cooldownDays: REVIEWER_PLACE_COOLDOWN_DAYS,
     categoryCounts: buildCategoryCounts(eligible),
     campaigns: eligible,
+    activeAssignment,
   };
 }
 
 async function getPublicCampaignAvailabilitySummaryUncached(db: DbClient) {
-  const campaigns = (await fetchActiveCampaignRows(db))
-    .filter(hasSufficientDraftSources)
-    .map(toReviewerCampaign);
+  const now = new Date();
+  const rows = await fetchActiveCampaignRows(db);
+  const statsByCampaignId = await fetchCampaignParticipationStats(
+    db,
+    rows.map((campaign) => campaign.id),
+    now,
+  );
+  const campaigns = rows
+    .map((campaign) =>
+      toReviewerCampaign(
+        campaign,
+        statsByCampaignId.get(campaign.id) ?? emptyCampaignParticipationStats(),
+        now,
+      ),
+    )
+    .filter((campaign) => campaign.isAvailableToday);
   return {
     availableCount: campaigns.length,
     totalRewardPoints: campaigns.reduce((sum, campaign) => sum + campaign.rewardPoints, 0),
@@ -309,17 +422,8 @@ async function getPublicCampaignAvailabilitySummaryUncached(db: DbClient) {
   };
 }
 
-const getCachedPublicCampaignAvailabilitySummary = unstable_cache(
-  async () => getPublicCampaignAvailabilitySummaryUncached(prisma),
-  ["reviewer-public-campaign-availability"],
-  { revalidate: PUBLIC_AVAILABILITY_CACHE_SECONDS, tags: ["public-campaigns"] },
-);
-
 export async function getPublicCampaignAvailabilitySummary(db: DbClient = prisma) {
-  if (db !== prisma || process.env.NODE_ENV !== "production") {
-    return getPublicCampaignAvailabilitySummaryUncached(db);
-  }
-  return getCachedPublicCampaignAvailabilitySummary();
+  return getPublicCampaignAvailabilitySummaryUncached(db);
 }
 
 function randomIndex(length: number) {
@@ -386,6 +490,7 @@ export async function getReviewerCampaignProofContext(
   if (receipt.source !== REVIEWER_ASSIGNMENT_SOURCE) {
     throw new ReviewerCampaignError("INVALID_ASSIGNMENT", "캠페인 참여 기록이 아니에요", 422);
   }
+  assertAssignmentNotExpired(receipt);
 
   const googlePlace = receipt.business.externalPlaces[0] ?? null;
   return {
@@ -453,37 +558,85 @@ async function approveCampaignAssignment(
   };
 }
 
-export async function assignReviewerCampaign(reviewerId: string) {
-  return prisma.$transaction(async (tx) => {
-    const availability = await getReviewerCampaignAvailability(reviewerId, tx);
-    const assignedCampaign = availability.campaigns[randomIndex(availability.campaigns.length)] ?? null;
+export async function assignReviewerCampaign(reviewerId: string, now = new Date()) {
+  const maxAttempts = 4;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await prisma.$transaction(
+        async (tx) => {
+          const availability = await getReviewerCampaignAvailability(reviewerId, tx, now);
+          if (availability.activeAssignment) {
+            return {
+              ...availability,
+              assignmentId: availability.activeAssignment.assignmentId,
+              assignmentExpiresAt: availability.activeAssignment.assignmentExpiresAt,
+              remainingSeconds: availability.activeAssignment.remainingSeconds,
+              assignedCampaign: availability.activeAssignment.assignedCampaign,
+            };
+          }
 
-    if (!assignedCampaign) {
-      return {
-        ...availability,
-        assignmentId: null,
-        assignedCampaign: null,
-      };
+          const assignedCampaign =
+            availability.campaigns[randomIndex(availability.campaigns.length)] ?? null;
+          if (!assignedCampaign) {
+            return {
+              ...availability,
+              assignmentId: null,
+              assignmentExpiresAt: null,
+              remainingSeconds: 0,
+              assignedCampaign: null,
+            };
+          }
+
+          const expiresAt = assignmentExpiry(now);
+          const receipt = await tx.receipt.create({
+            data: {
+              businessId: assignedCampaign.businessId,
+              campaignId: assignedCampaign.id,
+              reviewerId,
+              code: `ASSIGN-${randomBytes(6).toString("hex").toUpperCase()}`,
+              source: REVIEWER_ASSIGNMENT_SOURCE,
+              dedupeHash: assignmentDedupeHash(reviewerId, assignedCampaign.googlePlaceKey),
+              status: REVIEWER_ASSIGNMENT_STATUS_ASSIGNED,
+              createdAt: now,
+              assignmentExpiresAt: expiresAt,
+            },
+          });
+          const activeAssignment = {
+            assignmentId: receipt.id,
+            assignmentExpiresAt: expiresAt,
+            remainingSeconds: Math.ceil((expiresAt.getTime() - now.getTime()) / 1000),
+            assignedCampaign,
+          };
+
+          return {
+            ...availability,
+            activeAssignment,
+            assignmentId: receipt.id,
+            assignmentExpiresAt: expiresAt,
+            remainingSeconds: activeAssignment.remainingSeconds,
+            assignedCampaign,
+          };
+        },
+        {
+          isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+          maxWait: 5_000,
+          timeout: 15_000,
+        },
+      );
+    } catch (error) {
+      const retryable =
+        error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034";
+      if (!retryable) throw error;
+      if (attempt === maxAttempts) {
+        throw new ReviewerCampaignError(
+          "ASSIGNMENT_CONFLICT",
+          "동시에 많은 배정 요청이 발생했습니다. 잠시 후 다시 시도해 주세요.",
+          409,
+        );
+      }
     }
-
-    const receipt = await tx.receipt.create({
-      data: {
-        businessId: assignedCampaign.businessId,
-        campaignId: assignedCampaign.id,
-        reviewerId,
-        code: `ASSIGN-${randomBytes(6).toString("hex").toUpperCase()}`,
-        source: REVIEWER_ASSIGNMENT_SOURCE,
-        dedupeHash: assignmentDedupeHash(reviewerId, assignedCampaign.googlePlaceKey),
-        status: REVIEWER_ASSIGNMENT_STATUS_ASSIGNED,
-      },
-    });
-
-    return {
-      ...availability,
-      assignmentId: receipt.id,
-      assignedCampaign,
-    };
-  });
+  }
+  throw new ReviewerCampaignError("ASSIGNMENT_CONFLICT", "캠페인 배정이 겹쳤습니다. 다시 시도해 주세요.", 409);
 }
 
 export async function submitReviewerCampaignProof(
@@ -503,6 +656,38 @@ export async function submitReviewerCampaignProof(
     throw new ReviewerCampaignError("INVALID_DRAFT", "생성된 리뷰 원고를 확인해 주세요");
   }
 
+  const submittedAt = input.submittedAt ?? new Date();
+  const expiryCandidate = await prisma.receipt.findUnique({
+    where: { id: cleanAssignmentId },
+    select: {
+      reviewerId: true,
+      status: true,
+      createdAt: true,
+      assignmentExpiresAt: true,
+    },
+  });
+  if (
+    expiryCandidate?.reviewerId === reviewerId &&
+    expiryCandidate.status === REVIEWER_ASSIGNMENT_STATUS_ASSIGNED
+  ) {
+    const expiresAt =
+      expiryCandidate.assignmentExpiresAt ?? assignmentExpiry(expiryCandidate.createdAt);
+    if (expiresAt.getTime() <= submittedAt.getTime()) {
+      await prisma.receipt.updateMany({
+        where: {
+          id: cleanAssignmentId,
+          reviewerId,
+          status: REVIEWER_ASSIGNMENT_STATUS_ASSIGNED,
+        },
+        data: { status: REVIEWER_ASSIGNMENT_STATUS_EXPIRED },
+      });
+      throw new ReviewerCampaignError(
+        "ASSIGNMENT_EXPIRED",
+        "배정 시간이 만료되었습니다. 다시 배정받아 주세요.",
+        409,
+      );
+    }
+  }
   return prisma.$transaction(async (tx) => {
     const receipt = await tx.receipt.findUnique({ where: { id: cleanAssignmentId } });
     if (!receipt || receipt.reviewerId !== reviewerId) {
@@ -511,6 +696,7 @@ export async function submitReviewerCampaignProof(
     if (receipt.source !== REVIEWER_ASSIGNMENT_SOURCE) {
       throw new ReviewerCampaignError("INVALID_ASSIGNMENT", "캠페인 참여 기록이 아니에요", 422);
     }
+    assertAssignmentNotExpired(receipt, submittedAt);
     if (receipt.status === REVIEWER_ASSIGNMENT_STATUS_COMPLETED) {
       return completedAssignmentResult(tx, reviewerId, receipt.id);
     }
@@ -545,7 +731,7 @@ export async function submitReviewerCampaignProof(
       reviewProofImageUrl: input.screenshotUrl,
       reviewProofMimeType: input.screenshotMimeType,
       reviewProofOriginalName: input.screenshotOriginalName.slice(0, 255),
-      reviewProofSubmittedAt: new Date(),
+      reviewProofSubmittedAt: submittedAt,
       reviewProofExtractedText: analysis?.extractedText.slice(0, 4000) ?? null,
       reviewProofSimilarity: analysis?.similarity ?? null,
       reviewProofAnalysisStatus: analysis?.status ?? null,
@@ -571,7 +757,7 @@ export async function submitReviewerCampaignProof(
         status,
         ...(analysis?.status === "AUTO_REJECT"
           ? {
-              reviewReviewedAt: new Date(),
+              reviewReviewedAt: submittedAt,
               reviewReviewedBy: `ai:${analysis.provider}`,
               reviewReviewNote: "이미지 분석 결과 생성 원고와 일치하지 않아 자동 반려됐습니다.",
             }

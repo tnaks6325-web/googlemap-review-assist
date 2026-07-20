@@ -2,6 +2,7 @@ import { createHash } from "crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { retryExternalOperation } from "@/lib/resilience";
+import { assignmentExpiry } from "@/lib/domain/campaign-availability-policy";
 
 export const REVIEW_DRAFT_MIN_SOURCE_GROUPS = 2;
 export const REVIEW_DRAFT_MAX_REGENERATIONS = 3;
@@ -782,6 +783,21 @@ export async function generateCampaignReviewDraftForAssignment(
   }
   if (receipt.source !== REVIEWER_ASSIGNMENT_SOURCE) {
     throw new CampaignReviewDraftError("INVALID_ASSIGNMENT", "캠페인 참여 기록이 아닙니다.", 422);
+  }
+  const expiresAt = receipt.assignmentExpiresAt ?? assignmentExpiry(receipt.createdAt);
+  if (
+    receipt.status === REVIEWER_ASSIGNMENT_STATUS_ASSIGNED &&
+    expiresAt.getTime() <= Date.now()
+  ) {
+    await db.receipt.update({
+      where: { id: receipt.id },
+      data: { status: "EXPIRED" },
+    });
+    throw new CampaignReviewDraftError(
+      "ASSIGNMENT_EXPIRED",
+      "배정 시간이 만료되었습니다. 다시 배정받아 주세요.",
+      409,
+    );
   }
 
   const existingDraft = receipt.reviewDraftText?.trim();

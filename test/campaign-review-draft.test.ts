@@ -296,6 +296,28 @@ describe("campaign review draft generator", () => {
     });
   });
 
+  it("expires an assignment before generating a draft after the five-minute deadline", async () => {
+    const { reviewer, receipt } = await createAssignment({
+      googlePlace: true,
+      googleReview: true,
+      blogReference: true,
+    });
+    await prisma.receipt.update({
+      where: { id: receipt.id },
+      data: { assignmentExpiresAt: new Date(Date.now() - 1_000) },
+    });
+
+    await expect(
+      generateCampaignReviewDraftForAssignment(reviewer.id, receipt.id),
+    ).rejects.toMatchObject({
+      code: "ASSIGNMENT_EXPIRED",
+      status: 409,
+    });
+    expect(await prisma.receipt.findUnique({ where: { id: receipt.id } })).toMatchObject({
+      status: "EXPIRED",
+    });
+  });
+
   it("keeps Gemini output within 200 non-space characters without failing at the boundary", async () => {
     const { reviewer, receipt } = await createAssignment({ googlePlace: true, naverPlace: true, googleReview: true });
     process.env.REVIEW_DRAFT_PROVIDER = "gemini";

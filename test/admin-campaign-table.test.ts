@@ -14,6 +14,8 @@ function campaign(
     address: "서울특별시 종로구 재동 60",
     category: "음식점",
     active: true,
+    isAvailableToday: false,
+    availabilityReason: "SOURCE_NOT_READY",
     canGenerateReviewDraft: false,
     naverPlace: { matchStatus: "NEEDS_REVIEW" },
     ...overrides,
@@ -27,6 +29,36 @@ describe("admin campaign table", () => {
       label: "보정 필요",
       tone: "warning",
     });
+  });
+
+  it("shows schedule and quota states before source readiness", () => {
+    expect(
+      operationalCampaignStatus(
+        campaign({
+          isAvailableToday: false,
+          availabilityReason: "BEFORE_START_DATE",
+          canGenerateReviewDraft: true,
+        }),
+      ),
+    ).toMatchObject({ key: "scheduled", label: "운영 예정" });
+    expect(
+      operationalCampaignStatus(
+        campaign({
+          isAvailableToday: false,
+          availabilityReason: "DAILY_QUOTA_REACHED",
+          canGenerateReviewDraft: true,
+        }),
+      ),
+    ).toMatchObject({ key: "daily_full", label: "오늘 마감" });
+    expect(
+      operationalCampaignStatus(
+        campaign({
+          isAvailableToday: false,
+          availabilityReason: "TOTAL_QUOTA_REACHED",
+          canGenerateReviewDraft: true,
+        }),
+      ),
+    ).toMatchObject({ key: "total_full", label: "전체 마감" });
   });
 
   it("marks an inactive campaign as paused before considering source readiness", () => {
