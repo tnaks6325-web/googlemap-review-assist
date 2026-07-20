@@ -42,6 +42,51 @@ export class CampaignDraftEvidenceError extends Error {
   }
 }
 
+class GeminiEvidenceExtractionError extends Error {
+  override name = "GeminiEvidenceExtractionError";
+
+  constructor(
+    public stage: "http" | "response_body" | "candidate" | "structured_output",
+    public providerStatus?: number,
+    public providerCode?: string,
+    public finishReason?: string,
+  ) {
+    super("Gemini evidence extraction failed");
+  }
+}
+
+export function summarizeCampaignDraftEvidenceFailure(error: unknown) {
+  const name = error instanceof Error ? error.name || "Error" : "UnknownError";
+  if (error instanceof GeminiEvidenceExtractionError) {
+    return {
+      name,
+      category: "provider",
+      message: "Gemini evidence extraction failed",
+      stage: error.stage,
+      providerStatus: error.providerStatus,
+      providerCode: cleanDiagnosticToken(error.providerCode),
+      finishReason: cleanDiagnosticToken(error.finishReason),
+    };
+  }
+  if (name.toLowerCase().includes("timeout")) {
+    return { name, category: "timeout", message: "Provider request timed out" };
+  }
+  if (error instanceof SyntaxError) {
+    return { name, category: "response", message: "Provider returned invalid JSON" };
+  }
+  return {
+    name,
+    category: error instanceof Error ? "provider" : "unknown",
+    message: error instanceof Error ? "Provider operation failed" : "Unknown failure",
+  };
+}
+
+function cleanDiagnosticToken(value: unknown) {
+  return typeof value === "string" && /^[A-Z0-9_.-]{1,80}$/i.test(value)
+    ? value
+    : undefined;
+}
+
 function cleanText(value: unknown, maxLength: number) {
   if (typeof value !== "string") return "";
   return value
@@ -256,13 +301,44 @@ async function extractWithGemini(
         signal: AbortSignal.timeout(CAMPAIGN_DRAFT_EVIDENCE_TIMEOUT_MS),
       },
     );
-    const data = (await response.json().catch(() => ({}))) as {
-      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-      error?: { message?: string };
-    };
-    if (!response.ok) throw new Error(data.error?.message ?? `Gemini request failed: ${response.status}`);
+    const data = (await response.json().catch(() => null)) as {
+      candidates?: Array<{
+        content?: { parts?: Array<{ text?: string }> };
+        finishReason?: string;
+      }>;
+      error?: { status?: string };
+    } | null;
+    if (!data) {
+      throw new GeminiEvidenceExtractionError("response_body", response.status);
+    }
+    if (!response.ok) {
+      throw new GeminiEvidenceExtractionError(
+        "http",
+        response.status,
+        data.error?.status,
+      );
+    }
     const text = data.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
-    const parsed = JSON.parse(text) as { evidence?: unknown };
+    const finishReason = data.candidates?.[0]?.finishReason;
+    if (!text) {
+      throw new GeminiEvidenceExtractionError(
+        "candidate",
+        response.status,
+        undefined,
+        finishReason,
+      );
+    }
+    let parsed: { evidence?: unknown };
+    try {
+      parsed = JSON.parse(text) as { evidence?: unknown };
+    } catch {
+      throw new GeminiEvidenceExtractionError(
+        "structured_output",
+        response.status,
+        undefined,
+        finishReason,
+      );
+    }
     return normalizeExtractedEvidence(parsed.evidence, sources);
   };
   return retryExternalOperation(request, { attempts: 2, baseDelayMs: 400, maxDelayMs: 1_200 });

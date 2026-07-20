@@ -5,6 +5,7 @@ import {
   extractCampaignDraftEvidence,
   isEvidenceStatus,
   listCampaignDraftEvidence,
+  summarizeCampaignDraftEvidenceFailure,
   updateCampaignDraftEvidence,
   type CampaignDraftEvidenceStatus,
 } from "@/lib/domain/campaign-draft-evidence";
@@ -24,6 +25,10 @@ function handleEvidenceError(error: unknown) {
   if (error instanceof CampaignDraftEvidenceError) {
     return err(error.code, error.message, error.status);
   }
+  console.error(
+    "campaign_draft_evidence_failed",
+    summarizeCampaignDraftEvidenceFailure(error),
+  );
   return err("DRAFT_EVIDENCE_FAILED", "원고 사실 카드를 처리하지 못했습니다.", 500);
 }
 

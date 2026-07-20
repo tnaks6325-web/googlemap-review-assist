@@ -4,6 +4,7 @@ import {
   CAMPAIGN_DRAFT_EVIDENCE_FACETS,
   CAMPAIGN_DRAFT_EVIDENCE_TIMEOUT_MS,
   normalizeExtractedEvidence,
+  summarizeCampaignDraftEvidenceFailure,
   extractCampaignDraftEvidence,
   summarizeEvidenceReadiness,
   updateCampaignDraftEvidence,
@@ -13,6 +14,19 @@ import { generateUniqueSlug } from "@/lib/domain/codes";
 let evidenceSequence = 0;
 
 describe("campaign draft evidence", () => {
+  it("summarizes unknown provider failures without leaking their message", () => {
+    const error = new Error(
+      "Gemini request failed for https://example.test?key=secret-key " +
+        "AIzaSySuperSecretCredential campaign source text",
+    );
+
+    expect(summarizeCampaignDraftEvidenceFailure(error)).toEqual({
+      name: "Error",
+      category: "provider",
+      message: "Provider operation failed",
+    });
+  });
+
   it("allows long structured Gemini extraction for large campaign source sets", () => {
     expect(CAMPAIGN_DRAFT_EVIDENCE_TIMEOUT_MS).toBe(45_000);
   });
