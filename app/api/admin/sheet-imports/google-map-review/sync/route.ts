@@ -26,6 +26,7 @@ export const runtime = "nodejs";
 const HOUR = 60 * 60 * 1000;
 const PLACE_PREVIEW_LIMIT = 12;
 const STRONG_NAVER_MATCH_CONFIDENCE = 75;
+const GOOGLE_MAP_REVIEW_SPREADSHEET_ID = "1dktrajeVNFQAGShNe5bMmeA_LGtLF386fwQ2Z-xqHKs";
 
 function googlePlaceErrorMessage(error: unknown) {
   const message = error instanceof Error ? error.message : "";
@@ -294,7 +295,7 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   const dryRun = body?.dryRun !== false;
 
-  const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID ?? "";
+  const spreadsheetId = GOOGLE_MAP_REVIEW_SPREADSHEET_ID;
   const range = process.env.GOOGLE_SHEETS_RANGE ?? "'광고요청시트'!A:U";
 
   try {

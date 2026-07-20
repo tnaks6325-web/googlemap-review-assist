@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { prisma } from "@/lib/db";
 import {
+  generateCampaignReviewDraftPreview,
   generateCampaignReviewDraftForAssignment,
   nonSpaceLength,
+  normalizeCampaignDraftGuidance,
   REVIEW_DRAFT_MAX_REGENERATIONS,
 } from "@/lib/domain/campaign-review-draft";
 import { generateUniqueSlug } from "@/lib/domain/codes";
@@ -172,6 +174,88 @@ describe("campaign review draft generator", () => {
     expect(nonSpaceLength(result.text)).toBeGreaterThanOrEqual(30);
     expect(result.text).toContain("피부 상담은 예약제로 운영됩니다.");
     expect(result.text).not.toMatch(/메뉴|음식/);
+  });
+
+  it("normalizes sheet guide keywords and review examples as draft guidance", () => {
+    expect(
+      normalizeCampaignDraftGuidance({
+        guideKeywordsJson: JSON.stringify(["강남역 맛집", "친절한 서비스"]),
+        reviewExamplesJson: JSON.stringify(["직원분들이 친절했어요."]),
+      }),
+    ).toMatchObject({
+      guideKeywords: ["강남역 맛집", "친절한 서비스"],
+      reviewExamples: ["직원분들이 친절했어요."],
+    });
+  });
+
+  it("generates an admin preview without creating or updating reviewer assignments", async () => {
+    const { campaign, receipt } = await createAssignment({
+      googlePlace: true,
+      naverPlace: true,
+      googleReview: true,
+    });
+    await prisma.campaignDraftGuidance.create({
+      data: {
+        campaignId: campaign.id,
+        guideKeywordsJson: JSON.stringify(["매장이 넓고 쾌적한"]),
+        reviewExamplesJson: JSON.stringify(["직원분들이 친절해서 편하게 이용했어요."]),
+      },
+    });
+    const before = await prisma.receipt.findUniqueOrThrow({ where: { id: receipt.id } });
+
+    const preview = await generateCampaignReviewDraftPreview(campaign.id);
+
+    const after = await prisma.receipt.findUniqueOrThrow({ where: { id: receipt.id } });
+    expect(preview).toMatchObject({
+      campaignId: campaign.id,
+      provider: "template",
+    });
+    expect(nonSpaceLength(preview.text)).toBeGreaterThanOrEqual(30);
+    expect(after.reviewDraftText).toBe(before.reviewDraftText);
+    expect(after.reviewDraftVersion).toBe(before.reviewDraftVersion);
+  });
+
+  it("includes sheet guide keywords and review examples in the Gemini prompt", async () => {
+    const { campaign } = await createAssignment({
+      googlePlace: true,
+      naverPlace: true,
+      googleReview: true,
+    });
+    await prisma.campaignDraftGuidance.create({
+      data: {
+        campaignId: campaign.id,
+        guideKeywordsJson: JSON.stringify(["강남역 샤브샤브", "신선한 야채"]),
+        reviewExamplesJson: JSON.stringify(["야채가 신선하고 직원분들이 친절했어요."]),
+      },
+    });
+    process.env.REVIEW_DRAFT_PROVIDER = "gemini";
+    process.env.GEMINI_API_KEY = "test-gemini-api-key";
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  {
+                    text: "강남역 근처에서 편하게 방문했고 전체적으로 깔끔해서 만족스러운 시간을 보냈습니다.",
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await generateCampaignReviewDraftPreview(campaign.id);
+
+    const requestBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    const prompt = requestBody.contents[0].parts[0].text;
+    expect(prompt).toContain("시트 리뷰작성 가이드 키워드: 강남역 샤브샤브, 신선한 야채");
+    expect(prompt).toContain("야채가 신선하고 직원분들이 친절했어요.");
   });
 
   it("generates and stores a 30 to 200 non-space character draft from place data and a substantive source", async () => {

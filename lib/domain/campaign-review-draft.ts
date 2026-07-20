@@ -34,6 +34,8 @@ export interface CampaignDraftGuidance {
   industry: CampaignReviewDraftIndustry | null;
   approvedFacts: string[];
   bannedTerms: string[];
+  guideKeywords: string[];
+  reviewExamples: string[];
 }
 
 export interface CampaignReviewDraftSourceSummary {
@@ -61,6 +63,16 @@ export interface CampaignReviewDraftResult {
   version: number;
   generatedAt: string;
   reused: boolean;
+}
+
+export interface CampaignReviewDraftPreview {
+  campaignId: string;
+  text: string;
+  provider: string;
+  model: string;
+  sourceGroups: Array<{ key: CampaignReviewDraftSourceGroupKey; label: string; count: number }>;
+  sourceGroupCount: number;
+  generatedAt: string;
 }
 
 export class CampaignReviewDraftError extends Error {
@@ -98,6 +110,7 @@ type DraftContext = {
 };
 
 type AssignmentWithContext = NonNullable<Awaited<ReturnType<typeof fetchAssignmentWithContext>>>;
+type CampaignWithContext = NonNullable<Awaited<ReturnType<typeof fetchCampaignWithContext>>>;
 
 function envValue(name: string) {
   return process.env[name]?.trim() ?? "";
@@ -251,9 +264,12 @@ function validateGeneratedDraft(text: string, context: DraftContext) {
 
 function neutralFallbackDraft(context: DraftContext) {
   const approvedFact = context.guidance.approvedFacts[0];
+  const guideKeyword = context.guidance.guideKeywords[0];
   const industryLabel = campaignReviewDraftIndustryLabel(context.industry);
   const factLine = approvedFact
     ? `${approvedFact} 관련 정보를 확인하고 방문했어요.`
+    : guideKeyword
+      ? `${guideKeyword} 정보를 참고해 방문했어요.`
     : `${industryLabel} 정보를 확인한 뒤 방문했어요.`;
   return `${context.businessName}은 ${factLine} 실제 이용 경험에 맞는 내용을 더해 자연스럽게 후기를 남기고 싶은 곳입니다.`;
 }
@@ -327,16 +343,49 @@ async function fetchAssignmentWithContext(db: DbClient, assignmentId: string) {
   });
 }
 
-function buildDraftContext(receipt: AssignmentWithContext): DraftContext {
-  const googlePlace = receipt.business.externalPlaces.find((place) => place.platform === "GOOGLE") ?? null;
-  const naverPlace = receipt.business.externalPlaces.find((place) => place.platform === "NAVER") ?? null;
-  const googleReviews = receipt.business.externalReviews.filter(
+async function fetchCampaignWithContext(db: DbClient, campaignId: string) {
+  return db.campaign.findUnique({
+    where: { id: campaignId },
+    include: {
+      draftGuidance: true,
+      blogReferences: {
+        where: { status: "ACTIVE" },
+        orderBy: { createdAt: "desc" },
+        take: 12,
+      },
+      business: {
+        include: {
+          menus: { take: 12 },
+          externalPlaces: {
+            where: { platform: { in: ["GOOGLE", "NAVER"] } },
+          },
+          externalReviews: {
+            where: { content: { not: null } },
+            orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],
+            take: 20,
+          },
+        },
+      },
+    },
+  });
+}
+
+function buildDraftContext(input: {
+  assignmentId: string;
+  campaignId: string;
+  businessId: string;
+  campaign: AssignmentWithContext["campaign"] | CampaignWithContext;
+  business: AssignmentWithContext["business"] | CampaignWithContext["business"];
+}): DraftContext {
+  const googlePlace = input.business.externalPlaces.find((place) => place.platform === "GOOGLE") ?? null;
+  const naverPlace = input.business.externalPlaces.find((place) => place.platform === "NAVER") ?? null;
+  const googleReviews = input.business.externalReviews.filter(
     (review) => review.platform === "GOOGLE" && stripHtml(review.content),
   );
-  const naverReviews = receipt.business.externalReviews.filter(
+  const naverReviews = input.business.externalReviews.filter(
     (review) => review.platform === "NAVER" && stripHtml(review.content),
   );
-  const blogReferences = receipt.campaign.blogReferences.filter(
+  const blogReferences = input.campaign.blogReferences.filter(
     (reference) => stripHtml(reference.title) || stripHtml(reference.description),
   );
 
@@ -382,13 +431,19 @@ function buildDraftContext(receipt: AssignmentWithContext): DraftContext {
     });
   }
 
-  const businessName = googlePlace?.name ?? naverPlace?.name ?? receipt.business.name;
-  const address = googlePlace?.address ?? naverPlace?.address ?? receipt.business.address;
+  const businessName = googlePlace?.name ?? naverPlace?.name ?? input.business.name;
+  const address = googlePlace?.address ?? naverPlace?.address ?? input.business.address;
   const category = googlePlace?.category ?? naverPlace?.category ?? null;
-  const guidance = normalizeCampaignDraftGuidance(receipt.campaign.draftGuidance);
+  const guidance = normalizeCampaignDraftGuidance(input.campaign.draftGuidance);
   const industry = guidance.industry ?? inferCampaignReviewDraftIndustry(category, businessName);
-  const menus = uniqueStrings(receipt.business.menus.map((menu) => menu.name), 10);
-  const substantiveSourceCount = googleReviews.length + naverReviews.length + blogReferences.length + guidance.approvedFacts.length;
+  const menus = uniqueStrings(input.business.menus.map((menu) => menu.name), 10);
+  const substantiveSourceCount =
+    googleReviews.length +
+    naverReviews.length +
+    blogReferences.length +
+    guidance.approvedFacts.length +
+    guidance.guideKeywords.length +
+    guidance.reviewExamples.length;
   const hashInput = {
     businessName,
     address,
@@ -404,9 +459,9 @@ function buildDraftContext(receipt: AssignmentWithContext): DraftContext {
   };
 
   return {
-    assignmentId: receipt.id,
-    campaignId: receipt.campaignId,
-    businessId: receipt.businessId,
+    assignmentId: input.assignmentId,
+    campaignId: input.campaignId,
+    businessId: input.businessId,
     businessName,
     address,
     category,
@@ -428,6 +483,8 @@ export function summarizeCampaignReviewDraftSources(input: {
   businessName?: string | null;
   industry?: CampaignReviewDraftIndustry | null;
   approvedFactCount?: number | null;
+  guideKeywordCount?: number | null;
+  reviewExampleCount?: number | null;
 }): CampaignReviewDraftSourceSummary {
   const sourceGroups = {
     googlePlace: Boolean(input.googlePlace),
@@ -438,7 +495,11 @@ export function summarizeCampaignReviewDraftSources(input: {
   const sourceGroupCount = Object.values(sourceGroups).filter(Boolean).length;
   const reviewReferenceCount = (input.googleReviewCount ?? 0) + (input.naverReferenceCount ?? 0);
   const approvedFactCount = Math.max(0, input.approvedFactCount ?? 0);
-  const substantiveSourceCount = reviewReferenceCount + approvedFactCount;
+  const substantiveSourceCount =
+    reviewReferenceCount +
+    approvedFactCount +
+    Math.max(0, input.guideKeywordCount ?? 0) +
+    Math.max(0, input.reviewExampleCount ?? 0);
   const industry = input.industry ?? inferCampaignReviewDraftIndustry(input.category, input.businessName ?? "");
   return {
     sourceGroupCount,
@@ -463,6 +524,12 @@ function renderPromptContext(context: DraftContext) {
     context.menus.length ? `메뉴 후보: ${context.menus.join(", ")}` : null,
     context.guidance.approvedFacts.length
       ? `관리자 승인 사실: ${context.guidance.approvedFacts.map((fact) => `- ${fact}`).join(" / ")}`
+      : null,
+    context.guidance.guideKeywords.length
+      ? `시트 리뷰작성 가이드 키워드: ${context.guidance.guideKeywords.join(", ")}`
+      : null,
+    context.guidance.reviewExamples.length
+      ? `시트 리뷰 문구 예시(복사하지 말고 참고만 사용): ${context.guidance.reviewExamples.join(" | ")}`
       : null,
     context.guidance.bannedTerms.length ? `관리자 금지 표현: ${context.guidance.bannedTerms.join(", ")}` : null,
     `참고자료:\n${groups}`,
@@ -584,6 +651,10 @@ export function normalizeCampaignDraftGuidance(input: {
   approvedFactsJson?: string | null;
   bannedTerms?: unknown;
   bannedTermsJson?: string | null;
+  guideKeywords?: unknown;
+  guideKeywordsJson?: string | null;
+  reviewExamples?: unknown;
+  reviewExamplesJson?: string | null;
 } | null | undefined): CampaignDraftGuidance {
   const approvedFacts = Array.isArray(input?.approvedFacts)
     ? normalizeTextList(input.approvedFacts, 8, 160)
@@ -591,10 +662,70 @@ export function normalizeCampaignDraftGuidance(input: {
   const bannedTerms = Array.isArray(input?.bannedTerms)
     ? normalizeTextList(input.bannedTerms, 12, 40)
     : parseTextList(input?.bannedTermsJson, 12, 40);
+  const guideKeywords = Array.isArray(input?.guideKeywords)
+    ? normalizeTextList(input.guideKeywords, 20, 80)
+    : parseTextList(input?.guideKeywordsJson, 20, 80);
+  const reviewExamples = Array.isArray(input?.reviewExamples)
+    ? normalizeTextList(input.reviewExamples, 10, 240)
+    : parseTextList(input?.reviewExamplesJson, 10, 240);
   return {
     industry: isCampaignReviewDraftIndustry(input?.industry) ? input.industry : null,
     approvedFacts,
     bannedTerms,
+    guideKeywords,
+    reviewExamples,
+  };
+}
+
+function assertDraftContextReady(context: DraftContext) {
+  if (context.sourceGroups.length < REVIEW_DRAFT_MIN_SOURCE_GROUPS) {
+    throw new CampaignReviewDraftError(
+      "INSUFFICIENT_CONTEXT",
+      "원고 생성을 위한 참고자료가 부족합니다. Google/Naver/리뷰/블로그 자료 중 2종 이상이 필요합니다.",
+      422,
+    );
+  }
+  if (context.substantiveSourceCount === 0) {
+    throw new CampaignReviewDraftError(
+      "INSUFFICIENT_QUALITY_CONTEXT",
+      "등록정보 외에 실제 후기·블로그 참고자료, 시트 가이드 또는 관리자 승인 사실이 필요합니다.",
+      422,
+    );
+  }
+}
+
+export async function generateCampaignReviewDraftPreview(
+  campaignId: string,
+  db: DbClient = prisma,
+): Promise<CampaignReviewDraftPreview> {
+  const cleanCampaignId = campaignId.trim();
+  if (!cleanCampaignId) {
+    throw new CampaignReviewDraftError("INVALID_CAMPAIGN", "캠페인 정보를 확인해 주세요.");
+  }
+
+  const campaign = await fetchCampaignWithContext(db, cleanCampaignId);
+  if (!campaign) {
+    throw new CampaignReviewDraftError("CAMPAIGN_NOT_FOUND", "캠페인을 찾을 수 없습니다.", 404);
+  }
+
+  const context = buildDraftContext({
+    assignmentId: `admin-preview:${campaign.id}`,
+    campaignId: campaign.id,
+    businessId: campaign.businessId,
+    campaign,
+    business: campaign.business,
+  });
+  assertDraftContextReady(context);
+  const generated = await generateDraftText(context);
+  const sourceGroups = sourceGroupMeta(context.sourceGroups);
+  return {
+    campaignId: campaign.id,
+    text: generated.text,
+    provider: generated.provider,
+    model: generated.model,
+    sourceGroups,
+    sourceGroupCount: sourceGroups.length,
+    generatedAt: new Date().toISOString(),
   };
 }
 
@@ -688,21 +819,14 @@ export async function generateCampaignReviewDraftForAssignment(
     throw new CampaignReviewDraftError("REGENERATION_LIMIT_EXCEEDED", "원고 재생성은 최대 3회까지만 가능합니다.", 429);
   }
 
-  const context = buildDraftContext(receipt);
-  if (context.sourceGroups.length < REVIEW_DRAFT_MIN_SOURCE_GROUPS) {
-    throw new CampaignReviewDraftError(
-      "INSUFFICIENT_CONTEXT",
-      "원고 생성을 위한 참고자료가 부족합니다. Google/Naver/리뷰/블로그 자료 중 2종 이상이 필요합니다.",
-      422,
-    );
-  }
-  if (context.substantiveSourceCount === 0) {
-    throw new CampaignReviewDraftError(
-      "INSUFFICIENT_QUALITY_CONTEXT",
-      "등록정보 외에 실제 후기·블로그 참고자료 또는 관리자 승인 사실이 필요합니다.",
-      422,
-    );
-  }
+  const context = buildDraftContext({
+    assignmentId: receipt.id,
+    campaignId: receipt.campaignId,
+    businessId: receipt.businessId,
+    campaign: receipt.campaign,
+    business: receipt.business,
+  });
+  assertDraftContextReady(context);
 
   const generated = await generateDraftText(context);
   const generatedAt = new Date();

@@ -257,6 +257,8 @@ describe("운영자형 캠페인 목록", () => {
         totalQuota: 3,
         dailyQuota: 1,
         guide: "실제 방문 경험만 참고",
+        guideKeywords: ["강남 한식", "친절한 서비스"],
+        examplePhrases: ["직원분들이 친절하고 음식이 정갈했어요."],
         examplePhraseCount: 1,
         excludedDays: [],
         errors: [],
@@ -291,6 +293,14 @@ describe("운영자형 캠페인 목록", () => {
     });
     expect(place?.business.googlePlaceId).toBe("ChIJsheetCampaign123");
     expect(place?.business.campaigns).toHaveLength(1);
+
+    const guidance = await prisma.campaignDraftGuidance.findUnique({
+      where: { campaignId: place!.business.campaigns[0].id },
+    });
+    expect(guidance).toMatchObject({
+      guideKeywordsJson: JSON.stringify(["강남 한식", "친절한 서비스"]),
+      reviewExamplesJson: JSON.stringify(["직원분들이 친절하고 음식이 정갈했어요."]),
+    });
 
     const detail = await getPublicCampaignDetail(place!.business.campaigns[0].slug);
     expect(detail?.googleMapsUrl).toBe("https://maps.google.com/?cid=12345");

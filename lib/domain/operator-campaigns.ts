@@ -373,6 +373,8 @@ export async function listAdminCampaigns(): Promise<AdminCampaignRow[]> {
       businessName: googlePlace?.name ?? naverPlace?.name ?? campaign.business.name,
       industry: draftGuidance.industry,
       approvedFactCount: draftGuidance.approvedFacts.length,
+      guideKeywordCount: draftGuidance.guideKeywords.length,
+      reviewExampleCount: draftGuidance.reviewExamples.length,
     });
     return {
       ...toPublicCampaign(campaign, stats),

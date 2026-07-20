@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { AdminCampaignBlogReferences } from "@/components/admin/AdminCampaignBlogReferences";
+import { AdminCampaignDraftPreview } from "@/components/admin/AdminCampaignDraftPreview";
 import { AdminCampaignDraftGuidance } from "@/components/admin/AdminCampaignDraftGuidance";
 import { AdminCampaignNaverCandidates } from "@/components/admin/AdminCampaignNaverCandidates";
 import {
@@ -99,7 +100,7 @@ export function AdminCampaignOperationsTable({
 
       <div className="mt-3 overflow-hidden rounded-[14px] border border-line bg-surface shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1120px] border-separate border-spacing-0">
+          <table className="w-full min-w-[1260px] border-separate border-spacing-0">
             <caption className="sr-only">
               관리자 캠페인 운영 상태 및 자료 연결 현황
             </caption>
@@ -280,6 +281,10 @@ function CampaignRows({
         </TableCell>
         <TableCell align="right">
           <div className="flex justify-end gap-1.5">
+            <AdminCampaignDraftPreview
+              campaignId={campaign.id}
+              businessName={campaign.businessName}
+            />
             <Link
               href={`/r/${campaign.slug}`}
               target="_blank"
