@@ -1,6 +1,10 @@
 import { findNaverCandidates, type ExternalPlaceSnapshot, type NaverCandidate } from "@/lib/domain/external-place-providers";
 import type { PlaceMatchBase } from "@/lib/domain/external-places";
-import { parseNaverPlaceInput, safeJsonSnapshot } from "@/lib/domain/external-places";
+import {
+  parseNaverPlaceInput,
+  safeJsonSnapshot,
+  scorePlaceCandidate,
+} from "@/lib/domain/external-places";
 import {
   naverSmartPlaceDetailUrl,
   safeNaverSmartPlaceUrl,
@@ -43,8 +47,21 @@ export function naverCandidateSearchQueries(base: PlaceMatchBase, query?: string
   const primary = (query?.trim() || [base.name, base.address].filter(Boolean).join(" ")).slice(0, 120);
   if (query?.trim()) return primary ? [primary] : [];
 
+  const cleanedName = base.name
+    .replace(/\s*[\(\[\{（][^)\]}）]*[A-Za-z][^)\]}）]*[\)\]\}）]/g, " ")
+    .replace(/\s+(?:[-–—|/]\s*)?[A-Za-z][A-Za-z0-9&+.'’\-\s]*$/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const searchName =
+    cleanedName && /\p{Script=Hangul}/u.test(cleanedName)
+      ? cleanedName
+      : base.name.trim();
+  const cleanedPrimary = [searchName, base.address].filter(Boolean).join(" ").slice(0, 120);
+  const cleanedFallback = searchName.slice(0, 120);
   const fallback = base.name.trim().slice(0, 120);
-  return Array.from(new Set([primary, fallback].filter(Boolean)));
+  return Array.from(
+    new Set([cleanedPrimary, cleanedFallback, primary, fallback].filter(Boolean)),
+  );
 }
 
 function cleanCandidateText(value: unknown, max: number) {
@@ -98,6 +115,28 @@ export function naverPlaceSnapshotFromCandidate(
     matchConfidence: candidateConfidence(candidate.matchConfidence),
     rawJson: candidate.rawJson ? String(candidate.rawJson).slice(0, 8000) : safeJsonSnapshot(candidate),
   };
+}
+
+export const MIN_AUTO_NAVER_LINK_CONFIDENCE = 90;
+
+export function naverAutoConnectableSnapshot(
+  raw: unknown,
+  businessName: string,
+  minConfidence = MIN_AUTO_NAVER_LINK_CONFIDENCE,
+): ExternalPlaceSnapshot | null {
+  const place = naverPlaceSnapshotFromCandidate(raw, businessName);
+  if (
+    !place?.externalId ||
+    place.matchConfidence == null ||
+    place.matchConfidence < minConfidence ||
+    scorePlaceCandidate(
+      { name: businessName },
+      { name: place.name },
+    ) < 50
+  ) {
+    return null;
+  }
+  return place;
 }
 
 export function naverPlaceSnapshotFromPlaceId(
@@ -177,7 +216,11 @@ export async function findBestNaverPlaceSnapshotForCampaign(
 
   const place =
     bestCandidate && bestCandidate.matchConfidence >= minConfidence
-      ? naverPlaceSnapshotFromCandidate(bestCandidate, campaign.business.name)
+      ? naverAutoConnectableSnapshot(
+          bestCandidate,
+          target.base.name,
+          minConfidence,
+        )
       : null;
 
   return { place, providerConfigured, query: bestQuery, candidateCount };

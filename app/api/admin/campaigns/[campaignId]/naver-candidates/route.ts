@@ -3,15 +3,37 @@ import { checkOrigin } from "@/lib/auth/origin";
 import { prisma } from "@/lib/db";
 import { findNaverCandidates } from "@/lib/domain/external-place-providers";
 import {
+  naverAutoConnectableSnapshot,
   naverCandidateSearchQueries,
   naverSearchTargetFromCampaign,
 } from "@/lib/domain/admin-campaign-naver";
+import { saveExternalPlace } from "@/lib/domain/external-place-save";
 import { ok, err } from "@/lib/http";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
 const HOUR = 60 * 60 * 1000;
+
+function placeResponse(place: {
+  name: string;
+  url: string | null;
+  address: string | null;
+  category: string | null;
+  matchStatus: string;
+  matchConfidence: number | null;
+  syncedAt: Date | null;
+}) {
+  return {
+    name: place.name,
+    url: place.url,
+    address: place.address,
+    category: place.category,
+    matchStatus: place.matchStatus,
+    matchConfidence: place.matchConfidence,
+    syncedAt: place.syncedAt?.toISOString() ?? null,
+  };
+}
 
 export async function POST(req: Request, { params }: { params: Promise<{ campaignId: string }> }) {
   if (!checkOrigin(req)) return err("BAD_ORIGIN", "요청 출처가 올바르지 않아요", 403);
@@ -47,13 +69,41 @@ export async function POST(req: Request, { params }: { params: Promise<{ campaig
   const searchQueries = naverCandidateSearchQueries(target.base, query);
 
   try {
-    let finalResult = await findNaverCandidates(target.base, searchQueries[0] ?? target.query);
+    let finalResult = {
+      candidates: [],
+      providerConfigured: true,
+    } as Awaited<ReturnType<typeof findNaverCandidates>>;
     let finalQuery = searchQueries[0] ?? target.query;
 
-    for (const searchQuery of searchQueries.slice(1)) {
-      if (!finalResult.providerConfigured || finalResult.candidates.length > 0) break;
-      finalResult = await findNaverCandidates(target.base, searchQuery);
-      finalQuery = searchQuery;
+    for (const searchQuery of searchQueries.length ? searchQueries : [target.query]) {
+      const result = await findNaverCandidates(target.base, searchQuery);
+      if (!result.providerConfigured) {
+        return ok({ ...result, base: target.base, query: searchQuery });
+      }
+
+      const resultScore = result.candidates[0]?.matchConfidence ?? -1;
+      const finalScore = finalResult.candidates[0]?.matchConfidence ?? -1;
+      if (resultScore > finalScore) {
+        finalResult = result;
+        finalQuery = searchQuery;
+      }
+
+      const autoPlace = naverAutoConnectableSnapshot(
+        result.candidates[0],
+        target.base.name,
+      );
+      if (autoPlace) {
+        const saved = await saveExternalPlace(
+          campaign.businessId,
+          autoPlace,
+        );
+        return ok({
+          ...result,
+          base: target.base,
+          query: searchQuery,
+          place: placeResponse(saved),
+        });
+      }
     }
 
     return ok({ ...finalResult, base: target.base, query: finalQuery });

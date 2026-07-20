@@ -6,7 +6,10 @@ import {
   safeJsonSnapshot,
   scorePlaceCandidate,
 } from "@/lib/domain/external-places";
-import { safeNaverSmartPlaceUrl } from "@/lib/domain/naver-smartplace-link";
+import {
+  naverSmartPlaceDetailUrl,
+  safeNaverSmartPlaceUrl,
+} from "@/lib/domain/naver-smartplace-link";
 
 export interface ExternalPlaceSnapshot {
   platform: ExternalPlatform;
@@ -64,6 +67,7 @@ const GOOGLE_DETAILS_FIELDS = [
 const GOOGLE_SEARCH_FIELDS = GOOGLE_DETAILS_FIELDS.map((f) => `places.${f}`);
 const FETCH_TIMEOUT_MS = 8000;
 const GOOGLE_LANDING_REDIRECT_LIMIT = 4;
+const NAVER_SEARCH_HTML_MAX_LENGTH = 3_000_000;
 
 function stableManualId(prefix: string, value: string) {
   const encoded = Buffer.from(value).toString("base64url").slice(0, 48);
@@ -262,6 +266,70 @@ function cleanNaverTitle(title: string) {
   return title.replace(/<b>/g, "").replace(/<\/b>/g, "").replace(/&amp;/g, "&").trim();
 }
 
+function normalizedNaverResultName(value: string) {
+  return cleanNaverTitle(value.replace(/<[^>]*>/g, ""))
+    .toLowerCase()
+    .replace(/&#(\d+);/g, (_, code: string) => {
+      const point = Number(code);
+      return Number.isInteger(point) && point >= 0 && point <= 0x10ffff
+        ? String.fromCodePoint(point)
+        : "";
+    })
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/[^\p{L}\p{N}]/gu, "");
+}
+
+export function naverPlaceIdFromSearchHtml(
+  html: string,
+  expectedName: string,
+): string | null {
+  const expected = normalizedNaverResultName(expectedName);
+  if (!expected) return null;
+
+  const placeLink =
+    /<a\b[^>]*href=["']https:\/\/map\.naver\.com\/p\/entry\/place\/(\d{1,20})[^"']*["'][^>]*>([\s\S]*?)<\/a>/gi;
+  for (const match of html.matchAll(placeLink)) {
+    if (normalizedNaverResultName(match[2] ?? "") === expected) {
+      return match[1] ?? null;
+    }
+  }
+  return null;
+}
+
+async function resolveNaverPlaceUrlFromSearch(name: string) {
+  const url = new URL("https://search.naver.com/search.naver");
+  url.searchParams.set("where", "nexearch");
+  url.searchParams.set("query", name.slice(0, 120));
+
+  const res = await fetch(url, {
+    cache: "no-store",
+    redirect: "error",
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    headers: {
+      accept: "text/html,application/xhtml+xml",
+      "user-agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126 Safari/537.36",
+    },
+  });
+  if (!res.ok || !res.headers.get("content-type")?.includes("text/html")) {
+    return null;
+  }
+
+  const declaredLength = Number(res.headers.get("content-length"));
+  if (
+    Number.isFinite(declaredLength) &&
+    declaredLength > NAVER_SEARCH_HTML_MAX_LENGTH
+  ) {
+    return null;
+  }
+  const html = await res.text();
+  if (html.length > NAVER_SEARCH_HTML_MAX_LENGTH) return null;
+
+  const placeId = naverPlaceIdFromSearchHtml(html, name);
+  return placeId ? naverSmartPlaceDetailUrl(placeId) : null;
+}
+
 function smartPlaceLink(rawLink: unknown) {
   const link = String(rawLink ?? "").trim();
   if (!link) return "";
@@ -323,5 +391,17 @@ export async function findNaverCandidates(base: PlaceMatchBase, query?: string):
   const candidates = (data.items ?? [])
     .map((item) => mapNaverItem(item, base))
     .sort((a, b) => b.matchConfidence - a.matchConfidence);
+
+  const bestCandidate = candidates[0];
+  if (bestCandidate && !bestCandidate.link) {
+    try {
+      const resolvedLink = await resolveNaverPlaceUrlFromSearch(
+        bestCandidate.title,
+      );
+      if (resolvedLink) bestCandidate.link = resolvedLink;
+    } catch {
+      // The supported Local Search result remains usable when web lookup fails.
+    }
+  }
   return { candidates, providerConfigured: true };
 }

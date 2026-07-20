@@ -10,6 +10,7 @@ interface CandidateResult {
   candidates: NaverCandidate[];
   providerConfigured: boolean;
   query: string;
+  place?: AdminConnectedNaverPlace;
 }
 
 interface ErrorResult {
@@ -79,6 +80,10 @@ export function AdminCampaignNaverCandidates({
         providerConfigured: Boolean(data.providerConfigured),
         query: data.query ?? "",
       });
+      if (data.place) {
+        setConnectedPlace(data.place);
+        setEditing(false);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "네이버 후보를 불러오지 못했습니다.");
     } finally {
