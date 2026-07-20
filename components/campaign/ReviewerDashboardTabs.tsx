@@ -6,9 +6,34 @@ export type ReviewerDashboardTab = "campaigns" | "history" | "profile";
 
 const TABS: Array<{ id: ReviewerDashboardTab; label: string }> = [
   { id: "campaigns", label: "캠페인" },
-  { id: "history", label: "내 참여내역" },
+  { id: "history", label: "참여내역" },
   { id: "profile", label: "내 정보" },
 ];
+
+function TabIcon({ tab }: { tab: ReviewerDashboardTab }) {
+  if (tab === "campaigns") {
+    return (
+      <svg aria-hidden viewBox="0 0 24 24">
+        <path d="M3.5 10.5 12 3l8.5 7.5" />
+        <path d="M5.5 9.5v10h13v-10M9.5 19.5v-6h5v6" />
+      </svg>
+    );
+  }
+  if (tab === "history") {
+    return (
+      <svg aria-hidden viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="8.5" />
+        <path d="M12 7.5V12l3 2" />
+      </svg>
+    );
+  }
+  return (
+    <svg aria-hidden viewBox="0 0 24 24">
+      <circle cx="12" cy="8" r="3.5" />
+      <path d="M5.5 20c.7-3.3 3-5 6.5-5s5.8 1.7 6.5 5" />
+    </svg>
+  );
+}
 
 export function nextReviewerDashboardTab(
   current: ReviewerDashboardTab,
@@ -53,11 +78,26 @@ export function ReviewerDashboardTabs({
   }
 
   return (
-    <div>
+    <div className="flex min-h-[520px] flex-col">
+      <div className="flex-1">
+        {TABS.map((tab) => (
+          <section
+            key={tab.id}
+            id={`reviewer-panel-${tab.id}`}
+            role="tabpanel"
+            aria-labelledby={`reviewer-tab-${tab.id}`}
+            hidden={activeTab !== tab.id}
+            className="mt-6"
+          >
+            {panels[tab.id]}
+          </section>
+        ))}
+      </div>
+
       <div
         role="tablist"
-        aria-label="리뷰어 홈 메뉴"
-        className="sticky top-3 z-20 mt-5 grid grid-cols-3 gap-1 rounded-[18px] border border-line bg-white/95 p-1.5 shadow-[0_8px_24px_rgba(25,36,54,0.08)] backdrop-blur"
+        aria-label="리뷰어 주요 메뉴"
+        className="sticky bottom-3 z-20 mt-6 grid grid-cols-3 gap-1 rounded-[20px] border border-line bg-white/95 p-1.5 shadow-[0_8px_28px_rgba(25,36,54,0.12)] backdrop-blur"
       >
         {TABS.map((tab) => {
           const selected = activeTab === tab.id;
@@ -72,30 +112,18 @@ export function ReviewerDashboardTabs({
               tabIndex={selected ? 0 : -1}
               onClick={() => setActiveTab(tab.id)}
               onKeyDown={handleKeyDown}
-              className={`min-h-11 rounded-[13px] px-2 text-[13px] font-bold transition ${
+              className={`flex min-h-[58px] flex-col items-center justify-center gap-1 rounded-[14px] px-2 text-xs font-extrabold transition [&_svg]:size-5 [&_svg]:fill-none [&_svg]:stroke-current [&_svg]:stroke-[1.9] [&_svg]:[stroke-linecap:round] [&_svg]:[stroke-linejoin:round] ${
                 selected
-                  ? "bg-brand text-white shadow-[0_5px_14px_rgba(49,130,246,0.24)]"
+                  ? "bg-brand-tint text-brand"
                   : "text-ink-sub hover:bg-canvas hover:text-ink"
               }`}
             >
-              {tab.label}
+              <TabIcon tab={tab.id} />
+              <span>{tab.label}</span>
             </button>
           );
         })}
       </div>
-
-      {TABS.map((tab) => (
-        <section
-          key={tab.id}
-          id={`reviewer-panel-${tab.id}`}
-          role="tabpanel"
-          aria-labelledby={`reviewer-tab-${tab.id}`}
-          hidden={activeTab !== tab.id}
-          className="mt-6"
-        >
-          {panels[tab.id]}
-        </section>
-      ))}
     </div>
   );
 }

@@ -1,7 +1,6 @@
 import Link from "next/link";
-import { CampaignList } from "@/components/campaign/CampaignList";
+import { RandomCampaignEntryButton } from "@/components/campaign/RandomCampaignEntryButton";
 import { Card } from "@/components/ui";
-import type { PublicCampaignCard } from "@/lib/domain/operator-campaigns";
 import type {
   ReviewerHomeAccount,
   ReviewerHomeDashboard,
@@ -54,27 +53,49 @@ function accountInitial(account: ReviewerHomeAccount) {
 }
 
 export function ReviewerCampaignPanel({
-  campaigns,
   availableCount,
+  totalRewardPoints,
 }: {
-  campaigns: PublicCampaignCard[];
   availableCount: number;
+  totalRewardPoints: number;
 }) {
   return (
     <section aria-labelledby="campaign-list-title">
-      <div className="mb-4 flex items-end justify-between gap-4 px-1">
+      <div className="mb-4 px-1">
         <div>
-          <p className="text-xs font-semibold text-brand">GOOGLE MAPS CAMPAIGN</p>
+          <p className="text-xs font-semibold text-brand">RANDOM CAMPAIGN</p>
           <h2 id="campaign-list-title" className="mt-1 text-xl font-bold tracking-[-0.03em] text-ink">
             오늘 참여 가능한 캠페인
           </h2>
-          <p className="mt-1 text-xs text-ink-weak">내 계정으로 참여할 수 있는 캠페인이에요.</p>
+          <p className="mt-1 text-xs leading-5 text-ink-weak">
+            장소 정보는 미리 공개되지 않으며 참여 시 조건에 맞는 캠페인이 랜덤 배정됩니다.
+          </p>
         </div>
-        <span className="shrink-0 text-sm font-semibold text-ink-weak">
-          {availableCount.toLocaleString("ko-KR")}개
-        </span>
       </div>
-      <CampaignList campaigns={campaigns} />
+      <Card className="space-y-5">
+        <div className="grid grid-cols-2 gap-2">
+          <div className="rounded-card bg-canvas p-4">
+            <p className="text-xs font-semibold text-ink-weak">참여 가능</p>
+            <p className="mt-1 text-2xl font-bold text-ink">
+              {availableCount.toLocaleString("ko-KR")}
+              <span className="ml-0.5 text-sm">개</span>
+            </p>
+          </div>
+          <div className="rounded-card bg-brand-tint p-4">
+            <p className="text-xs font-semibold text-brand">최대 예상 포인트</p>
+            <p className="mt-1 text-2xl font-bold text-brand">
+              {totalRewardPoints.toLocaleString("ko-KR")}
+              <span className="ml-0.5 text-sm">P</span>
+            </p>
+          </div>
+        </div>
+        <div>
+          <p className="mb-3 text-center text-xs leading-5 text-ink-weak">
+            버튼을 누르면 참여 가능한 캠페인 중 1개가 무작위로 배정됩니다.
+          </p>
+          <RandomCampaignEntryButton disabled={availableCount < 1} />
+        </div>
+      </Card>
     </section>
   );
 }

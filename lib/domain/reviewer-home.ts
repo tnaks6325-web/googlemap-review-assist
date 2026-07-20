@@ -162,9 +162,18 @@ export async function getReviewerHomeDashboard(
       completedCount,
       items: receipts.map((receipt) => ({
         id: receipt.id,
-        businessName: receipt.business.name,
-        campaignName: receipt.campaign.name,
-        campaignSlug: receipt.campaign.slug,
+        businessName:
+          ["ASSIGNED", "VERIFIED"].includes(receipt.status)
+            ? "배정된 캠페인"
+            : receipt.business.name,
+        campaignName:
+          ["ASSIGNED", "VERIFIED"].includes(receipt.status)
+            ? "장소 정보 공개 전"
+            : receipt.campaign.name,
+        campaignSlug:
+          ["ASSIGNED", "VERIFIED"].includes(receipt.status)
+            ? "demo"
+            : receipt.campaign.slug,
         status: receipt.status,
         rewardPoints:
           paidAmountByReceiptId.get(receipt.id) ??

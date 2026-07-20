@@ -7,6 +7,8 @@ import {
   assignReviewerCampaign,
   completeReviewerCampaignAssignment,
   getReviewerCampaignAvailability,
+  getReviewerCampaignPlaceReveal,
+  toConcealedReviewerAssignment,
 } from "@/lib/domain/reviewer-campaigns";
 
 let seq = 0;
@@ -175,6 +177,56 @@ describe("reviewer campaign availability", () => {
 
     const nextAvailability = await getReviewerCampaignAvailability(reviewer.id);
     expect(nextAvailability.campaigns.map((campaign) => campaign.id)).not.toContain(result.assignedCampaign!.id);
+  });
+
+  it("conceals every place field in assignment responses", async () => {
+    const reviewer = await createReviewer();
+    await prisma.campaign.updateMany({ data: { active: false } });
+    const fixture = await createCampaign(`google-place-concealed-${uniq()}`, {
+      rewardPoints: 700,
+    });
+
+    const result = await assignReviewerCampaign(reviewer.id);
+    const concealed = toConcealedReviewerAssignment(result.assignedCampaign!);
+    const serialized = JSON.stringify(concealed);
+
+    expect(concealed).toEqual({ rewardPoints: 700 });
+    expect(serialized).not.toContain(fixture.business.name);
+    expect(serialized).not.toContain(fixture.business.address ?? "");
+    expect(serialized).not.toContain("google-place-concealed");
+    expect(serialized).not.toContain("maps.example");
+  });
+
+  it("reveals place information only after a draft exists and only to its assigned reviewer", async () => {
+    const reviewer = await createReviewer();
+    const otherReviewer = await createReviewer();
+    await prisma.campaign.updateMany({ data: { active: false } });
+    const fixture = await createCampaign(`google-place-reveal-${uniq()}`);
+    const result = await assignReviewerCampaign(reviewer.id);
+
+    await expect(
+      getReviewerCampaignPlaceReveal(reviewer.id, result.assignmentId!),
+    ).rejects.toMatchObject({ code: "REVIEW_DRAFT_REQUIRED", status: 409 });
+
+    await prisma.receipt.update({
+      where: { id: result.assignmentId! },
+      data: {
+        reviewDraftText: "복사할 리뷰 원고가 준비되어 있습니다.",
+        reviewDraftVersion: 1,
+      },
+    });
+
+    await expect(
+      getReviewerCampaignPlaceReveal(otherReviewer.id, result.assignmentId!),
+    ).rejects.toMatchObject({ code: "ASSIGNMENT_NOT_FOUND", status: 404 });
+
+    await expect(
+      getReviewerCampaignPlaceReveal(reviewer.id, result.assignmentId!),
+    ).resolves.toMatchObject({
+      businessName: expect.stringContaining("place-"),
+      address: fixture.business.address,
+      googleMapsUrl: expect.stringContaining("maps.example"),
+    });
   });
 
   it("snapshots the configured campaign reward and pays that amount after later edits", async () => {

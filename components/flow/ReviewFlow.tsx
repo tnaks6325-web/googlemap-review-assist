@@ -1,26 +1,24 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { GoogleSignInButton } from "@/components/auth/GoogleSignInButton";
 import { Button, Card, StepBar } from "@/components/ui";
 import { getInitialReviewerStep } from "@/lib/auth/reviewer-entry";
 
-interface AssignedCampaign {
-  id: string;
-  slug: string;
-  campaignName: string;
+interface ConcealedAssignment {
+  rewardPoints: number;
+}
+
+interface RevealedPlace {
   businessName: string;
   address: string | null;
   category: string | null;
   googleMapsUrl: string;
-  rating: number | null;
-  reviewCount: number | null;
-  rewardPoints: number;
 }
 
 interface Props {
-  initialCampaign: AssignedCampaign;
+  initialRewardPoints: number;
   initialAvailableCount: number;
   initialTotalRewardPoints: number;
   initialCategoryCounts: CategoryCount[];
@@ -53,17 +51,6 @@ function formatPoints(points: number) {
   return points.toLocaleString("ko-KR");
 }
 
-/*
-function buildCampaignDraft(campaign: AssignedCampaign) {
-  const category = campaign.category ? `${campaign.category} 매장` : "매장";
-  return [
-    `${campaign.businessName}에 방문했습니다.`,
-    `${category}답게 이용하기 편했고 전체적으로 만족스러운 시간이었습니다.`,
-    "다음에도 근처에 오면 다시 들르고 싶은 곳이에요.",
-  ].join(" ");
-}
-
-*/
 interface AvailabilityResponse {
   availableCount: number;
   totalRewardPoints: number;
@@ -73,7 +60,7 @@ interface AvailabilityResponse {
     assignmentId: string;
     assignmentExpiresAt: string;
     remainingSeconds: number;
-    assignedCampaign: AssignedCampaign;
+    assignedCampaign: ConcealedAssignment;
   } | null;
 }
 
@@ -81,7 +68,7 @@ interface AssignResponse extends AvailabilityResponse {
   assignmentId: string | null;
   assignmentExpiresAt: string | null;
   remainingSeconds: number;
-  assignedCampaign: AssignedCampaign | null;
+  assignedCampaign: ConcealedAssignment | null;
 }
 
 interface CompleteResponse {
@@ -117,7 +104,7 @@ interface CategoryCount {
 }
 
 export function ReviewFlow({
-  initialCampaign,
+  initialRewardPoints,
   initialAvailableCount,
   initialTotalRewardPoints,
   initialCategoryCounts,
@@ -131,7 +118,7 @@ export function ReviewFlow({
   const [totalRewardPoints, setTotalRewardPoints] = useState(initialTotalRewardPoints);
   const [categoryCounts, setCategoryCounts] = useState(initialCategoryCounts);
   const [cooldownDays, setCooldownDays] = useState(initialCooldownDays);
-  const [assignedCampaign, setAssignedCampaign] = useState<AssignedCampaign | null>(null);
+  const [assignedCampaign, setAssignedCampaign] = useState<ConcealedAssignment | null>(null);
   const [assignmentId, setAssignmentId] = useState<string | null>(null);
   const [assignmentExpiresAt, setAssignmentExpiresAt] = useState<string | null>(null);
   const [remainingSeconds, setRemainingSeconds] = useState(0);
@@ -142,12 +129,13 @@ export function ReviewFlow({
   const [screenshot, setScreenshot] = useState<File | null>(null);
   const [reviewGuideOpen, setReviewGuideOpen] = useState(false);
   const [reviewGuideAcknowledged, setReviewGuideAcknowledged] = useState(false);
+  const [revealedPlace, setRevealedPlace] = useState<RevealedPlace | null>(null);
 
   useEffect(() => {
     document.documentElement.lang = "ko";
   }, []);
 
-  const currentCampaign = assignedCampaign ?? initialCampaign;
+  const currentRewardPoints = assignedCampaign?.rewardPoints ?? initialRewardPoints;
   const stepIndex = Math.max(FLOW.indexOf(step), 0);
   const ctaPoints = formatPoints(totalRewardPoints);
   const assignmentExpired =
@@ -251,6 +239,7 @@ export function ReviewFlow({
       setScreenshot(null);
       setReviewGuideOpen(false);
       setReviewGuideAcknowledged(false);
+      setRevealedPlace(null);
       if (!data.assignedCampaign) {
         setError("지금 참여 가능한 캠페인이 없어요");
         return;
@@ -279,11 +268,27 @@ export function ReviewFlow({
       setScreenshot(null);
       setReviewGuideOpen(false);
       setReviewGuideAcknowledged(false);
+      setRevealedPlace(null);
       await copyText(data.text);
       setStep("draft");
     });
 
   const generateDraft = () => requestDraft(false);
+
+  const openReviewRegistration = () =>
+    run(async () => {
+      if (!assignmentId) {
+        setError("참여 정보를 확인해 주세요.");
+        return;
+      }
+      const place = await postJson<RevealedPlace>(
+        "/api/reviewer/campaigns/reveal",
+        { assignmentId },
+      );
+      setRevealedPlace(place);
+      setReviewGuideAcknowledged(false);
+      setReviewGuideOpen(true);
+    });
 
   const completeAssignment = () =>
     run(async () => {
@@ -323,16 +328,17 @@ export function ReviewFlow({
       setCompletion(null);
       setReviewGuideOpen(false);
       setReviewGuideAcknowledged(false);
+      setRevealedPlace(null);
       await loadAvailability();
     });
 
-  const headerTitle = useMemo(() => {
+  const headerTitle = (() => {
     if (step === "signIn") return "리뷰어 참여";
     if (step === "summary") return "캠페인 배정";
     if (step === "assigned") return "캠페인 배정 완료";
     if (step === "complete") return "적립 완료";
-    return currentCampaign.businessName;
-  }, [currentCampaign.businessName, step]);
+    return "리뷰 등록 준비";
+  })();
 
   const proofApproved = completion?.status === "COMPLETED";
   const proofRejected = completion?.status === "REJECTED";
@@ -386,13 +392,13 @@ export function ReviewFlow({
 
         {step === "assigned" && (
           <Step title="캠페인이 배정됐어요" desc="방문 후 Google 지도 리뷰 작성에 사용할 초안을 만들 수 있어요.">
-            <CampaignCard campaign={currentCampaign} assignmentId={assignmentId} showPlaceDetails={false} />
+            <CampaignCard rewardPoints={currentRewardPoints} assignmentId={assignmentId} />
           </Step>
         )}
 
         {step === "draft" && (
           <Step title="원고가 복사됐어요" desc="아래 버튼으로 Google 지도를 열고 리뷰 작성란에 붙여넣으세요.">
-            <CampaignCard campaign={currentCampaign} assignmentId={assignmentId} />
+            <CampaignCard rewardPoints={currentRewardPoints} assignmentId={assignmentId} />
             <Card className="mt-4 space-y-2">
               <p className="text-sm font-semibold text-ink-weak">복사된 원고</p>
               <p className="text-[15px] leading-7 text-ink">{draft}</p>
@@ -418,12 +424,9 @@ export function ReviewFlow({
                 <Button
                   fullWidth
                   loading={busy}
-                  onClick={() => {
-                    setReviewGuideAcknowledged(false);
-                    setReviewGuideOpen(true);
-                  }}
+                  onClick={openReviewRegistration}
                 >
-                  리뷰등록 하기
+                  Google Maps에서 리뷰 등록하기
                 </Button>
               </div>
             </Card>
@@ -480,7 +483,7 @@ export function ReviewFlow({
               <div className="grid grid-cols-2 gap-2">
                 <Metric
                   label={proofApproved ? "지급 포인트" : "승인 후 적립"}
-                  value={`${formatPoints(proofApproved ? (completion?.paidAmount ?? completion?.earned ?? 0) : currentCampaign.rewardPoints)}P`}
+                  value={`${formatPoints(proofApproved ? (completion?.paidAmount ?? completion?.earned ?? 0) : currentRewardPoints)}P`}
                 />
                 <Metric label="현재 잔액" value={`${formatPoints(completion?.balance ?? 0)}P`} />
               </div>
@@ -522,7 +525,7 @@ export function ReviewFlow({
       <ReviewProofGuideModal
         open={reviewGuideOpen}
         acknowledged={reviewGuideAcknowledged}
-        googleMapsUrl={currentCampaign.googleMapsUrl}
+        place={revealedPlace}
         onAcknowledge={setReviewGuideAcknowledged}
         onClose={() => setReviewGuideOpen(false)}
       />
@@ -601,17 +604,17 @@ export function ReviewFlow({
 function ReviewProofGuideModal({
   open,
   acknowledged,
-  googleMapsUrl,
+  place,
   onAcknowledge,
   onClose,
 }: {
   open: boolean;
   acknowledged: boolean;
-  googleMapsUrl: string;
+  place: RevealedPlace | null;
   onAcknowledge: (value: boolean) => void;
   onClose: () => void;
 }) {
-  if (!open) return null;
+  if (!open || !place) return null;
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 px-5 py-6" role="dialog" aria-modal="true" aria-labelledby="review-proof-guide-title">
@@ -626,6 +629,13 @@ function ReviewProofGuideModal({
           </button>
         </div>
         <div className="mt-4 grid gap-3">
+        <div className="rounded-xl border border-brand/20 bg-brand-tint p-4">
+          <p className="text-xs font-semibold text-brand">리뷰 등록 장소</p>
+          <p className="mt-1 text-lg font-bold text-ink">{place.businessName}</p>
+          <p className="mt-1 text-sm leading-5 text-ink-sub">
+            {[place.category, place.address].filter(Boolean).join(" · ")}
+          </p>
+        </div>
         <figure className="overflow-hidden rounded-xl border border-line bg-surface">
           <img
             src="/review-proof-guides/before-readmore.png"
@@ -659,7 +669,7 @@ function ReviewProofGuideModal({
           <span>캡처 예시와 제출 기준을 확인했어요.</span>
         </label>
         <a
-          {...(acknowledged ? { href: googleMapsUrl, target: "_blank", rel: "noreferrer" } : {})}
+          {...(acknowledged ? { href: place.googleMapsUrl, target: "_blank", rel: "noreferrer" } : {})}
           onClick={(event) => {
             if (!acknowledged) event.preventDefault();
             else onClose();
@@ -669,7 +679,7 @@ function ReviewProofGuideModal({
             acknowledged ? "bg-brand text-white" : "cursor-not-allowed bg-line text-ink-weak"
           }`}
         >
-          구글맵 이동
+          Google Maps 열기
         </a>
       </div>
     </div>
@@ -746,36 +756,25 @@ function Metric({ label, value }: { label: string; value: string }) {
 }
 
 function CampaignCard({
-  campaign,
+  rewardPoints,
   assignmentId,
-  showPlaceDetails = true,
 }: {
-  campaign: AssignedCampaign;
+  rewardPoints: number;
   assignmentId: string | null;
-  showPlaceDetails?: boolean;
 }) {
   return (
     <Card className="space-y-4">
       <div>
         <p className="text-xs font-semibold text-brand">배정 완료</p>
-        {showPlaceDetails ? (
-          <>
-            <h2 className="mt-1 text-xl font-bold leading-snug text-ink">{campaign.businessName}</h2>
-            <p className="mt-1 text-sm leading-5 text-ink-weak">
-              {[campaign.category, campaign.address].filter(Boolean).join(" · ") || campaign.campaignName}
-            </p>
-          </>
-        ) : (
-          <>
-            <h2 className="mt-1 text-xl font-bold leading-snug text-ink">참여 캠페인이 준비됐어요</h2>
-            <p className="mt-1 text-sm leading-5 text-ink-weak">
-              원고를 생성하면 다음 단계에서 리뷰 등록을 진행할 수 있어요.
-            </p>
-          </>
-        )}
+        <h2 className="mt-1 text-xl font-bold leading-snug text-ink">
+          참여 캠페인이 준비됐어요
+        </h2>
+        <p className="mt-1 text-sm leading-5 text-ink-weak">
+          장소 정보는 원고를 복사한 뒤 리뷰 등록 버튼을 누르면 확인할 수 있어요.
+        </p>
       </div>
       <div className="grid grid-cols-1 gap-2">
-        <Metric label="이번 적립" value={`${formatPoints(campaign.rewardPoints)}P`} />
+        <Metric label="이번 적립" value={`${formatPoints(rewardPoints)}P`} />
       </div>
       {assignmentId && <p className="text-xs text-ink-weak">참여번호 {assignmentId.slice(-8).toUpperCase()}</p>}
     </Card>

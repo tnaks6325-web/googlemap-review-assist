@@ -36,6 +36,18 @@ export interface ReviewerCampaignAssignment extends PublicCampaignCard {
   googlePlaceKey: string;
 }
 
+export interface ConcealedReviewerAssignment {
+  rewardPoints: number;
+}
+
+export function toConcealedReviewerAssignment(
+  campaign: ReviewerCampaignAssignment,
+): ConcealedReviewerAssignment {
+  return {
+    rewardPoints: campaign.rewardPoints,
+  };
+}
+
 export interface ReviewerCampaignAvailability {
   availableCount: number;
   totalRewardPoints: number;
@@ -502,6 +514,74 @@ export async function getReviewerCampaignProofContext(
     assignmentId: receipt.id,
     businessName: googlePlace?.name ?? receipt.business.name,
     reviewDraftText: receipt.reviewDraftText?.trim() ?? null,
+  };
+}
+
+export async function getReviewerCampaignPlaceReveal(
+  reviewerId: string,
+  assignmentId: string,
+  db: DbClient = prisma,
+) {
+  const cleanAssignmentId = assignmentId.trim();
+  if (!cleanAssignmentId) {
+    throw new ReviewerCampaignError(
+      "INVALID_ASSIGNMENT",
+      "참여 정보를 확인해 주세요.",
+    );
+  }
+
+  const receipt = await db.receipt.findUnique({
+    where: { id: cleanAssignmentId },
+    include: {
+      business: {
+        include: {
+          externalPlaces: {
+            where: { platform: "GOOGLE" },
+            take: 1,
+          },
+        },
+      },
+    },
+  });
+
+  if (!receipt || receipt.reviewerId !== reviewerId) {
+    throw new ReviewerCampaignError(
+      "ASSIGNMENT_NOT_FOUND",
+      "참여 정보를 찾을 수 없어요.",
+      404,
+    );
+  }
+  if (receipt.source !== REVIEWER_ASSIGNMENT_SOURCE) {
+    throw new ReviewerCampaignError(
+      "INVALID_ASSIGNMENT",
+      "캠페인 참여 기록이 아니에요.",
+      422,
+    );
+  }
+  assertAssignmentNotExpired(receipt);
+  if (!receipt.reviewDraftText?.trim()) {
+    throw new ReviewerCampaignError(
+      "REVIEW_DRAFT_REQUIRED",
+      "원고를 먼저 생성하고 복사해 주세요.",
+      409,
+    );
+  }
+
+  const googlePlace = receipt.business.externalPlaces[0] ?? null;
+  const businessName = googlePlace?.name ?? receipt.business.name;
+  const address = googlePlace?.address ?? receipt.business.address;
+
+  return {
+    businessName,
+    address,
+    category: googlePlace?.category ?? null,
+    googleMapsUrl:
+      googlePlace?.url ??
+      googleMapsSearchUrl(
+        businessName,
+        address,
+        receipt.business.googlePlaceId,
+      ),
   };
 }
 

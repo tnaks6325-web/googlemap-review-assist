@@ -1,0 +1,406 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>아이에이 플레이스 — 리뷰어 모바일 시안</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --blue: #2878f0;
+      --blue-dark: #1769df;
+      --ink: #182230;
+      --muted: #647286;
+      --line: #e1e7ee;
+      --canvas: #f3f5f7;
+      font-family: Pretendard, "Noto Sans KR", system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { min-width: 320px; min-height: 100%; margin: 0; }
+    body { color: var(--ink); background: #e7edf4; }
+    button { font: inherit; cursor: pointer; }
+    .phone {
+      width: min(100%, 430px);
+      min-height: 100vh;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: var(--canvas);
+      box-shadow: 0 0 70px rgba(42,60,84,.16);
+    }
+    .brand-section {
+      position: relative;
+      min-height: clamp(430px, 50vh, 530px);
+      overflow: hidden;
+      padding:
+        max(44px, env(safe-area-inset-top))
+        20px
+        48px;
+      color: white;
+      background:
+        radial-gradient(circle at 92% 0, rgba(132,205,255,.5), transparent 17rem),
+        radial-gradient(circle at 0 100%, rgba(20,74,190,.4), transparent 15rem),
+        linear-gradient(145deg, #0c5eda, #3d91fb);
+      isolation: isolate;
+    }
+    .brand-section::after {
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      content: "";
+      opacity: .22;
+      background-image: radial-gradient(rgba(255,255,255,.95) 1px, transparent 1px);
+      background-size: 20px 20px;
+      mask-image: linear-gradient(to bottom, black, transparent 82%);
+    }
+    .hero-title { padding-top: 18px; text-align: center; }
+    .hero-title p {
+      margin: 0;
+      color: rgba(255,255,255,.8);
+      font-size: 16px;
+      font-weight: 750;
+      letter-spacing: -.02em;
+    }
+    .hero-title h1 {
+      margin: 16px 0 0;
+      font-size: 40px;
+      line-height: 1.08;
+      font-weight: 950;
+      letter-spacing: -.065em;
+    }
+    .summary {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 76px;
+    }
+    .metric {
+      position: relative;
+      min-height: 142px;
+      overflow: hidden;
+      padding: 15px;
+      border: 1px solid rgba(255,255,255,.28);
+      border-radius: 23px;
+      color: var(--ink);
+      background: linear-gradient(150deg, #fff, #f4f8ff);
+      box-shadow: 0 16px 35px rgba(5,53,125,.16);
+    }
+    .metric.blue {
+      color: white;
+      background: linear-gradient(150deg, rgba(5,72,174,.62), rgba(27,104,222,.35));
+      box-shadow: inset 0 1px rgba(255,255,255,.18), 0 16px 35px rgba(5,53,125,.12);
+    }
+    .metric::after {
+      position: absolute;
+      width: 84px;
+      height: 84px;
+      right: -34px;
+      bottom: -36px;
+      content: "";
+      border-radius: 50%;
+      background: rgba(40,120,240,.08);
+    }
+    .metric.blue::after { background: rgba(255,255,255,.08); }
+    .metric-top { display: flex; align-items: center; justify-content: space-between; }
+    .metric-icon {
+      width: 32px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      border-radius: 11px;
+      color: var(--blue);
+      background: #eaf3ff;
+    }
+    .metric.blue .metric-icon { color: white; background: rgba(255,255,255,.14); }
+    .metric-icon svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+    .metric-badge { color: #1a78ed; font-size: 9px; font-weight: 900; }
+    .metric.blue .metric-badge { color: rgba(255,255,255,.72); }
+    .metric-label { display: block; margin-top: 13px; color: #718096; font-size: 10px; font-weight: 800; }
+    .metric.blue .metric-label { color: rgba(255,255,255,.72); }
+    .metric strong { display: block; margin-top: 4px; font-size: 27px; letter-spacing: -.05em; }
+    .metric small { margin-left: 2px; font-size: 13px; }
+    .metric-visual { display: flex; align-items: center; gap: 4px; margin-top: 9px; }
+    .metric-visual i { width: 13px; height: 4px; border-radius: 99px; background: #d7e7fb; }
+    .metric-visual i.on { background: var(--blue); }
+    .metric.blue .metric-visual i { background: rgba(255,255,255,.2); }
+    .metric.blue .metric-visual i.on { background: #75f0cf; }
+    .spacer {
+      position: relative;
+      min-height: 250px;
+      flex: 1 1 auto;
+      overflow: hidden;
+      background:
+        linear-gradient(to bottom, rgba(255,255,255,.62), transparent 110px),
+        var(--canvas);
+    }
+    .review-scene {
+      position: absolute;
+      inset: 3% 0 0;
+      width: 100%;
+      height: 97%;
+    }
+    .bottom-dock {
+      margin-top: auto;
+      padding: 14px 13px max(10px, env(safe-area-inset-bottom));
+      border-top: 1px solid var(--line);
+      background: rgba(255,255,255,.97);
+      box-shadow: 0 -14px 34px rgba(36,54,78,.08);
+      backdrop-filter: blur(18px);
+    }
+    .login-wrap {
+      width: min(100%, 360px);
+      margin: 0 auto 12px;
+      padding: 0 5px;
+    }
+    .login-guide {
+      margin: 0 0 9px;
+      color: var(--muted);
+      text-align: center;
+      font-size: 11px;
+      line-height: 1.45;
+    }
+    .google {
+      width: 100%;
+      height: 48px;
+      display: grid;
+      grid-template-columns: 38px 1fr 38px;
+      align-items: center;
+      padding: 0 7px;
+      border: 1px solid #747775;
+      border-radius: 4px;
+      color: #1f1f1f;
+      background: white;
+      box-shadow: 0 1px 2px rgba(0,0,0,.08);
+      font-family: Roboto, Arial, sans-serif;
+      font-size: 14px;
+      font-weight: 500;
+      letter-spacing: .01em;
+      transition: background .18s, box-shadow .18s, transform .18s, opacity .18s;
+    }
+    .google:hover { background: #f8faff; box-shadow: 0 2px 5px rgba(0,0,0,.14); }
+    .google:active { background: #eef3fc; transform: scale(.99); }
+    .google:focus-visible { outline: 3px solid rgba(66,133,244,.3); outline-offset: 2px; }
+    .google.busy { pointer-events: none; opacity: .7; }
+    .google-logo { width: 20px; height: 20px; justify-self: center; }
+    .google-label { grid-column: 2; }
+    .tabs {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 5px;
+      padding-top: 11px;
+      border-top: 1px solid #edf0f4;
+    }
+    .tab {
+      min-height: 57px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      border: 0;
+      border-radius: 14px;
+      color: #5f6e82;
+      background: transparent;
+      font-size: 12px;
+      font-weight: 750;
+      letter-spacing: -.01em;
+      transition: color .18s, background .18s;
+    }
+    .tab svg {
+      width: 22px;
+      height: 22px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.9;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .tab.active { color: var(--blue-dark); background: #edf5ff; font-weight: 900; }
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 160px;
+      z-index: 20;
+      width: max-content;
+      max-width: calc(100% - 32px);
+      padding: 11px 15px;
+      border-radius: 999px;
+      color: white;
+      background: #162231;
+      box-shadow: 0 12px 28px rgba(16,28,44,.2);
+      opacity: 0;
+      transform: translate(-50%, 14px);
+      transition: .3s;
+      font-size: 11px;
+    }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+    @media (min-width: 431px) {
+      body { padding: 24px; }
+      .phone { min-height: calc(100vh - 48px); border-radius: 30px; }
+    }
+    @media (max-height: 720px) {
+      .brand-section { min-height: 360px; padding-top: 28px; padding-bottom: 32px; }
+      .hero-title { padding-top: 4px; }
+      .hero-title h1 { font-size: 35px; }
+      .summary { margin-top: 34px; }
+      .metric { min-height: 132px; }
+      .spacer { min-height: 150px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="phone">
+    <section class="brand-section" aria-label="아이에이 플레이스">
+      <header class="hero-title">
+        <p>클릭 열번으로 끝내는 초간단 부업</p>
+        <h1>아이에이 플레이스</h1>
+      </header>
+      <div class="summary" aria-label="오늘의 참여 요약">
+        <article class="metric">
+          <div class="metric-top">
+            <span class="metric-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><rect x="4" y="5.5" width="16" height="14" rx="3"/><path d="M8 3.5v4M16 3.5v4M4 10h16"/><path d="m9 15 2 2 4-4"/></svg>
+            </span>
+            <span class="metric-badge">TODAY</span>
+          </div>
+          <span class="metric-label">오늘 참여 가능</span>
+          <strong>5<small>개</small></strong>
+          <div class="metric-visual" aria-hidden="true"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></div>
+        </article>
+        <article class="metric blue">
+          <div class="metric-top">
+            <span class="metric-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M9 8.5h4a2 2 0 0 1 0 4H9V7M9 12.5h4.5a2 2 0 0 1 0 4H9"/></svg>
+            </span>
+            <span class="metric-badge">REWARD</span>
+          </div>
+          <span class="metric-label">받을 수 있는 포인트</span>
+          <strong>2,500<small>P</small></strong>
+          <div class="metric-visual" aria-hidden="true"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></div>
+        </article>
+      </div>
+    </section>
+
+    <div class="spacer" aria-hidden="true">
+      <svg class="review-scene" viewBox="0 0 430 260">
+        <defs>
+          <linearGradient id="shirt" x1="0" x2="1"><stop stop-color="#2678ef"/><stop offset="1" stop-color="#65a7fa"/></linearGradient>
+          <filter id="soft" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="7" stdDeviation="8" flood-color="#375b88" flood-opacity=".12"/></filter>
+        </defs>
+        <path d="M24 197C85 139 135 186 190 119S309 56 414 101" fill="none" stroke="#c8d5e4" stroke-width="2" stroke-linecap="round" stroke-dasharray="5 9"/>
+        <ellipse cx="219" cy="230" rx="93" ry="14" fill="#dce4ee"/>
+
+        <!-- cafe -->
+        <g transform="translate(44 62)" filter="url(#soft)">
+          <circle cx="32" cy="32" r="31" fill="#fff"/>
+          <path d="M19 23h23v15a8 8 0 0 1-8 8h-7a8 8 0 0 1-8-8V23Z" fill="#e8f3ff" stroke="#2878f0" stroke-width="2"/>
+          <path d="M42 28h4a6 6 0 0 1 0 12h-4M25 17c-3-4 3-6 0-10M34 17c-3-4 3-6 0-10" fill="none" stroke="#2878f0" stroke-width="2" stroke-linecap="round"/>
+        </g>
+
+        <!-- restaurant -->
+        <g transform="translate(327 50)" filter="url(#soft)">
+          <circle cx="31" cy="31" r="30" fill="#fff"/>
+          <path d="M18 17v14M24 17v14M18 24h6M21 31v14M39 17v28M34 17c0 8 2 12 5 12" fill="none" stroke="#00a985" stroke-width="2.3" stroke-linecap="round"/>
+        </g>
+
+        <!-- dessert -->
+        <g transform="translate(326 159)" filter="url(#soft)">
+          <circle cx="27" cy="27" r="26" fill="#fff"/>
+          <path d="M15 36h25L35 21H20l-5 15Z" fill="#fff0d8" stroke="#f39a25" stroke-width="2"/>
+          <path d="M19 24c4-5 12-5 17 0M27 20v-5" fill="none" stroke="#f39a25" stroke-width="2" stroke-linecap="round"/>
+          <circle cx="28" cy="13" r="3" fill="#f05a6b"/>
+        </g>
+
+        <!-- reviewer -->
+        <g filter="url(#soft)">
+          <path d="M158 224c5-47 22-75 60-75s59 27 65 75H158Z" fill="url(#shirt)"/>
+          <circle cx="217" cy="106" r="35" fill="#ffd7b8"/>
+          <path d="M184 106c-1-28 15-45 38-45 20 0 34 13 35 34-15 2-25-3-34-14-9 15-23 23-39 25Z" fill="#26374d"/>
+          <path d="M188 99c-7-2-10 4-7 11s8 8 12 5M248 99c7-2 10 4 7 11s-8 8-12 5" fill="#ffd7b8"/>
+          <circle cx="205" cy="108" r="2" fill="#38485c"/><circle cx="229" cy="108" r="2" fill="#38485c"/>
+          <path d="M211 121c5 4 10 4 15 0" fill="none" stroke="#d5786f" stroke-width="2" stroke-linecap="round"/>
+          <path d="M180 178c-12 12-19 27-22 46M255 177c15 11 23 27 28 47" fill="none" stroke="#1e69d6" stroke-width="18" stroke-linecap="round"/>
+          <rect x="197" y="158" width="43" height="70" rx="8" fill="#20344e" stroke="#fff" stroke-width="4"/>
+          <rect x="202" y="165" width="33" height="49" rx="4" fill="#eef5ff"/>
+          <path d="m207 187 6 6 15-15" fill="none" stroke="#2878f0" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <circle cx="218.5" cy="220" r="2.5" fill="#8aa1bb"/>
+        </g>
+
+        <!-- review stars -->
+        <g transform="translate(110 20)" filter="url(#soft)">
+          <rect width="143" height="38" rx="19" fill="#fff"/>
+          <text x="18" y="25" fill="#ffb622" font-size="18" letter-spacing="2">★★★★★</text>
+          <circle cx="119" cy="19" r="10" fill="#e9f9f5"/>
+          <path d="m114 19 3 3 6-7" fill="none" stroke="#00aa85" stroke-width="2" stroke-linecap="round"/>
+        </g>
+      </svg>
+    </div>
+
+    <section class="bottom-dock" aria-label="로그인과 주요 메뉴">
+      <div class="login-wrap">
+        <p class="login-guide">로그인하면 참여 이력과 포인트를 이어서 확인할 수 있어요.</p>
+        <button class="google" type="button" id="google-login">
+          <svg class="google-logo" viewBox="0 0 18 18" aria-hidden="true">
+            <path fill="#4285F4" d="M17.64 9.205c0-.638-.057-1.252-.164-1.841H9v3.482h4.844a4.14 4.14 0 0 1-1.797 2.716v2.258h2.909c1.702-1.567 2.684-3.875 2.684-6.615Z"/>
+            <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.91-2.258c-.805.54-1.835.86-3.046.86-2.344 0-4.328-1.585-5.037-3.714H.956v2.332A9 9 0 0 0 9 18Z"/>
+            <path fill="#FBBC05" d="M3.963 10.708A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.168.281-1.708V4.96H.956A9 9 0 0 0 0 9c0 1.452.347 2.827.956 4.04l3.007-2.332Z"/>
+            <path fill="#EA4335" d="M9 3.578c1.322 0 2.508.454 3.441 1.346l2.582-2.582C13.463.89 11.425 0 9 0A9 9 0 0 0 .956 4.96l3.007 2.332C4.672 5.163 6.656 3.578 9 3.578Z"/>
+          </svg>
+          <span class="google-label">Google 계정으로 로그인</span>
+          <span aria-hidden="true"></span>
+        </button>
+      </div>
+
+      <nav class="tabs" aria-label="하단 메뉴">
+        <button class="tab active" type="button" aria-current="page">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 10.5 12 3l8.5 7.5"/><path d="M5.5 9.5v10h13v-10M9.5 19.5v-6h5v6"/></svg>
+          <span>캠페인</span>
+        </button>
+        <button class="tab" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>
+          <span>참여내역</span>
+        </button>
+        <button class="tab" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M5.5 20c.7-3.3 3-5 6.5-5s5.8 1.7 6.5 5"/></svg>
+          <span>내 정보</span>
+        </button>
+      </nav>
+    </section>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </main>
+  <script>
+    const toast = document.querySelector("#toast");
+    function showToast(message) {
+      toast.textContent = message;
+      toast.classList.add("show");
+      setTimeout(() => toast.classList.remove("show"), 2200);
+    }
+    document.querySelector("#google-login").addEventListener("click", (event) => {
+      const button = event.currentTarget;
+      const label = button.querySelector(".google-label");
+      button.classList.add("busy");
+      label.textContent = "Google 계정 연결 중…";
+      setTimeout(() => {
+        button.classList.remove("busy");
+        label.textContent = "Google 계정으로 로그인";
+        showToast("Google 계정 선택창을 열 준비가 됐어요.");
+      }, 900);
+    });
+    document.querySelectorAll(".tab").forEach((item) => {
+      item.addEventListener("click", () => {
+        document.querySelectorAll(".tab").forEach((tab) => {
+          tab.classList.remove("active");
+          tab.removeAttribute("aria-current");
+        });
+        item.classList.add("active");
+        item.setAttribute("aria-current", "page");
+      });
+    });
+  </script>
+</body>
+</html>

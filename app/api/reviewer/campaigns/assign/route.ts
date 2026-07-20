@@ -2,6 +2,7 @@ import { getReviewerId } from "@/lib/auth/session";
 import {
   assignReviewerCampaign,
   ReviewerCampaignError,
+  toConcealedReviewerAssignment,
 } from "@/lib/domain/reviewer-campaigns";
 import { checkOrigin } from "@/lib/auth/origin";
 import { err, ok } from "@/lib/http";
@@ -55,16 +56,7 @@ export async function POST(req: Request) {
         }
       : null,
     assignedCampaign: {
-      id: result.assignedCampaign.id,
-      slug: result.assignedCampaign.slug,
-      campaignName: result.assignedCampaign.campaignName,
-      businessName: result.assignedCampaign.businessName,
-      address: result.assignedCampaign.address,
-      category: result.assignedCampaign.category,
-      googleMapsUrl: result.assignedCampaign.googleMapsUrl,
-      rating: result.assignedCampaign.rating,
-      reviewCount: result.assignedCampaign.reviewCount,
-      rewardPoints: result.assignedCampaign.rewardPoints,
+      ...toConcealedReviewerAssignment(result.assignedCampaign),
     },
   });
 }

@@ -115,6 +115,22 @@ describe("reviewer home account", () => {
           campaignId: campaign.id,
           reviewerId: reviewer.id,
           source: "CAMPAIGN_ASSIGNMENT",
+          dedupeHash: `dashboard-assigned-${suffix}`,
+          status: "ASSIGNED",
+        },
+        {
+          businessId: business.id,
+          campaignId: campaign.id,
+          reviewerId: reviewer.id,
+          source: "CAMPAIGN_ASSIGNMENT",
+          dedupeHash: `dashboard-verified-${suffix}`,
+          status: "VERIFIED",
+        },
+        {
+          businessId: business.id,
+          campaignId: campaign.id,
+          reviewerId: reviewer.id,
+          source: "CAMPAIGN_ASSIGNMENT",
           dedupeHash: `dashboard-pending-${suffix}`,
           status: "REVIEW_SUBMITTED",
           reviewProofSubmittedAt: new Date("2026-07-19T12:00:00.000Z"),
@@ -159,15 +175,29 @@ describe("reviewer home account", () => {
       },
       points: { balance: 12000 },
       participation: {
-        totalCount: 2,
+        totalCount: 4,
         reviewPendingCount: 1,
         completedCount: 1,
       },
     });
-    expect(dashboard.participation.items).toHaveLength(2);
+    expect(dashboard.participation.items).toHaveLength(4);
     expect(dashboard.participation.items.map((item) => item.status)).toEqual(
-      expect.arrayContaining(["REVIEW_SUBMITTED", "COMPLETED"]),
+      expect.arrayContaining([
+        "ASSIGNED",
+        "VERIFIED",
+        "REVIEW_SUBMITTED",
+        "COMPLETED",
+      ]),
     );
+    for (const status of ["ASSIGNED", "VERIFIED"]) {
+      expect(
+        dashboard.participation.items.find((item) => item.status === status),
+      ).toMatchObject({
+        businessName: "배정된 캠페인",
+        campaignName: "장소 정보 공개 전",
+        campaignSlug: "demo",
+      });
+    }
     expect(
       dashboard.participation.items.find((item) => item.status === "COMPLETED")
         ?.rewardPoints,

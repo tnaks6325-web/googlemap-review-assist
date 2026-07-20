@@ -35,18 +35,7 @@ export default async function CampaignPage({
   return (
     <>
       <ReviewFlow
-        initialCampaign={{
-          id: campaign.id,
-          slug: campaign.slug,
-          campaignName: campaign.campaignName,
-          businessName: campaign.businessName,
-          address: campaign.address,
-          category: campaign.category,
-          googleMapsUrl: campaign.googleMapsUrl,
-          rating: campaign.rating,
-          reviewCount: campaign.reviewCount,
-          rewardPoints: campaign.rewardPoints,
-        }}
+        initialRewardPoints={campaign.rewardPoints}
         initialAvailableCount={summary.availableCount}
         initialTotalRewardPoints={summary.totalRewardPoints}
         initialCategoryCounts={summary.categoryCounts}

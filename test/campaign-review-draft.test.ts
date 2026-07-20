@@ -259,7 +259,7 @@ describe("campaign review draft generator", () => {
   });
 
   it("generates and stores a 30 to 200 non-space character draft from place data and a substantive source", async () => {
-    const { reviewer, receipt } = await createAssignment({ googlePlace: true, naverPlace: true, googleReview: true });
+    const { reviewer, business, receipt } = await createAssignment({ googlePlace: true, naverPlace: true, googleReview: true });
 
     const result = await generateCampaignReviewDraftForAssignment(reviewer.id, receipt.id);
     const stored = await prisma.receipt.findUnique({ where: { id: receipt.id } });
@@ -272,6 +272,68 @@ describe("campaign review draft generator", () => {
     expect(stored?.reviewDraftText).toBe(result.text);
     expect(stored?.reviewDraftProvider).toBe("template");
     expect(stored?.reviewDraftSourceGroupsJson).toContain("GOOGLE_PLACE");
+    expect(result.text).not.toContain("테스트 매장");
+    expect(result.text).not.toContain(business.address ?? "");
+  });
+
+  it("conceals place identifiers in a previously stored draft before returning it", async () => {
+    const { reviewer, business, receipt } = await createAssignment({
+      googlePlace: true,
+      naverPlace: true,
+      googleReview: true,
+    });
+    await prisma.receipt.update({
+      where: { id: receipt.id },
+      data: {
+        reviewDraftText:
+          "테스트 매장은 서울특별시 중구 테스트로 1에 있어 방문하기 편했고 전체적으로 만족스러웠습니다.",
+        reviewDraftVersion: 1,
+      },
+    });
+
+    const result = await generateCampaignReviewDraftForAssignment(
+      reviewer.id,
+      receipt.id,
+    );
+    const stored = await prisma.receipt.findUniqueOrThrow({
+      where: { id: receipt.id },
+    });
+
+    expect(result.reused).toBe(true);
+    expect(result.text).not.toContain("테스트 매장");
+    expect(result.text).not.toContain(business.address ?? "");
+    expect(stored.reviewDraftText).toBe(result.text);
+  });
+
+  it("conceals alternate Naver place names as well as the selected Google name", async () => {
+    const { reviewer, business, receipt } = await createAssignment({
+      googlePlace: true,
+      naverPlace: true,
+      googleReview: true,
+    });
+    await prisma.externalPlace.updateMany({
+      where: { businessId: business.id, platform: "NAVER" },
+      data: {
+        name: "네이버 전용 상호명",
+        address: "서울특별시 중구 네이버로 99",
+      },
+    });
+    await prisma.receipt.update({
+      where: { id: receipt.id },
+      data: {
+        reviewDraftText:
+          "네이버 전용 상호명은 서울특별시 중구 네이버로 99에 있어 찾기 편했고 전반적으로 만족스러웠습니다.",
+        reviewDraftVersion: 1,
+      },
+    });
+
+    const result = await generateCampaignReviewDraftForAssignment(
+      reviewer.id,
+      receipt.id,
+    );
+
+    expect(result.text).not.toContain("네이버 전용 상호명");
+    expect(result.text).not.toContain("서울특별시 중구 네이버로 99");
   });
 
   it("limits regeneration to three generated drafts per assignment", async () => {

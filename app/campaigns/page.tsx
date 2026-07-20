@@ -5,11 +5,12 @@ import {
   ReviewerProfilePanel,
 } from "@/components/campaign/ReviewerDashboardPanels";
 import { ReviewerDashboardTabs } from "@/components/campaign/ReviewerDashboardTabs";
+import { ReviewerGuestDock } from "@/components/campaign/ReviewerGuestDock";
 import { ReviewerHero } from "@/components/campaign/ReviewerHero";
+import { ReviewerLandingArtwork } from "@/components/campaign/ReviewerLandingArtwork";
 import { Footer } from "@/components/Footer";
 import { ReviewerLogoutButton } from "@/components/auth/ReviewerLogoutButton";
 import { getReviewerId } from "@/lib/auth/session";
-import { listPublicCampaigns } from "@/lib/domain/operator-campaigns";
 import {
   getPublicCampaignAvailabilitySummary,
   getReviewerCampaignAvailability,
@@ -31,20 +32,15 @@ async function loadReviewerHome(reviewerId: string | null) {
     return {
       account,
       dashboard,
-      campaigns: availability.campaigns,
       availableCount: availability.availableCount,
       totalRewardPoints: availability.totalRewardPoints,
     };
   }
 
-  const [campaigns, availability] = await Promise.all([
-    listPublicCampaigns(),
-    getPublicCampaignAvailabilitySummary(),
-  ]);
+  const availability = await getPublicCampaignAvailabilitySummary();
   return {
     account: null,
     dashboard: null,
-    campaigns,
     availableCount: availability.availableCount,
     totalRewardPoints: availability.totalRewardPoints,
   };
@@ -56,7 +52,13 @@ export default async function CampaignsPage() {
 
   return (
     <>
-      <main className="mx-auto max-w-md px-4 py-4 sm:px-5 sm:py-8">
+      <main
+        className={
+          home.account
+            ? "mx-auto min-h-dvh max-w-md px-4 py-4 sm:px-5 sm:py-8"
+            : "mx-auto flex min-h-dvh w-full max-w-[430px] flex-col overflow-hidden bg-canvas shadow-[0_0_70px_rgba(42,60,84,0.16)] sm:my-6 sm:min-h-[calc(100dvh-48px)] sm:rounded-[30px]"
+        }
+      >
         <ReviewerHero
           account={home.account}
           availableCount={home.availableCount}
@@ -67,8 +69,8 @@ export default async function CampaignsPage() {
           <ReviewerDashboardTabs
             campaignPanel={
               <ReviewerCampaignPanel
-                campaigns={home.campaigns}
                 availableCount={home.availableCount}
+                totalRewardPoints={home.totalRewardPoints}
               />
             }
             historyPanel={<ReviewerHistoryPanel dashboard={home.dashboard} />}
@@ -77,16 +79,18 @@ export default async function CampaignsPage() {
             }
           />
         ) : (
-          <div className="mt-8">
-            <ReviewerCampaignPanel
-              campaigns={home.campaigns}
-              availableCount={home.availableCount}
-            />
-          </div>
+          <>
+            <ReviewerLandingArtwork />
+            <ReviewerGuestDock />
+          </>
         )}
       </main>
-      {home.account && <ReviewerLogoutButton />}
-      <Footer />
+      {home.account ? (
+        <>
+          <ReviewerLogoutButton />
+          <Footer />
+        </>
+      ) : null}
     </>
   );
 }

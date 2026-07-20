@@ -1,5 +1,8 @@
 import { getReviewerId } from "@/lib/auth/session";
-import { getReviewerCampaignAvailability } from "@/lib/domain/reviewer-campaigns";
+import {
+  getReviewerCampaignAvailability,
+  toConcealedReviewerAssignment,
+} from "@/lib/domain/reviewer-campaigns";
 import { err, ok } from "@/lib/http";
 
 export const runtime = "nodejs";
@@ -21,23 +24,9 @@ export async function GET() {
           assignmentExpiresAt:
             availability.activeAssignment.assignmentExpiresAt.toISOString(),
           remainingSeconds: availability.activeAssignment.remainingSeconds,
-          assignedCampaign: {
-            id: availability.activeAssignment.assignedCampaign.id,
-            slug: availability.activeAssignment.assignedCampaign.slug,
-            campaignName:
-              availability.activeAssignment.assignedCampaign.campaignName,
-            businessName:
-              availability.activeAssignment.assignedCampaign.businessName,
-            address: availability.activeAssignment.assignedCampaign.address,
-            category: availability.activeAssignment.assignedCampaign.category,
-            googleMapsUrl:
-              availability.activeAssignment.assignedCampaign.googleMapsUrl,
-            rating: availability.activeAssignment.assignedCampaign.rating,
-            reviewCount:
-              availability.activeAssignment.assignedCampaign.reviewCount,
-            rewardPoints:
-              availability.activeAssignment.assignedCampaign.rewardPoints,
-          },
+          assignedCampaign: toConcealedReviewerAssignment(
+            availability.activeAssignment.assignedCampaign,
+          ),
         }
       : null,
   });

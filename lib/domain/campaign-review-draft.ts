@@ -101,6 +101,8 @@ type DraftContext = {
   businessId: string;
   businessName: string;
   address: string | null;
+  placeNames: string[];
+  placeAddresses: string[];
   category: string | null;
   industry: CampaignReviewDraftIndustry;
   guidance: CampaignDraftGuidance;
@@ -248,6 +250,31 @@ function normalizedForTermCheck(value: string) {
   return value.toLocaleLowerCase("ko-KR").replace(/\s+/g, "");
 }
 
+function escapedRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function concealPlaceIdentifiers(text: string, context: DraftContext) {
+  let concealed = text;
+  const identifiers = [
+    ...context.placeNames.map((value) => ({ value, replacement: "이곳" })),
+    ...context.placeAddresses.map((value) => ({ value, replacement: "" })),
+  ];
+
+  for (const identifier of identifiers) {
+    const value = identifier.value?.trim();
+    if (!value) continue;
+    concealed = concealed.replace(
+      new RegExp(escapedRegExp(value), "giu"),
+      identifier.replacement,
+    );
+  }
+
+  return compactWhitespace(concealed)
+    .replace(/\s+([,.!?])/g, "$1")
+    .trim();
+}
+
 function validateGeneratedDraft(text: string, context: DraftContext) {
   const matchedTerm = [...defaultForbiddenTerms(context.industry), ...context.guidance.bannedTerms].find((term) => {
     const normalizedTerm = normalizedForTermCheck(term);
@@ -272,11 +299,14 @@ function neutralFallbackDraft(context: DraftContext) {
     : guideKeyword
       ? `${guideKeyword} 정보를 참고해 방문했어요.`
     : `${industryLabel} 정보를 확인한 뒤 방문했어요.`;
-  return `${context.businessName}은 ${factLine} 실제 이용 경험에 맞는 내용을 더해 자연스럽게 후기를 남기고 싶은 곳입니다.`;
+  return `이곳은 ${factLine} 실제 이용 경험에 맞는 내용을 더해 자연스럽게 후기를 남기고 싶은 곳입니다.`;
 }
 
 function ensureDraftLength(text: string, context: DraftContext) {
-  let draft = limitSentenceCount(normalizeGeneratedDraft(text));
+  let draft = concealPlaceIdentifiers(
+    limitSentenceCount(normalizeGeneratedDraft(text)),
+    context,
+  );
   if (nonSpaceLength(draft) < 30) {
     draft = neutralFallbackDraft(context);
   }
@@ -434,6 +464,16 @@ function buildDraftContext(input: {
 
   const businessName = googlePlace?.name ?? naverPlace?.name ?? input.business.name;
   const address = googlePlace?.address ?? naverPlace?.address ?? input.business.address;
+  const placeNames = uniqueStrings([
+    googlePlace?.name,
+    naverPlace?.name,
+    input.business.name,
+  ]);
+  const placeAddresses = uniqueStrings([
+    googlePlace?.address,
+    naverPlace?.address,
+    input.business.address,
+  ]);
   const category = googlePlace?.category ?? naverPlace?.category ?? null;
   const guidance = normalizeCampaignDraftGuidance(input.campaign.draftGuidance);
   const industry = guidance.industry ?? inferCampaignReviewDraftIndustry(category, businessName);
@@ -448,6 +488,8 @@ function buildDraftContext(input: {
   const hashInput = {
     businessName,
     address,
+    placeNames,
+    placeAddresses,
     category,
     industry,
     guidance,
@@ -465,6 +507,8 @@ function buildDraftContext(input: {
     businessId: input.businessId,
     businessName,
     address,
+    placeNames,
+    placeAddresses,
     category,
     industry,
     guidance,
@@ -554,6 +598,7 @@ async function geminiDraft(context: DraftContext, model: string, apiKey: string)
     "- 업종과 맞지 않는 일반 표현을 쓰지 말 것. 특히 의료·뷰티 업종에는 음식, 메뉴, 식사, 데이트, 매장 분위기 표현 금지",
     "- 의료·뷰티 업종은 치료 효과, 개선 보장, 부작용 없음 같은 결과 보장 표현 금지",
     "- '광고', '협찬', '제공' 같은 표현 금지",
+    "- 매장명과 주소를 원고에 직접 쓰지 말고 '이곳'처럼 장소를 특정하지 않는 표현 사용",
     "- 참고 리뷰/블로그 문구를 그대로 베끼지 말고 재구성",
     "- 원고 텍스트만 출력",
     "",
@@ -800,15 +845,35 @@ export async function generateCampaignReviewDraftForAssignment(
     );
   }
 
+  const context = buildDraftContext({
+    assignmentId: receipt.id,
+    campaignId: receipt.campaignId,
+    businessId: receipt.businessId,
+    campaign: receipt.campaign,
+    business: receipt.business,
+  });
   const existingDraft = receipt.reviewDraftText?.trim();
   const existingGeneratedAt = receipt.reviewDraftGeneratedAt ?? receipt.createdAt;
   if (existingDraft && !options.regenerate) {
+    const shouldConceal = [
+      REVIEWER_ASSIGNMENT_STATUS_ASSIGNED,
+      "VERIFIED",
+    ].includes(receipt.status);
+    const returnedDraft = shouldConceal
+      ? concealPlaceIdentifiers(existingDraft, context)
+      : existingDraft;
+    if (returnedDraft !== existingDraft) {
+      await db.receipt.update({
+        where: { id: receipt.id },
+        data: { reviewDraftText: returnedDraft },
+      });
+    }
     const groups = receipt.reviewDraftSourceGroupsJson
       ? (JSON.parse(receipt.reviewDraftSourceGroupsJson) as CampaignReviewDraftResult["sourceGroups"])
       : [];
     return {
       assignmentId: receipt.id,
-      text: existingDraft,
+      text: returnedDraft,
       provider: receipt.reviewDraftProvider ?? "unknown",
       model: receipt.reviewDraftModel ?? "unknown",
       sourceGroups: groups,
@@ -835,13 +900,6 @@ export async function generateCampaignReviewDraftForAssignment(
     throw new CampaignReviewDraftError("REGENERATION_LIMIT_EXCEEDED", "원고 재생성은 최대 3회까지만 가능합니다.", 429);
   }
 
-  const context = buildDraftContext({
-    assignmentId: receipt.id,
-    campaignId: receipt.campaignId,
-    businessId: receipt.businessId,
-    campaign: receipt.campaign,
-    business: receipt.business,
-  });
   assertDraftContextReady(context);
 
   const generated = await generateDraftText(context);
