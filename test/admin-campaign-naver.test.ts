@@ -494,6 +494,35 @@ describe("admin campaign naver candidate target", () => {
     });
   });
 
+  it("does not auto-connect a same-name Naver place below 90% confidence", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        responseJson({
+          items: [
+            {
+              title: "Test Place",
+              link: "https://map.naver.com/p/entry/place/1234567890",
+              category: "Restaurant",
+              roadAddress: "Busan Haeundae-gu 99",
+            },
+          ],
+        }),
+      ),
+    );
+
+    const result = await findBestNaverPlaceSnapshotForCampaign({
+      business: {
+        name: "Test Place",
+        address: "Seoul Jung-gu 1",
+        externalPlaces: [],
+      },
+    });
+
+    expect(result.candidateCount).toBeGreaterThan(0);
+    expect(result.place).toBeNull();
+  });
+
   it("skips automatic Naver candidate selection when provider keys are missing", async () => {
     delete process.env.NAVER_CLIENT_ID;
     delete process.env.NAVER_CLIENT_SECRET;

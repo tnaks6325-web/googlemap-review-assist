@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { prisma } from "@/lib/db";
 import { requestSettlement, processSettlement, upsertReviewerPayoutAccount } from "@/lib/domain/settlement";
 import { getWalletSummary } from "@/lib/domain/points";
@@ -320,6 +320,127 @@ describe("운영자형 캠페인 목록", () => {
     const detail = await getPublicCampaignDetail(place!.business.campaigns[0].slug);
     expect(detail?.googleMapsUrl).toBe("https://maps.google.com/?cid=12345");
     expect(await prisma.campaignCode.count({ where: { campaignId: place!.business.campaigns[0].id } })).toBe(3);
+  });
+
+  it("시트 반영은 확인된 Naver Place ID를 자동 연결하고 기존 보정 대상도 승격한다", async () => {
+    const previousClientId = process.env.NAVER_CLIENT_ID;
+    const previousClientSecret = process.env.NAVER_CLIENT_SECRET;
+    process.env.NAVER_CLIENT_ID = "test-naver-client-id";
+    process.env.NAVER_CLIENT_SECRET = "test-naver-client-secret";
+
+    const businessName = `Auto Naver ${uniq()}`;
+    const placeId = "1494727146";
+    const row = {
+      rowNumber: 7,
+      status: "READY" as const,
+      advertiserName: "Auto Naver advertiser",
+      businessName,
+      searchKeyword: businessName,
+      landingUrl: "https://maps.google.com/?cid=98765",
+      startDate: "2026-07-01",
+      endDate: "2026-07-15",
+      totalQuota: 3,
+      dailyQuota: 1,
+      guide: "Only describe the actual visit.",
+      guideKeywords: [],
+      examplePhrases: [],
+      examplePhraseCount: 0,
+      excludedDays: [],
+      errors: [],
+      warnings: [],
+      googlePlace: {
+        status: "RESOLVED" as const,
+        providerConfigured: true,
+        input: businessName,
+        placeId: `ChIJ-${uniq()}`,
+        name: businessName,
+        address: "Seoul Test-ro 1",
+        url: "https://maps.google.com/?cid=98765",
+        rating: 4.7,
+        reviewCount: 33,
+        matchConfidence: 100,
+        message: null,
+      },
+    };
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
+        if (url.startsWith("https://openapi.naver.com/")) {
+          return new Response(
+            JSON.stringify({
+              items: [
+                {
+                  title: businessName,
+                  link: "",
+                  category: "Restaurant",
+                  roadAddress: "Seoul Test-ro 1",
+                },
+              ],
+            }),
+            { status: 200, headers: { "content-type": "application/json" } },
+          );
+        }
+
+        return new Response(
+          `<a href="https://map.naver.com/p/entry/place/${placeId}">${businessName}</a>`,
+          { status: 200, headers: { "content-type": "text/html; charset=utf-8" } },
+        );
+      }),
+    );
+
+    try {
+      await syncGoogleMapReviewCampaignRows([row]);
+      const business = await prisma.business.findFirstOrThrow({
+        where: { googlePlaceId: row.googlePlace.placeId },
+      });
+      let naverPlace = await prisma.externalPlace.findUniqueOrThrow({
+        where: {
+          businessId_platform: {
+            businessId: business.id,
+            platform: "NAVER",
+          },
+        },
+      });
+      expect(naverPlace).toMatchObject({
+        externalId: placeId,
+        matchStatus: "LINKED",
+      });
+
+      await prisma.externalPlace.update({
+        where: { id: naverPlace.id },
+        data: {
+          externalId: null,
+          url: null,
+          matchStatus: "NEEDS_REVIEW",
+        },
+      });
+      await syncGoogleMapReviewCampaignRows([row]);
+      naverPlace = await prisma.externalPlace.findUniqueOrThrow({
+        where: {
+          businessId_platform: {
+            businessId: business.id,
+            platform: "NAVER",
+          },
+        },
+      });
+      expect(naverPlace).toMatchObject({
+        externalId: placeId,
+        matchStatus: "LINKED",
+      });
+    } finally {
+      vi.unstubAllGlobals();
+      if (previousClientId == null) delete process.env.NAVER_CLIENT_ID;
+      else process.env.NAVER_CLIENT_ID = previousClientId;
+      if (previousClientSecret == null) delete process.env.NAVER_CLIENT_SECRET;
+      else process.env.NAVER_CLIENT_SECRET = previousClientSecret;
+    }
   });
 
   it("관리자 목록은 비활성 캠페인과 운영 지표를 함께 반환", async () => {

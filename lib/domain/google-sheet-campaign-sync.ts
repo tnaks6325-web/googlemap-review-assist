@@ -87,9 +87,9 @@ async function ensureAutoNaverCandidate(
 ) {
   const existingNaverPlace = await prisma.externalPlace.findUnique({
     where: { businessId_platform: { businessId: business.id, platform: "NAVER" } },
-    select: { id: true },
+    select: { externalId: true, matchStatus: true },
   });
-  if (existingNaverPlace) return;
+  if (existingNaverPlace?.externalId && existingNaverPlace.matchStatus === "LINKED") return;
 
   const autoNaver = await findBestNaverPlaceSnapshotForCampaign({
     business: {
@@ -106,7 +106,7 @@ async function ensureAutoNaverCandidate(
     },
   });
 
-  if (autoNaver.place) await saveExternalPlace(business.id, autoNaver.place, "NEEDS_REVIEW");
+  if (autoNaver.place) await saveExternalPlace(business.id, autoNaver.place);
 }
 
 export async function syncGoogleMapReviewCampaignRows(

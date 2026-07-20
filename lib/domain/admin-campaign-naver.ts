@@ -184,7 +184,7 @@ export interface AutoNaverCandidateResult {
   candidateCount: number;
 }
 
-export const MIN_AUTO_NAVER_MATCH_CONFIDENCE = 40;
+export const MIN_AUTO_NAVER_MATCH_CONFIDENCE = MIN_AUTO_NAVER_LINK_CONFIDENCE;
 
 export async function findBestNaverPlaceSnapshotForCampaign(
   campaign: AdminCampaignNaverSource,
