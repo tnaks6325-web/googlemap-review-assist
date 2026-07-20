@@ -163,7 +163,21 @@ export function AdminCampaignNaverCandidates({
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="font-semibold text-ink">
-                {connectedPlace.name}{" "}
+                {connectedUrl ? (
+                  <a
+                    href={connectedUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline decoration-line-strong underline-offset-4 transition hover:text-brand hover:decoration-brand"
+                  >
+                    {connectedPlace.name}
+                    <span aria-hidden="true" className="ml-1 text-xs text-brand">
+                      ↗
+                    </span>
+                  </a>
+                ) : (
+                  connectedPlace.name
+                )}{" "}
                 {connectedPlace.matchConfidence != null ? (
                   <span className="text-xs font-medium text-brand">{connectedPlace.matchConfidence}% 일치</span>
                 ) : null}
@@ -172,11 +186,6 @@ export function AdminCampaignNaverCandidates({
                 {[connectedPlace.category, connectedPlace.address].filter(Boolean).join(" · ") || "상세 정보 없음"}
               </p>
             </div>
-            {connectedUrl ? (
-              <a href={connectedUrl} target="_blank" rel="noreferrer" className="shrink-0 text-xs font-semibold text-brand">
-                열기
-              </a>
-            ) : null}
           </div>
         ) : (
           <p className="text-sm text-ink-weak">
@@ -190,7 +199,13 @@ export function AdminCampaignNaverCandidates({
       <div className="mt-3 rounded-card border border-line bg-surface p-3">
         <p className="text-xs font-semibold text-ink">관리자 보정</p>
         <p className="mt-1 text-xs text-ink-weak">
-          네이버 스마트플레이스 상세 화면의 공유 링크를 붙여넣으면 해당 Place ID로 확정 저장합니다.
+          네이버 지도에서 매장 상세 화면을 연 뒤 주소창 URL 또는 공유 링크를
+          붙여넣으세요. URL에 매장 Place ID 숫자가 포함되어야 합니다.
+        </p>
+        <p className="mt-1 break-all rounded-[8px] bg-canvas px-2 py-1.5 text-[11px] leading-5 text-ink-weak">
+          예: https://map.naver.com/p/entry/place/2059222523
+          <br />
+          또는 https://pcmap.place.naver.com/restaurant/2059222523/home
         </p>
         <div className="mt-2 flex flex-col gap-2 sm:flex-row">
           <input
@@ -245,7 +260,21 @@ export function AdminCampaignNaverCandidates({
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <p className="font-semibold text-ink">
-                            {candidate.title}{" "}
+                            {link ? (
+                              <a
+                                href={link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="underline decoration-line-strong underline-offset-4 transition hover:text-brand hover:decoration-brand"
+                              >
+                                {candidate.title}
+                                <span aria-hidden="true" className="ml-1 text-xs text-brand">
+                                  ↗
+                                </span>
+                              </a>
+                            ) : (
+                              candidate.title
+                            )}{" "}
                             <span className="text-xs font-medium text-brand">{candidate.matchConfidence}% 일치</span>
                           </p>
                           <p className="mt-1 text-xs text-ink-weak">
@@ -254,11 +283,6 @@ export function AdminCampaignNaverCandidates({
                           </p>
                         </div>
                         <div className="flex shrink-0 flex-col items-end gap-2">
-                          {link ? (
-                            <a href={link} target="_blank" rel="noreferrer" className="text-xs font-semibold text-brand">
-                              열기
-                            </a>
-                          ) : null}
                           <Button
                             type="button"
                             variant={saved && !canConfirmSaved ? "text" : "secondary"}
