@@ -65,5 +65,7 @@ describe("admin campaign detail attention borders", () => {
 
     expect(emptyHtml).toContain("border-amber-200");
     expect(readyHtml).not.toContain("border-amber-200");
+    expect(emptyHtml).toContain("원고 사실 카드");
+    expect(emptyHtml).toContain("자료 분석");
   });
 });

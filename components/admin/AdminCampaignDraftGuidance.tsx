@@ -8,6 +8,7 @@ import {
   type CampaignDraftGuidance,
   type CampaignReviewDraftIndustry,
 } from "@/lib/domain/campaign-review-draft";
+import { AdminCampaignDraftEvidence } from "@/components/admin/AdminCampaignDraftEvidence";
 
 interface GuidanceResponse {
   guidance: CampaignDraftGuidance;
@@ -160,6 +161,8 @@ export function AdminCampaignDraftGuidance({
           <p className="mt-2 text-xs text-ink-weak">시트에 등록된 리뷰 문구 예시가 없습니다.</p>
         )}
       </div>
+
+      <AdminCampaignDraftEvidence campaignId={campaignId} />
 
       {message ? <p className="mt-3 text-xs font-semibold text-success">{message}</p> : null}
       {error ? <p className="mt-3 text-xs font-semibold text-danger">{error}</p> : null}

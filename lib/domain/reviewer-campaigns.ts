@@ -210,6 +210,11 @@ async function fetchActiveCampaignRows(db: DbClient) {
         take: 5,
       },
       draftGuidance: true,
+      draftEvidence: {
+        where: { status: "APPROVED" },
+        select: { id: true, facet: true },
+        take: 30,
+      },
     },
   });
 }
@@ -242,6 +247,12 @@ function toExcludedGooglePlaceKeys(receipts: ReceiptRow[]) {
 }
 
 function hasSufficientDraftSources(campaign: CampaignRow) {
+  if (
+    process.env.REVIEW_DRAFT_V2_ENABLED?.trim().toLowerCase() === "true" &&
+    campaign.draftEvidence.length === 0
+  ) {
+    return false;
+  }
   const googlePlace = campaign.business.externalPlaces.find((place) => place.platform === "GOOGLE") ?? null;
   const naverPlace = campaign.business.externalPlaces.find((place) => place.platform === "NAVER") ?? null;
   const googleReviewCount = campaign.business.externalReviews.filter(
