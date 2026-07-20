@@ -1,9 +1,15 @@
+import type { CampaignAvailabilityReason } from "@/lib/domain/campaign-availability-policy";
+
 export type AdminCampaignStatusFilter =
   | "all"
   | "active"
   | "attention"
   | "ready"
-  | "inactive";
+  | "inactive"
+  | "scheduled"
+  | "ended"
+  | "daily_full"
+  | "total_full";
 
 export interface AdminCampaignFilterRow {
   businessName: string;
@@ -11,6 +17,8 @@ export interface AdminCampaignFilterRow {
   address: string | null;
   category: string | null;
   active: boolean;
+  isAvailableToday: boolean;
+  availabilityReason: CampaignAvailabilityReason;
   canGenerateReviewDraft: boolean;
   naverPlace: { matchStatus: string } | null;
 }
@@ -23,6 +31,42 @@ export function operationalCampaignStatus(
       key: "inactive" as const,
       label: "중지됨",
       tone: "neutral" as const,
+    };
+  }
+
+  if (campaign.availabilityReason === "INVALID_CONFIGURATION") {
+    return {
+      key: "attention" as const,
+      label: "보정 필요",
+      tone: "warning" as const,
+    };
+  }
+  if (campaign.availabilityReason === "BEFORE_START_DATE") {
+    return {
+      key: "scheduled" as const,
+      label: "운영 예정",
+      tone: "neutral" as const,
+    };
+  }
+  if (campaign.availabilityReason === "AFTER_END_DATE") {
+    return {
+      key: "ended" as const,
+      label: "운영 종료",
+      tone: "neutral" as const,
+    };
+  }
+  if (campaign.availabilityReason === "TOTAL_QUOTA_REACHED") {
+    return {
+      key: "total_full" as const,
+      label: "전체 마감",
+      tone: "neutral" as const,
+    };
+  }
+  if (campaign.availabilityReason === "DAILY_QUOTA_REACHED") {
+    return {
+      key: "daily_full" as const,
+      label: "오늘 마감",
+      tone: "warning" as const,
     };
   }
 

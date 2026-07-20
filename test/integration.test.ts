@@ -220,7 +220,16 @@ describe("운영자형 캠페인 목록", () => {
       rawJson: null,
     });
     const active = await prisma.campaign.create({
-      data: { businessId: biz.id, slug: await generateUniqueSlug(), name: "구글맵 방문 캠페인", active: true },
+      data: {
+        businessId: biz.id,
+        slug: await generateUniqueSlug(),
+        name: "구글맵 방문 캠페인",
+        active: true,
+        totalQuota: 25,
+        dailyQuota: 5,
+        startDate: "2020-01-01",
+        endDate: "2099-12-31",
+      },
     });
     const inactive = await prisma.campaign.create({
       data: { businessId: biz.id, slug: await generateUniqueSlug(), name: "중지 캠페인", active: false },
@@ -293,6 +302,12 @@ describe("운영자형 캠페인 목록", () => {
     });
     expect(place?.business.googlePlaceId).toBe("ChIJsheetCampaign123");
     expect(place?.business.campaigns).toHaveLength(1);
+    expect(place?.business.campaigns[0]).toMatchObject({
+      totalQuota: 3,
+      dailyQuota: 1,
+      startDate: "2026-07-01",
+      endDate: "2026-07-15",
+    });
 
     const guidance = await prisma.campaignDraftGuidance.findUnique({
       where: { campaignId: place!.business.campaigns[0].id },
@@ -317,7 +332,16 @@ describe("운영자형 캠페인 목록", () => {
       },
     });
     const campaign = await prisma.campaign.create({
-      data: { businessId: biz.id, slug: await generateUniqueSlug(), name: "시트 수입 캠페인", active: false },
+      data: {
+        businessId: biz.id,
+        slug: await generateUniqueSlug(),
+        name: "시트 수입 캠페인",
+        active: false,
+        totalQuota: 25,
+        dailyQuota: 5,
+        startDate: "2020-01-01",
+        endDate: "2099-12-31",
+      },
     });
     await prisma.campaignCode.createMany({
       data: [
@@ -348,6 +372,7 @@ describe("운영자형 캠페인 목록", () => {
         source: "CAMPAIGN_ASSIGNMENT",
         dedupeHash: `complete:${uniq()}`,
         status: "COMPLETED",
+        reviewReviewedAt: new Date(),
       },
     });
     await prisma.pointTransaction.create({
@@ -367,6 +392,10 @@ describe("운영자형 캠페인 목록", () => {
       businessName: "블리비의원 건대점",
       assignedCount: 2,
       completedCount: 1,
+      assignedTodayCount: 2,
+      completedTodayCount: 1,
+      totalQuota: 25,
+      dailyQuota: 5,
       paidPointAmount: 5000,
       menuCount: 1,
       issuedCodeCount: 2,

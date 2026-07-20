@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { get, put } = vi.hoisted(() => ({ get: vi.fn(), put: vi.fn() }));
+const { del, get, put } = vi.hoisted(() => ({ del: vi.fn(), get: vi.fn(), put: vi.fn() }));
 
-vi.mock("@vercel/blob", () => ({ get, put }));
+vi.mock("@vercel/blob", () => ({ del, get, put }));
 
 import {
   MAX_REVIEW_PROOF_BYTES,
   ReviewProofStorageError,
+  deleteReviewProof,
   isPrivateReviewProofUrl,
   uploadReviewProof,
   validateReviewProofImage,
@@ -16,7 +17,20 @@ const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
 
 describe("private review proof storage", () => {
   beforeEach(() => {
+    del.mockReset();
     put.mockReset();
+  });
+
+  it("deletes only validated private review-proof URLs", async () => {
+    const url =
+      "https://store.private.blob.vercel-storage.com/review-proofs/assignment/proof-random.png";
+    del.mockResolvedValue(undefined);
+
+    await deleteReviewProof(url);
+
+    expect(del).toHaveBeenCalledWith(url);
+    await expect(deleteReviewProof("https://example.com/proof.png")).resolves.toBeUndefined();
+    expect(del).toHaveBeenCalledTimes(1);
   });
 
   it("accepts a supported image only when its declared MIME type matches its signature", () => {

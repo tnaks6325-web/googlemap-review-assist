@@ -11,6 +11,7 @@ import { getReviewerSettlementProfile } from "@/lib/domain/settlement";
 import { err, ok } from "@/lib/http";
 import {
   ReviewProofStorageError,
+  deleteReviewProof,
   uploadReviewProof,
   validateReviewProofImage,
 } from "@/lib/review-proof-storage";
@@ -24,6 +25,7 @@ export async function POST(req: Request) {
   const reviewerId = await getReviewerId();
   if (!reviewerId) return err("UNAUTHORIZED", "로그인이 필요해요.", 401);
 
+  let uploadedProofUrl: string | null = null;
   try {
     const form = await req.formData();
     const assignmentId = String(form.get("assignmentId") ?? "");
@@ -62,6 +64,7 @@ export async function POST(req: Request) {
       }),
       analysisPromise,
     ]);
+    uploadedProofUrl = screenshotUrl;
 
     const result = await submitReviewerCampaignProof(reviewerId, assignmentId, {
       screenshotUrl,
@@ -70,6 +73,7 @@ export async function POST(req: Request) {
       draftText: expectedDraftText,
       analysis,
     });
+    uploadedProofUrl = null;
     if (analysis.status === "UNAVAILABLE") {
       await enqueueReviewProofAnalysis({ assignmentId }).catch(() => undefined);
     }
@@ -79,6 +83,9 @@ export async function POST(req: Request) {
       settlementProfileRequired: profile.settlementProfileRequired,
     });
   } catch (e) {
+    if (uploadedProofUrl) {
+      await deleteReviewProof(uploadedProofUrl).catch(() => undefined);
+    }
     if (e instanceof ReviewProofStorageError) return err(e.code, e.message, e.status);
     if (e instanceof ReviewerCampaignError) return err(e.code, e.message, e.status);
     return err("COMPLETE_FAILED", "완료 신고를 처리하지 못했어요.", 500);

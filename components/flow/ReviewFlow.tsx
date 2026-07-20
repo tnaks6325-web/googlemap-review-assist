@@ -69,10 +69,18 @@ interface AvailabilityResponse {
   totalRewardPoints: number;
   cooldownDays: number;
   categoryCounts?: CategoryCount[];
+  activeAssignment?: {
+    assignmentId: string;
+    assignmentExpiresAt: string;
+    remainingSeconds: number;
+    assignedCampaign: AssignedCampaign;
+  } | null;
 }
 
 interface AssignResponse extends AvailabilityResponse {
   assignmentId: string | null;
+  assignmentExpiresAt: string | null;
+  remainingSeconds: number;
   assignedCampaign: AssignedCampaign | null;
 }
 
@@ -125,6 +133,8 @@ export function ReviewFlow({
   const [cooldownDays, setCooldownDays] = useState(initialCooldownDays);
   const [assignedCampaign, setAssignedCampaign] = useState<AssignedCampaign | null>(null);
   const [assignmentId, setAssignmentId] = useState<string | null>(null);
+  const [assignmentExpiresAt, setAssignmentExpiresAt] = useState<string | null>(null);
+  const [remainingSeconds, setRemainingSeconds] = useState(0);
   const [draft, setDraft] = useState("");
   const [draftMeta, setDraftMeta] = useState<DraftResponse | null>(null);
   const [copied, setCopied] = useState(false);
@@ -140,6 +150,26 @@ export function ReviewFlow({
   const currentCampaign = assignedCampaign ?? initialCampaign;
   const stepIndex = Math.max(FLOW.indexOf(step), 0);
   const ctaPoints = formatPoints(totalRewardPoints);
+  const assignmentExpired =
+    Boolean(assignmentId) && step !== "complete" && remainingSeconds <= 0;
+  const remainingLabel = `${Math.floor(remainingSeconds / 60)
+    .toString()
+    .padStart(2, "0")}:${(remainingSeconds % 60).toString().padStart(2, "0")}`;
+
+  useEffect(() => {
+    if (!assignmentExpiresAt || step === "complete") return;
+    const updateRemaining = () => {
+      setRemainingSeconds(
+        Math.max(
+          0,
+          Math.ceil((new Date(assignmentExpiresAt).getTime() - Date.now()) / 1000),
+        ),
+      );
+    };
+    updateRemaining();
+    const timer = window.setInterval(updateRemaining, 1_000);
+    return () => window.clearInterval(timer);
+  }, [assignmentExpiresAt, step]);
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -160,10 +190,20 @@ export function ReviewFlow({
     setCooldownDays(data.cooldownDays);
   };
 
+  const restoreActiveAssignment = (data: AvailabilityResponse) => {
+    if (!data.activeAssignment) return false;
+    setAssignmentId(data.activeAssignment.assignmentId);
+    setAssignmentExpiresAt(data.activeAssignment.assignmentExpiresAt);
+    setRemainingSeconds(data.activeAssignment.remainingSeconds);
+    setAssignedCampaign(data.activeAssignment.assignedCampaign);
+    setStep("assigned");
+    return true;
+  };
+
   const loadAvailability = async () => {
     const data = await getJson<AvailabilityResponse>("/api/reviewer/campaigns/available");
     applyAvailability(data);
-    setStep("summary");
+    if (!restoreActiveAssignment(data)) setStep("summary");
   };
 
   useEffect(() => {
@@ -176,11 +216,8 @@ export function ReviewFlow({
       try {
         const data = await getJson<AvailabilityResponse>("/api/reviewer/campaigns/available");
         if (cancelled) return;
-        setAvailableCount(data.availableCount);
-        setTotalRewardPoints(data.totalRewardPoints);
-        setCategoryCounts(data.categoryCounts ?? []);
-        setCooldownDays(data.cooldownDays);
-        setStep("summary");
+        applyAvailability(data);
+        if (!restoreActiveAssignment(data)) setStep("summary");
       } catch (error) {
         if (!cancelled) {
           setError(error instanceof Error ? error.message : "로그인 상태를 확인하지 못했어요");
@@ -205,6 +242,8 @@ export function ReviewFlow({
       const data = await postJson<AssignResponse>("/api/reviewer/campaigns/assign", {});
       applyAvailability(data);
       setAssignmentId(data.assignmentId);
+      setAssignmentExpiresAt(data.assignmentExpiresAt);
+      setRemainingSeconds(data.remainingSeconds);
       setAssignedCampaign(data.assignedCampaign);
       setDraft("");
       setDraftMeta(null);
@@ -267,6 +306,8 @@ export function ReviewFlow({
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error?.message ?? "검수 요청에 실패했어요");
       setCompletion(data);
+      setAssignmentExpiresAt(null);
+      setRemainingSeconds(0);
       setStep("complete");
     });
 
@@ -274,6 +315,8 @@ export function ReviewFlow({
     run(async () => {
       setAssignedCampaign(null);
       setAssignmentId(null);
+      setAssignmentExpiresAt(null);
+      setRemainingSeconds(0);
       setDraft("");
       setDraftMeta(null);
       setScreenshot(null);
@@ -299,7 +342,11 @@ export function ReviewFlow({
       <div className="mb-6">
         <div className="mb-3 flex items-center justify-between">
           <p className="text-sm font-medium text-ink-weak">{headerTitle}</p>
-          <p className="text-xs font-medium text-ink-weak">{cooldownDays}일 중복 제한</p>
+          <p className="text-xs font-medium text-ink-weak">
+            {assignmentId && step !== "complete"
+              ? `제출까지 ${remainingLabel}`
+              : `${cooldownDays}일 중복 제한`}
+          </p>
         </div>
         <StepBar current={stepIndex + 1} total={FLOW.length} />
       </div>
@@ -480,6 +527,11 @@ export function ReviewFlow({
         onClose={() => setReviewGuideOpen(false)}
       />
 
+      {assignmentExpired && (
+        <p className="mb-3 rounded-field bg-amber-50 px-3 py-2 text-center text-sm font-medium text-amber-700">
+          배정 시간이 만료되었습니다. 다시 배정받아 주세요.
+        </p>
+      )}
       {error && <p className="mb-3 rounded-field bg-danger/10 px-3 py-2 text-center text-sm text-danger">{error}</p>}
 
       <div className="space-y-2 pt-4">
@@ -494,9 +546,15 @@ export function ReviewFlow({
           </>
         )}
         {step === "assigned" && (
-          <Button fullWidth loading={busy} onClick={generateDraft}>
-            원고 생성하고 복사하기
-          </Button>
+          assignmentExpired ? (
+            <Button fullWidth loading={busy} onClick={refreshForNextCampaign}>
+              다시 배정받기
+            </Button>
+          ) : (
+            <Button fullWidth loading={busy} onClick={generateDraft}>
+              원고 생성하고 복사하기
+            </Button>
+          )
         )}
         {step === "draft" && (
           <>
@@ -508,6 +566,7 @@ export function ReviewFlow({
               <input
                 type="file"
                 accept="image/png,image/jpeg,image/webp"
+                disabled={assignmentExpired}
                 className="mt-3 block w-full text-sm text-ink-sub"
                 onChange={(event) => setScreenshot(event.target.files?.[0] ?? null)}
               />
@@ -515,9 +574,15 @@ export function ReviewFlow({
                 <span className="mt-2 block text-xs font-semibold text-brand">{screenshot.name}</span>
               )}
             </label>
-            <Button fullWidth loading={busy} disabled={!screenshot} onClick={completeAssignment}>
-              리뷰 캡처 제출하기
-            </Button>
+            {assignmentExpired ? (
+              <Button fullWidth loading={busy} onClick={refreshForNextCampaign}>
+                다시 배정받기
+              </Button>
+            ) : (
+              <Button fullWidth loading={busy} disabled={!screenshot} onClick={completeAssignment}>
+                리뷰 캡처 제출하기
+              </Button>
+            )}
             <Button fullWidth variant="text" loading={busy} onClick={refreshForNextCampaign}>
               다른 캠페인 참여하기
             </Button>

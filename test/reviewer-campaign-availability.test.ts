@@ -21,11 +21,22 @@ async function createReviewer() {
 interface CampaignFixtureOptions {
   category?: string | null;
   sourceReady?: boolean;
+  totalQuota?: number;
+  dailyQuota?: number;
+  startDate?: string;
+  endDate?: string;
 }
 
 async function createCampaign(
   googlePlaceId: string,
-  { category = "음식점", sourceReady = true }: CampaignFixtureOptions = {},
+  {
+    category = "음식점",
+    sourceReady = true,
+    totalQuota = 25,
+    dailyQuota = 5,
+    startDate = "2020-01-01",
+    endDate = "2099-12-31",
+  }: CampaignFixtureOptions = {},
 ) {
   const owner = await prisma.owner.create({ data: { email: `reviewer-${uniq()}@test.local`, password: "x" } });
   const business = await prisma.business.create({
@@ -76,6 +87,10 @@ async function createCampaign(
       slug: await generateUniqueSlug(),
       name: `campaign-${uniq()}`,
       active: true,
+      totalQuota,
+      dailyQuota,
+      startDate,
+      endDate,
     },
   });
   return { business, campaign };
@@ -153,9 +168,82 @@ describe("reviewer campaign availability", () => {
 
     const receipt = await prisma.receipt.findUnique({ where: { id: result.assignmentId! } });
     expect(receipt).toMatchObject({ reviewerId: reviewer.id, source: "CAMPAIGN_ASSIGNMENT", status: "ASSIGNED" });
+    expect(receipt?.assignmentExpiresAt?.getTime()).toBeGreaterThan(receipt!.createdAt.getTime());
 
     const nextAvailability = await getReviewerCampaignAvailability(reviewer.id);
     expect(nextAvailability.campaigns.map((campaign) => campaign.id)).not.toContain(result.assignedCampaign!.id);
+  });
+
+  it("reuses an unexpired active assignment instead of reserving another slot", async () => {
+    const reviewer = await createReviewer();
+    await prisma.campaign.updateMany({ data: { active: false } });
+    await createCampaign(`google-place-reuse-${uniq()}`);
+    const now = new Date("2026-07-21T00:00:00.000Z");
+
+    const first = await assignReviewerCampaign(reviewer.id, now);
+    const second = await assignReviewerCampaign(reviewer.id, new Date(now.getTime() + 60_000));
+
+    expect(second.assignmentId).toBe(first.assignmentId);
+    expect(second.activeAssignment?.assignmentId).toBe(first.assignmentId);
+    expect(
+      await prisma.receipt.count({
+        where: { reviewerId: reviewer.id, source: "CAMPAIGN_ASSIGNMENT" },
+      }),
+    ).toBe(1);
+  });
+
+  it("releases an unsubmitted assignment after five minutes and does not keep the place cooldown", async () => {
+    const reviewer = await createReviewer();
+    await prisma.campaign.updateMany({ data: { active: false } });
+    const fixture = await createCampaign(`google-place-expiry-${uniq()}`, { dailyQuota: 1 });
+    const now = new Date("2026-07-21T00:00:00.000Z");
+
+    const assigned = await assignReviewerCampaign(reviewer.id, now);
+    const afterExpiry = new Date(now.getTime() + 5 * 60_000);
+    const availability = await getReviewerCampaignAvailability(reviewer.id, prisma, afterExpiry);
+
+    expect(assigned.assignmentId).toBeTruthy();
+    expect(availability.campaigns.map((campaign) => campaign.id)).toContain(fixture.campaign.id);
+    expect(
+      await prisma.receipt.findUnique({ where: { id: assigned.assignmentId! } }),
+    ).toMatchObject({ status: "EXPIRED" });
+  });
+
+  it("hides a campaign when its daily assignment quota is reached", async () => {
+    const firstReviewer = await createReviewer();
+    const secondReviewer = await createReviewer();
+    await prisma.campaign.updateMany({ data: { active: false } });
+    const fixture = await createCampaign(`google-place-daily-cap-${uniq()}`, { dailyQuota: 1 });
+    const now = new Date("2026-07-21T00:00:00.000Z");
+
+    await assignReviewerCampaign(firstReviewer.id, now);
+    const availability = await getReviewerCampaignAvailability(secondReviewer.id, prisma, now);
+
+    expect(availability.campaigns.map((campaign) => campaign.id)).not.toContain(fixture.campaign.id);
+  });
+
+  it("does not reserve more slots than the daily quota under concurrent requests", async () => {
+    const reviewers = await Promise.all([createReviewer(), createReviewer(), createReviewer()]);
+    await prisma.campaign.updateMany({ data: { active: false } });
+    const fixture = await createCampaign(`google-place-concurrent-cap-${uniq()}`, {
+      dailyQuota: 1,
+      totalQuota: 1,
+    });
+    const now = new Date("2026-07-21T00:00:00.000Z");
+
+    await Promise.allSettled(
+      reviewers.map((reviewer) => assignReviewerCampaign(reviewer.id, now)),
+    );
+
+    expect(
+      await prisma.receipt.count({
+        where: {
+          campaignId: fixture.campaign.id,
+          source: "CAMPAIGN_ASSIGNMENT",
+          status: "ASSIGNED",
+        },
+      }),
+    ).toBe(1);
   });
 
   it("screenshot proof waits for admin approval and credits reward points once", async () => {
@@ -217,6 +305,38 @@ describe("reviewer campaign availability", () => {
 
     const wallet = await prisma.pointWallet.findUnique({ where: { reviewerId: reviewer.id } });
     expect(wallet?.balance).toBe(DEFAULT_REWARD_POINTS);
+  });
+
+  it("rejects a proof submitted at the expiry boundary and releases the assignment", async () => {
+    const reviewer = await createReviewer();
+    await prisma.campaign.updateMany({ data: { active: false } });
+    await createCampaign(`google-place-expired-proof-${uniq()}`);
+    const assignedAt = new Date("2026-07-21T00:00:00.000Z");
+    const assigned = await assignReviewerCampaign(reviewer.id, assignedAt);
+    await prisma.receipt.update({
+      where: { id: assigned.assignmentId! },
+      data: {
+        reviewDraftText: "테스트 매장에 방문했고 친절한 안내와 깔끔한 공간이 인상적이었습니다.",
+        reviewDraftVersion: 1,
+      },
+    });
+
+    await expect(
+      submitReviewerCampaignProof(
+        reviewer.id,
+        assigned.assignmentId!,
+        {
+          screenshotUrl: "/uploads/review-proofs/late.png",
+          screenshotMimeType: "image/png",
+          screenshotOriginalName: "late.png",
+          draftText: "테스트 매장에 방문했고 친절한 안내와 깔끔한 공간이 인상적이었습니다.",
+          submittedAt: new Date(assignedAt.getTime() + 5 * 60_000),
+        },
+      ),
+    ).rejects.toMatchObject({ code: "ASSIGNMENT_EXPIRED", status: 409 });
+    expect(
+      await prisma.receipt.findUnique({ where: { id: assigned.assignmentId! } }),
+    ).toMatchObject({ status: "EXPIRED", reviewProofSubmittedAt: null });
   });
 
   it("auto-approves screenshot proof when AI analysis matches the generated draft", async () => {

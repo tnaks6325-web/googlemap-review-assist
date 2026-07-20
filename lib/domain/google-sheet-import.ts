@@ -1,5 +1,6 @@
 import { parseGooglePlaceInput } from "@/lib/domain/external-places";
 import type { ExternalPlaceSnapshot } from "@/lib/domain/external-place-providers";
+import { normalizeSheetDate } from "@/lib/domain/campaign-availability-policy";
 
 export type SheetImportRowStatus = "READY" | "ERROR";
 export type SheetImportPlacePreviewStatus = "RESOLVED" | "MANUAL" | "FAILED" | "SKIPPED";
@@ -198,8 +199,10 @@ export function parseGoogleMapReviewSheet(values: unknown[][]): SheetImportDryRu
     const businessName = cell(row, COLUMN.businessName);
     const searchKeyword = cell(row, COLUMN.searchKeyword);
     const landingUrl = cell(row, COLUMN.landingUrl);
-    const startDate = cell(row, COLUMN.startDate);
-    const endDate = cell(row, COLUMN.endDate);
+    const rawStartDate = cell(row, COLUMN.startDate);
+    const rawEndDate = cell(row, COLUMN.endDate);
+    const startDate = normalizeSheetDate(rawStartDate) ?? "";
+    const endDate = normalizeSheetDate(rawEndDate) ?? "";
     const totalQuota = parsePositiveInt(cell(row, COLUMN.totalQuota));
     const dailyQuota = parsePositiveInt(cell(row, COLUMN.dailyQuota));
     const guide = cell(row, COLUMN.guide);
@@ -214,8 +217,13 @@ export function parseGoogleMapReviewSheet(values: unknown[][]): SheetImportDryRu
     if (!advertiserName) errors.push("광고주명이 필요합니다");
     if (!businessName) errors.push("업체명이 필요합니다");
     if (!landingUrl && !searchKeyword) errors.push("랜딩 URL 또는 검색키워드가 필요합니다");
-    if (!startDate) errors.push("광고 시작일이 필요합니다");
-    if (!endDate) errors.push("광고 종료일이 필요합니다");
+    if (!rawStartDate) errors.push("광고 시작일이 필요합니다");
+    else if (!startDate) errors.push("광고 시작일 형식이 올바르지 않습니다");
+    if (!rawEndDate) errors.push("광고 종료일이 필요합니다");
+    else if (!endDate) errors.push("광고 종료일 형식이 올바르지 않습니다");
+    if (startDate && endDate && endDate < startDate) {
+      errors.push("광고 종료일은 시작일보다 빠를 수 없습니다");
+    }
     if (!totalQuota) errors.push("전체 수량이 필요합니다");
     if (!dailyQuota) errors.push("데일리 수량이 필요합니다");
     if (!businessName && landingUrl) {

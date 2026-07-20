@@ -118,39 +118,43 @@ model Menu {
 }
 
 model Campaign {
-  id         String         @id @default(cuid())
-  businessId String
-  business   Business       @relation(fields: [businessId], references: [id])
-  slug       String         @unique
-  name       String
-  active     Boolean        @default(true)
-  receipts   Receipt[]
-  codes      CampaignCode[]
+  id             String                  @id @default(cuid())
+  businessId     String
+  business       Business                @relation(fields: [businessId], references: [id])
+  slug           String                  @unique
+  name           String
+  active         Boolean                 @default(true)
+  totalQuota     Int?
+  dailyQuota     Int?
+  startDate      String?
+  endDate        String?
+  receipts       Receipt[]
+  codes          CampaignCode[]
   blogReferences CampaignBlogReference[]
-  draftGuidance CampaignDraftGuidance?
-  createdAt  DateTime       @default(now())
+  draftGuidance  CampaignDraftGuidance?
+  createdAt      DateTime                @default(now())
 }
 
 // 원고 생성에 사용할 관리자 승인 사실과 업종별 금지 표현.
 // SQLite 호환을 위해 목록은 JSON 문자열로 저장한다.
 model CampaignDraftGuidance {
-  id                String   @id @default(cuid())
-  campaignId        String   @unique
-  campaign          Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  industry          String?
-  approvedFactsJson String   @default("[]")
-  bannedTermsJson   String   @default("[]")
-  guideKeywordsJson String   @default("[]")
-  reviewExamplesJson String  @default("[]")
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id                 String   @id @default(cuid())
+  campaignId         String   @unique
+  campaign           Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  industry           String?
+  approvedFactsJson  String   @default("[]")
+  bannedTermsJson    String   @default("[]")
+  guideKeywordsJson  String   @default("[]")
+  reviewExamplesJson String   @default("[]")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 }
 
 model CampaignBlogReference {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   campaignId  String
-  campaign    Campaign @relation(fields: [campaignId], references: [id])
-  source      String   @default("NAVER_BLOG_SEARCH")
+  campaign    Campaign  @relation(fields: [campaignId], references: [id])
+  source      String    @default("NAVER_BLOG_SEARCH")
   searchQuery String
   title       String
   description String?
@@ -159,10 +163,10 @@ model CampaignBlogReference {
   bloggerLink String?
   postdate    String?
   publishedAt DateTime?
-  rawJson      String?
-  status       String   @default("ACTIVE")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  rawJson     String?
+  status      String    @default("ACTIVE")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@unique([campaignId, link])
   @@index([campaignId, status])
@@ -186,9 +190,9 @@ model CampaignCode {
 
 // ---------- 고객 / 적립 ----------
 model Reviewer {
-  id            String                  @id @default(cuid())
-  phone         String?                 @unique
-  googleSub     String?                 @unique
+  id            String                 @id @default(cuid())
+  phone         String?                @unique
+  googleSub     String?                @unique
   email         String?
   name          String?
   avatarUrl     String?
@@ -198,7 +202,7 @@ model Reviewer {
   settlements   Settlement[]
   payoutAccount ReviewerPayoutAccount?
   notifications ReviewerNotification[]
-  createdAt     DateTime                @default(now())
+  createdAt     DateTime               @default(now())
 }
 
 model PointWallet {
@@ -209,42 +213,43 @@ model PointWallet {
 }
 
 model Receipt {
-  id           String    @id @default(cuid())
-  businessId   String
-  business     Business  @relation(fields: [businessId], references: [id])
-  campaignId   String
-  campaign     Campaign  @relation(fields: [campaignId], references: [id])
-  reviewerId   String
-  reviewer     Reviewer  @relation(fields: [reviewerId], references: [id])
-  code         String? // 승인번호/식별 코드
-  amount       Int?
-  merchantName String?
-  ocrText      String? // OCR 원문(truncated)
-  reviewDraftText       String?
-  reviewDraftProvider   String?
-  reviewDraftModel      String?
+  id                          String    @id @default(cuid())
+  businessId                  String
+  business                    Business  @relation(fields: [businessId], references: [id])
+  campaignId                  String
+  campaign                    Campaign  @relation(fields: [campaignId], references: [id])
+  reviewerId                  String
+  reviewer                    Reviewer  @relation(fields: [reviewerId], references: [id])
+  code                        String? // 승인번호/식별 코드
+  amount                      Int?
+  merchantName                String?
+  ocrText                     String? // OCR 원문(truncated)
+  reviewDraftText             String?
+  reviewDraftProvider         String?
+  reviewDraftModel            String?
   reviewDraftSourceGroupsJson String?
-  reviewDraftContextHash String?
-  reviewDraftGeneratedAt DateTime?
-  reviewDraftVersion    Int       @default(0)
-  reviewProofImageUrl   String?
-  reviewProofMimeType   String?
-  reviewProofOriginalName String?
-  reviewProofSubmittedAt DateTime?
-  reviewProofExtractedText String?
-  reviewProofSimilarity Float?
-  reviewProofAnalysisStatus String?
-  reviewProofAnalysisReason String?
+  reviewDraftContextHash      String?
+  reviewDraftGeneratedAt      DateTime?
+  reviewDraftVersion          Int       @default(0)
+  reviewProofImageUrl         String?
+  reviewProofMimeType         String?
+  reviewProofOriginalName     String?
+  reviewProofSubmittedAt      DateTime?
+  assignmentExpiresAt         DateTime?
+  reviewProofExtractedText    String?
+  reviewProofSimilarity       Float?
+  reviewProofAnalysisStatus   String?
+  reviewProofAnalysisReason   String?
   reviewProofAnalysisProvider String?
-  reviewProofAnalysisJson String?
-  reviewReviewedAt      DateTime?
-  reviewReviewedBy      String?
-  reviewReviewNote      String?
-  source       String    @default("CODE") // CODE | OCR | CAMPAIGN_ASSIGNMENT
-  dedupeHash   String    @unique // 동일 영수증 재사용 차단
-  status       String    @default("PENDING") // PENDING | VERIFIED | ASSIGNED | REVIEW_SUBMITTED | COMPLETED | REJECTED
-  feedback     Feedback?
-  createdAt    DateTime  @default(now())
+  reviewProofAnalysisJson     String?
+  reviewReviewedAt            DateTime?
+  reviewReviewedBy            String?
+  reviewReviewNote            String?
+  source                      String    @default("CODE") // CODE | OCR | CAMPAIGN_ASSIGNMENT
+  dedupeHash                  String    @unique // 동일 영수증 재사용 차단
+  status                      String    @default("PENDING") // PENDING | VERIFIED | ASSIGNED | REVIEW_SUBMITTED | COMPLETED | REJECTED | EXPIRED
+  feedback                    Feedback?
+  createdAt                   DateTime  @default(now())
 
   @@index([reviewerId])
   @@index([reviewerId, createdAt])
@@ -263,19 +268,19 @@ model RateLimitBucket {
 }
 
 model OperationalJob {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   type        String
-  status      String   @default("PENDING")
-  dedupeKey   String   @unique
+  status      String    @default("PENDING")
+  dedupeKey   String    @unique
   payloadJson String
-  attempts    Int      @default(0)
-  maxAttempts Int      @default(4)
-  runAt       DateTime @default(now())
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(4)
+  runAt       DateTime  @default(now())
   lockedAt    DateTime?
   lastError   String?
   completedAt DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([status, runAt])
 }
@@ -315,7 +320,7 @@ model PointTransaction {
   feedback       Feedback?   @relation(fields: [feedbackId], references: [id])
   settlementId   String?
   settlement     Settlement? @relation(fields: [settlementId], references: [id])
-    idempotencyKey String      @unique // EARN/SETTLE 등 상태 전이별 1회 보장
+  idempotencyKey String      @unique // EARN/SETTLE 등 상태 전이별 1회 보장
   memo           String?
   createdAt      DateTime    @default(now())
 

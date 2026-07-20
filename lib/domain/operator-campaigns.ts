@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/db";
-import { unstable_cache } from "next/cache";
 import {
   toAdminCampaignBlogReference,
   type AdminCampaignBlogReference,
@@ -9,6 +8,16 @@ import {
   summarizeCampaignReviewDraftSources,
   type CampaignDraftGuidance,
 } from "@/lib/domain/campaign-review-draft";
+import {
+  campaignAvailability,
+  type CampaignAvailabilityReason,
+} from "@/lib/domain/campaign-availability-policy";
+import {
+  CAMPAIGN_ASSIGNMENT_SOURCE,
+  emptyCampaignParticipationStats,
+  expireStaleCampaignAssignments,
+  fetchCampaignParticipationStats,
+} from "@/lib/domain/campaign-participation-stats";
 
 export interface PublicCampaignCard {
   id: string;
@@ -21,6 +30,16 @@ export interface PublicCampaignCard {
   rating: number | null;
   reviewCount: number | null;
   completedCount: number;
+  assignedTodayCount: number;
+  completedTodayCount: number;
+  totalQuota: number | null;
+  dailyQuota: number | null;
+  startDate: string | null;
+  endDate: string | null;
+  remainingTodayCount: number;
+  remainingTotalCount: number;
+  isAvailableToday: boolean;
+  availabilityReason: CampaignAvailabilityReason;
   rewardPoints: number;
   availabilityLabel: string;
   statusLabel: string;
@@ -66,10 +85,8 @@ export interface AdminCampaignRow extends PublicCampaignCard {
 }
 
 export const DEFAULT_REWARD_POINTS = 5000;
-const CAMPAIGN_ASSIGNMENT_SOURCE = "CAMPAIGN_ASSIGNMENT";
 const CAMPAIGN_ASSIGNMENT_STATUS_COMPLETED = "COMPLETED";
 const CAMPAIGN_COMPLETION_IDEMPOTENCY_PREFIX = "campaign-complete:";
-const PUBLIC_CAMPAIGN_CACHE_SECONDS = 10;
 
 export function googleMapsSearchUrl(name: string, address: string | null, googlePlaceId: string | null) {
   if (googlePlaceId) {
@@ -79,10 +96,10 @@ export function googleMapsSearchUrl(name: string, address: string | null, google
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query || name)}`;
 }
 
-function availabilityLabel(completedCount: number) {
-  if (completedCount === 0) return "오늘 참여 가능";
-  if (completedCount < 5) return "참여 가능";
-  return "운영자 확인 후 참여";
+function availabilityLabel(isAvailableToday: boolean, assignedTodayCount: number) {
+  if (!isAvailableToday) return "오늘 모집 마감";
+  if (assignedTodayCount === 0) return "오늘 참여 가능";
+  return "참여 가능";
 }
 
 function statusLabel(active: boolean) {
@@ -92,16 +109,19 @@ function statusLabel(active: boolean) {
 type CampaignWithBusiness = Awaited<ReturnType<typeof fetchCampaigns>>[number];
 type CampaignForPresentation = Pick<
   CampaignWithBusiness,
-  "id" | "slug" | "name" | "active" | "businessId" | "createdAt"
+  | "id"
+  | "slug"
+  | "name"
+  | "active"
+  | "businessId"
+  | "createdAt"
+  | "totalQuota"
+  | "dailyQuota"
+  | "startDate"
+  | "endDate"
 > & {
   business: Pick<CampaignWithBusiness["business"], "name" | "address" | "googlePlaceId" | "externalPlaces">;
 };
-type CampaignParticipationStats = {
-  assignedCount: number;
-  completedCount: number;
-  paidPointAmount: number;
-};
-
 async function fetchCampaigns(includeInactive = false) {
   return prisma.campaign.findMany({
     where: includeInactive ? undefined : { active: true },
@@ -160,35 +180,6 @@ async function fetchCampaigns(includeInactive = false) {
   });
 }
 
-function emptyCampaignParticipationStats(): CampaignParticipationStats {
-  return { assignedCount: 0, completedCount: 0, paidPointAmount: 0 };
-}
-
-async function fetchCampaignParticipationStats(campaignIds: string[]) {
-  const statsByCampaignId = new Map<string, CampaignParticipationStats>(
-    campaignIds.map((campaignId) => [campaignId, emptyCampaignParticipationStats()]),
-  );
-  if (campaignIds.length === 0) return statsByCampaignId;
-
-  const groups = await prisma.receipt.groupBy({
-    by: ["campaignId", "status"],
-    where: {
-      campaignId: { in: campaignIds },
-      source: CAMPAIGN_ASSIGNMENT_SOURCE,
-    },
-    _count: { _all: true },
-  });
-  for (const group of groups) {
-    const stats = statsByCampaignId.get(group.campaignId) ?? emptyCampaignParticipationStats();
-    stats.assignedCount += group._count._all;
-    if (group.status === CAMPAIGN_ASSIGNMENT_STATUS_COMPLETED) {
-      stats.completedCount += group._count._all;
-    }
-    statsByCampaignId.set(group.campaignId, stats);
-  }
-  return statsByCampaignId;
-}
-
 function completionIdempotencyKey(receiptId: string) {
   return `${CAMPAIGN_COMPLETION_IDEMPOTENCY_PREFIX}${receiptId}`;
 }
@@ -196,10 +187,25 @@ function completionIdempotencyKey(receiptId: string) {
 function toPublicCampaign(
   campaign: CampaignForPresentation,
   stats = emptyCampaignParticipationStats(),
+  now = new Date(),
+  sourceReady = true,
 ): PublicCampaignCard {
   const googlePlace = campaign.business.externalPlaces.find((place) => place.platform === "GOOGLE") ?? null;
   const businessName = googlePlace?.name ?? campaign.business.name;
   const address = googlePlace?.address ?? campaign.business.address;
+  const availability = campaignAvailability(
+    {
+      active: campaign.active,
+      startDate: campaign.startDate,
+      endDate: campaign.endDate,
+      totalQuota: campaign.totalQuota,
+      dailyQuota: campaign.dailyQuota,
+      assignedCount: stats.assignedCount,
+      assignedTodayCount: stats.assignedTodayCount,
+      sourceReady,
+    },
+    now,
+  );
   return {
     id: campaign.id,
     slug: campaign.slug,
@@ -212,8 +218,21 @@ function toPublicCampaign(
     rating: googlePlace?.rating ?? null,
     reviewCount: googlePlace?.reviewCount ?? null,
     completedCount: stats.completedCount,
+    assignedTodayCount: stats.assignedTodayCount,
+    completedTodayCount: stats.completedTodayCount,
+    totalQuota: campaign.totalQuota,
+    dailyQuota: campaign.dailyQuota,
+    startDate: campaign.startDate,
+    endDate: campaign.endDate,
+    remainingTodayCount: availability.remainingTodayCount,
+    remainingTotalCount: availability.remainingTotalCount,
+    isAvailableToday: availability.isAvailableToday,
+    availabilityReason: availability.availabilityReason,
     rewardPoints: DEFAULT_REWARD_POINTS,
-    availabilityLabel: availabilityLabel(stats.completedCount),
+    availabilityLabel: availabilityLabel(
+      availability.isAvailableToday,
+      stats.assignedTodayCount,
+    ),
     statusLabel: statusLabel(campaign.active),
     createdAt: campaign.createdAt,
   };
@@ -234,6 +253,7 @@ function toAdminNaverPlace(campaign: CampaignWithBusiness): AdminConnectedNaverP
 }
 
 async function getPublicCampaignDetailUncached(slug: string): Promise<PublicCampaignDetail | null> {
+  const now = new Date();
   const campaign = await prisma.campaign.findUnique({
     where: { slug },
     include: {
@@ -265,10 +285,10 @@ async function getPublicCampaignDetailUncached(slug: string): Promise<PublicCamp
     },
   });
   if (!campaign) return null;
-  const stats = (await fetchCampaignParticipationStats([campaign.id])).get(campaign.id);
+  const stats = (await fetchCampaignParticipationStats(prisma, [campaign.id], now)).get(campaign.id);
 
   return {
-    ...toPublicCampaign(campaign, stats),
+    ...toPublicCampaign(campaign, stats, now),
     active: campaign.active,
     businessId: campaign.businessId,
     menus: campaign.business.menus.map((menu) => ({
@@ -279,39 +299,34 @@ async function getPublicCampaignDetailUncached(slug: string): Promise<PublicCamp
   };
 }
 
-const getCachedPublicCampaignDetail = unstable_cache(
-  async (slug: string) => getPublicCampaignDetailUncached(slug),
-  ["public-campaign-detail"],
-  { revalidate: PUBLIC_CAMPAIGN_CACHE_SECONDS, tags: ["public-campaigns"] },
-);
-
 export async function getPublicCampaignDetail(slug: string): Promise<PublicCampaignDetail | null> {
-  if (process.env.NODE_ENV !== "production") return getPublicCampaignDetailUncached(slug);
-  return getCachedPublicCampaignDetail(slug);
+  return getPublicCampaignDetailUncached(slug);
 }
 
 async function listPublicCampaignsUncached(): Promise<PublicCampaignCard[]> {
+  const now = new Date();
   const campaigns = await fetchCampaigns(false);
-  const statsByCampaignId = await fetchCampaignParticipationStats(campaigns.map((campaign) => campaign.id));
-  return campaigns.map((campaign) => toPublicCampaign(campaign, statsByCampaignId.get(campaign.id)));
+  const statsByCampaignId = await fetchCampaignParticipationStats(
+    prisma,
+    campaigns.map((campaign) => campaign.id),
+    now,
+  );
+  return campaigns
+    .map((campaign) => toPublicCampaign(campaign, statsByCampaignId.get(campaign.id), now))
+    .filter((campaign) => campaign.isAvailableToday);
 }
 
-const getCachedPublicCampaigns = unstable_cache(
-  async () => listPublicCampaignsUncached(),
-  ["public-campaign-list"],
-  { revalidate: PUBLIC_CAMPAIGN_CACHE_SECONDS, tags: ["public-campaigns"] },
-);
-
 export async function listPublicCampaigns(): Promise<PublicCampaignCard[]> {
-  if (process.env.NODE_ENV !== "production") return listPublicCampaignsUncached();
-  return getCachedPublicCampaigns();
+  return listPublicCampaignsUncached();
 }
 
 export async function listAdminCampaigns(): Promise<AdminCampaignRow[]> {
+  const now = new Date();
+  await expireStaleCampaignAssignments(prisma, now);
   const campaigns = await fetchCampaigns(true);
   const campaignIds = campaigns.map((campaign) => campaign.id);
   const [statsByCampaignId, completedReceipts] = await Promise.all([
-    fetchCampaignParticipationStats(campaignIds),
+    fetchCampaignParticipationStats(prisma, campaignIds, now),
     prisma.receipt.findMany({
       where: {
         campaignId: { in: campaignIds },
@@ -377,7 +392,7 @@ export async function listAdminCampaigns(): Promise<AdminCampaignRow[]> {
       reviewExampleCount: draftGuidance.reviewExamples.length,
     });
     return {
-      ...toPublicCampaign(campaign, stats),
+      ...toPublicCampaign(campaign, stats, now, draftSummary.canGenerateReviewDraft),
       active: campaign.active,
       assignedCount: stats.assignedCount,
       paidPointAmount: stats.paidPointAmount,

@@ -165,7 +165,13 @@ export async function syncGoogleMapReviewCampaignRows(
     const campaign = existingCampaign
       ? await prisma.campaign.update({
           where: { id: existingCampaign.id },
-          data: { active: true },
+          data: {
+            active: true,
+            totalQuota: row.totalQuota,
+            dailyQuota: row.dailyQuota,
+            startDate: row.startDate,
+            endDate: row.endDate,
+          },
         })
       : await prisma.campaign.create({
           data: {
@@ -173,6 +179,10 @@ export async function syncGoogleMapReviewCampaignRows(
             slug: await generateUniqueSlug(),
             name,
             active: true,
+            totalQuota: row.totalQuota,
+            dailyQuota: row.dailyQuota,
+            startDate: row.startDate,
+            endDate: row.endDate,
           },
         });
 

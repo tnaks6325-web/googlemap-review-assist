@@ -21,11 +21,11 @@ export default async function AdminCampaignsPage() {
   const campaigns = await listAdminCampaigns();
   const activeCount = campaigns.filter((campaign) => campaign.active).length;
   const assignedCount = campaigns.reduce(
-    (sum, campaign) => sum + campaign.assignedCount,
+    (sum, campaign) => sum + campaign.assignedTodayCount,
     0,
   );
   const completedCount = campaigns.reduce(
-    (sum, campaign) => sum + campaign.completedCount,
+    (sum, campaign) => sum + campaign.completedTodayCount,
     0,
   );
   const paidPointAmount = campaigns.reduce(
@@ -58,7 +58,7 @@ export default async function AdminCampaignsPage() {
           note="전체 운영"
         />
         <Metric
-          label="배정 / 완료"
+          label="오늘 배정 / 오늘 완료"
           value={`${assignedCount.toLocaleString("ko-KR")} / ${completedCount.toLocaleString("ko-KR")}건`}
         />
         <Metric
