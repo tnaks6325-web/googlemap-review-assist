@@ -8,6 +8,7 @@ import type {
   ReviewerHomeParticipationItem,
 } from "@/lib/domain/reviewer-home";
 import { formatPhoneInput } from "@/lib/phone";
+import { REVIEWER_ROUTES } from "@/lib/reviewer-navigation";
 
 const PARTICIPATION_STATUS: Record<
   string,
@@ -187,7 +188,7 @@ export function ReviewerProfilePanel({
           </h2>
           <p className="mt-1 text-xs text-ink-weak">로그인 계정과 정산 정보를 관리해요.</p>
         </div>
-        <Link href="/me" className="text-xs font-bold text-brand">
+        <Link href={REVIEWER_ROUTES.profile} className="text-xs font-bold text-brand">
           정보 수정
         </Link>
       </div>
@@ -221,16 +222,16 @@ export function ReviewerProfilePanel({
 
       <h3 className="mb-3 mt-6 px-1 text-sm font-bold text-ink">기본 및 정산 정보</h3>
       <Card className="overflow-hidden p-0">
-        <ProfileRow label="연락처" value={phone} href="/me" />
+        <ProfileRow label="연락처" value={phone} href={REVIEWER_ROUTES.profile} />
         <ProfileRow
           label="정산 계좌"
           value={dashboard.profile.payoutAccountRegistered ? "등록 완료" : "등록 필요"}
-          href="/me"
+          href={REVIEWER_ROUTES.profile}
         />
         <ProfileRow
           label="보유 포인트"
           value={`${dashboard.points.balance.toLocaleString("ko-KR")}P`}
-          href="/me"
+          href={REVIEWER_ROUTES.settlement}
         />
         <ProfileRow label="계정 관리" value="상단에서 계정 전환" />
       </Card>
