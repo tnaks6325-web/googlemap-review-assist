@@ -157,17 +157,19 @@ export async function verifyGoogleIdToken(credential: string): Promise<GoogleIde
 export async function authenticateGoogleReviewer(
   profile: GoogleIdentityProfile,
   currentReviewerId?: string | null,
+  options: { mode?: "login" | "switch" } = {},
 ) {
   const existingByGoogle = await prisma.reviewer.findUnique({
     where: { googleSub: profile.googleSub },
   });
+  const reviewerToLink = options.mode === "switch" ? null : currentReviewerId;
 
-  if (currentReviewerId) {
-    if (existingByGoogle && existingByGoogle.id !== currentReviewerId) {
+  if (reviewerToLink) {
+    if (existingByGoogle && existingByGoogle.id !== reviewerToLink) {
       throw new GoogleAuthError("GOOGLE_ALREADY_LINKED", "이미 다른 리뷰어 계정에 연결된 Google 계정입니다", 409);
     }
     const reviewer = await prisma.reviewer.update({
-      where: { id: currentReviewerId },
+      where: { id: reviewerToLink },
       data: {
         googleSub: profile.googleSub,
         email: profile.email,
@@ -175,7 +177,7 @@ export async function authenticateGoogleReviewer(
         avatarUrl: profile.avatarUrl,
       },
     });
-    return { reviewer, created: false, linked: true };
+    return { reviewer, created: false, linked: true, switched: false };
   }
 
   if (existingByGoogle) {
@@ -187,7 +189,12 @@ export async function authenticateGoogleReviewer(
         avatarUrl: profile.avatarUrl,
       },
     });
-    return { reviewer, created: false, linked: false };
+    return {
+      reviewer,
+      created: false,
+      linked: false,
+      switched: options.mode === "switch",
+    };
   }
 
   const reviewer = await prisma.reviewer.create({
@@ -200,5 +207,10 @@ export async function authenticateGoogleReviewer(
       wallet: { create: {} },
     },
   });
-  return { reviewer, created: true, linked: false };
+  return {
+    reviewer,
+    created: true,
+    linked: false,
+    switched: options.mode === "switch",
+  };
 }

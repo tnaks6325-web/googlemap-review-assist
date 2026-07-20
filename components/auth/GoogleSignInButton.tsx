@@ -7,6 +7,7 @@ interface GoogleSignInButtonProps {
   onError?: (message: string) => void;
   className?: string;
   label?: string;
+  mode?: "login" | "switch";
 }
 
 interface GoogleCredentialResponse {
@@ -18,7 +19,9 @@ interface GoogleAccountsId {
     client_id: string;
     callback: (response: GoogleCredentialResponse) => void;
     ux_mode?: "popup" | "redirect";
+    auto_select?: boolean;
   }): void;
+  disableAutoSelect?(): void;
   renderButton(
     parent: HTMLElement,
     options: {
@@ -77,6 +80,7 @@ export function GoogleSignInButton({
   onError,
   className,
   label = "Google로 계속하기",
+  mode = "login",
 }: GoogleSignInButtonProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [fallbackMessage, setFallbackMessage] = useState<string | null>(null);
@@ -103,6 +107,7 @@ export function GoogleSignInButton({
         window.google.accounts.id.initialize({
           client_id: config.clientId,
           ux_mode: "popup",
+          auto_select: false,
           callback: async (response) => {
             if (!response.credential) {
               const message = "Google 로그인 토큰을 받지 못했어요.";
@@ -117,7 +122,7 @@ export function GoogleSignInButton({
               const res = await fetch("/api/auth/google", {
                 method: "POST",
                 headers: { "content-type": "application/json" },
-                body: JSON.stringify({ credential: response.credential }),
+                body: JSON.stringify({ credential: response.credential, mode }),
               });
               const data = await res.json().catch(() => ({}));
               if (!res.ok) throw new Error(data?.error?.message ?? "Google 로그인에 실패했어요");
@@ -150,7 +155,7 @@ export function GoogleSignInButton({
     return () => {
       cancelled = true;
     };
-  }, [onError, onSuccess]);
+  }, [mode, onError, onSuccess]);
 
   return (
     <div className={className}>
