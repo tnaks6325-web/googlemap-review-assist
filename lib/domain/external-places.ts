@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isAllowedGoogleMapsHost } from "@/lib/domain/google-maps-link";
 
 export type ExternalPlatform = "GOOGLE" | "NAVER";
 export type ExternalReviewType = "GENERAL" | "RECEIPT" | "BOOKING" | "ORDER" | "UNKNOWN";
@@ -42,7 +43,6 @@ export interface ExternalReviewImport {
 }
 
 const GOOGLE_PLACE_ID_RE = /^[A-Za-z0-9_-]{8,256}$/;
-const ALLOWED_GOOGLE_HOSTS = ["google.com", "google.co.kr", "maps.google.com", "maps.app.goo.gl", "share.google", "goo.gl"];
 const ALLOWED_NAVER_SMARTPLACE_HOSTS = ["map.naver.com", "place.naver.com", "m.place.naver.com"];
 const REVIEW_TYPES = new Set<ExternalReviewType>(["GENERAL", "RECEIPT", "BOOKING", "ORDER", "UNKNOWN"]);
 
@@ -219,7 +219,7 @@ export function parseGooglePlaceInput(input: string): ParsedGooglePlaceInput {
 
   const url = parseUrl(raw);
   if (!url) return { kind: "TEXT", textQuery: raw.slice(0, 200) };
-  if (!allowedHost(url.hostname, ALLOWED_GOOGLE_HOSTS)) throw new Error("unsupported google host");
+  if (!isAllowedGoogleMapsHost(url.hostname)) throw new Error("unsupported google host");
   if (url.protocol !== "https:") throw new Error("unsupported google protocol");
 
   const placeId = url.searchParams.get("query_place_id") || url.searchParams.get("place_id");

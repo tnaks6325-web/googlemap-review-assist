@@ -10,6 +10,7 @@ import {
   operationalCampaignStatus,
   type AdminCampaignStatusFilter,
 } from "@/lib/admin-campaign-table";
+import { safeGoogleMapsUrl } from "@/lib/domain/google-maps-link";
 import type { AdminCampaignRow } from "@/lib/domain/operator-campaigns";
 
 export type AdminCampaignOperationsRow = Omit<AdminCampaignRow, "createdAt"> & {
@@ -181,11 +182,28 @@ function CampaignRows({
   status: ReturnType<typeof operationalCampaignStatus>;
   onToggle: () => void;
 }) {
+  const googleMapsUrl = safeGoogleMapsUrl(campaign.googleMapsUrl);
+
   return (
     <>
       <tr className="group">
         <td className="min-w-[260px] border-t border-line px-4 py-4 group-first:border-t-0">
-          <p className="font-bold text-ink">{campaign.businessName}</p>
+          {googleMapsUrl ? (
+            <a
+              href={googleMapsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={`${campaign.businessName} Google 지도 열기`}
+              className="inline-flex items-center gap-1 font-bold text-ink underline decoration-line-strong underline-offset-4 transition hover:text-brand hover:decoration-brand"
+            >
+              {campaign.businessName}
+              <span aria-hidden="true" className="text-xs text-brand">
+                ↗
+              </span>
+            </a>
+          ) : (
+            <p className="font-bold text-ink">{campaign.businessName}</p>
+          )}
           <p className="mt-1 max-w-[300px] truncate text-xs text-ink-weak">
             {[campaign.category, campaign.address].filter(Boolean).join(" · ") ||
               campaign.campaignName}
