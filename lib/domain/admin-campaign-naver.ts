@@ -1,7 +1,10 @@
 import { findNaverCandidates, type ExternalPlaceSnapshot, type NaverCandidate } from "@/lib/domain/external-place-providers";
 import type { PlaceMatchBase } from "@/lib/domain/external-places";
 import { parseNaverPlaceInput, safeJsonSnapshot } from "@/lib/domain/external-places";
-import { safeNaverSmartPlaceUrl } from "@/lib/domain/naver-smartplace-link";
+import {
+  naverSmartPlaceDetailUrl,
+  safeNaverSmartPlaceUrl,
+} from "@/lib/domain/naver-smartplace-link";
 
 export interface AdminCampaignNaverSource {
   business: {
@@ -97,8 +100,8 @@ export function naverPlaceSnapshotFromCandidate(
   };
 }
 
-export function naverPlaceSnapshotFromManualUrl(
-  rawUrl: string,
+export function naverPlaceSnapshotFromPlaceId(
+  rawPlaceId: string,
   source: {
     businessName: string;
     businessAddress?: string | null;
@@ -109,22 +112,14 @@ export function naverPlaceSnapshotFromManualUrl(
     } | null;
   }
 ): ExternalPlaceSnapshot | null {
-  const url = cleanCandidateText(rawUrl, 800);
-  if (!url) return null;
-
-  let parsed: ReturnType<typeof parseNaverPlaceInput>;
-  try {
-    parsed = parseNaverPlaceInput(url);
-  } catch {
-    return null;
-  }
-
-  const smartPlaceUrl = safeNaverSmartPlaceUrl(url);
-  if (!parsed.externalId || !smartPlaceUrl) return null;
+  const placeId = cleanCandidateText(rawPlaceId, 32);
+  if (!/^\d{1,20}$/.test(placeId)) return null;
+  const smartPlaceUrl = naverSmartPlaceDetailUrl(placeId);
+  if (!smartPlaceUrl) return null;
 
   return {
     platform: "NAVER",
-    externalId: parsed.externalId,
+    externalId: placeId,
     url: smartPlaceUrl,
     name: cleanCandidateText(source.existingPlace?.name, 120) || source.businessName,
     address: cleanCandidateText(source.existingPlace?.address ?? source.businessAddress, 240) || null,
@@ -136,7 +131,10 @@ export function naverPlaceSnapshotFromManualUrl(
     reviewCount: null,
     receiptReviewCount: null,
     matchConfidence: 100,
-    rawJson: safeJsonSnapshot({ source: "ADMIN_MANUAL_NAVER_PLACE_URL", inputUrl: url, parsed }),
+    rawJson: safeJsonSnapshot({
+      source: "ADMIN_MANUAL_NAVER_PLACE_ID",
+      placeId,
+    }),
   };
 }
 

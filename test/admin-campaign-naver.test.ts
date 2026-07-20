@@ -3,7 +3,7 @@ import {
   findBestNaverPlaceSnapshotForCampaign,
   naverCandidateSearchQueries,
   naverPlaceSnapshotFromCandidate,
-  naverPlaceSnapshotFromManualUrl,
+  naverPlaceSnapshotFromPlaceId,
   naverSearchTargetFromCampaign,
 } from "@/lib/domain/admin-campaign-naver";
 import { findNaverCandidates } from "@/lib/domain/external-place-providers";
@@ -240,8 +240,8 @@ describe("admin campaign naver candidate target", () => {
     });
   });
 
-  it("builds a corrected Naver snapshot from a copied SmartPlace detail URL", () => {
-    const place = naverPlaceSnapshotFromManualUrl("https://pcmap.place.naver.com/restaurant/2059222523/home?entry=bmp", {
+  it("builds a corrected Naver snapshot from a numeric Place ID", () => {
+    const place = naverPlaceSnapshotFromPlaceId("2059222523", {
       businessName: "Fallback Business",
       businessAddress: "Fallback Address",
       existingPlace: {
@@ -262,13 +262,19 @@ describe("admin campaign naver candidate target", () => {
     });
   });
 
-  it("rejects non-SmartPlace manual Naver URLs", () => {
-    const place = naverPlaceSnapshotFromManualUrl("https://blog.naver.com/example-post", {
+  it("rejects URLs and non-numeric values in the Place ID field", () => {
+    const source = {
       businessName: "Fallback Business",
       businessAddress: "Fallback Address",
-    });
+    };
 
-    expect(place).toBeNull();
+    expect(
+      naverPlaceSnapshotFromPlaceId(
+        "https://map.naver.com/p/entry/place/2059222523",
+        source,
+      ),
+    ).toBeNull();
+    expect(naverPlaceSnapshotFromPlaceId("2059222523abc", source)).toBeNull();
   });
 
   it("removes non-SmartPlace links from Naver Local Search candidates", async () => {
