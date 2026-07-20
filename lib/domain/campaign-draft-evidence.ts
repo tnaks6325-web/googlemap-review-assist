@@ -12,6 +12,7 @@ export const CAMPAIGN_DRAFT_EVIDENCE_FACETS = [
 ] as const;
 
 export const CAMPAIGN_DRAFT_EVIDENCE_TIMEOUT_MS = 45_000;
+export const CAMPAIGN_DRAFT_EVIDENCE_MAX_OUTPUT_TOKENS = 8_192;
 
 export const CAMPAIGN_DRAFT_EVIDENCE_STATUSES = ["PENDING", "APPROVED", "REJECTED"] as const;
 export const MIN_APPROVED_EVIDENCE = 6;
@@ -275,7 +276,7 @@ async function extractWithGemini(
         body: JSON.stringify({
           contents: [{ role: "user", parts: [{ text: extractionPrompt(sources) }] }],
           generationConfig: {
-            maxOutputTokens: 3000,
+            maxOutputTokens: CAMPAIGN_DRAFT_EVIDENCE_MAX_OUTPUT_TOKENS,
             responseMimeType: "application/json",
             responseSchema: {
               type: "object",

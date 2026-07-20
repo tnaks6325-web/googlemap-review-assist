@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import {
   CAMPAIGN_DRAFT_EVIDENCE_FACETS,
+  CAMPAIGN_DRAFT_EVIDENCE_MAX_OUTPUT_TOKENS,
   CAMPAIGN_DRAFT_EVIDENCE_TIMEOUT_MS,
   normalizeExtractedEvidence,
   summarizeCampaignDraftEvidenceFailure,
@@ -29,6 +30,7 @@ describe("campaign draft evidence", () => {
 
   it("allows long structured Gemini extraction for large campaign source sets", () => {
     expect(CAMPAIGN_DRAFT_EVIDENCE_TIMEOUT_MS).toBe(45_000);
+    expect(CAMPAIGN_DRAFT_EVIDENCE_MAX_OUTPUT_TOKENS).toBe(8_192);
   });
 
   it("accepts only allowlisted source references and facets", () => {
