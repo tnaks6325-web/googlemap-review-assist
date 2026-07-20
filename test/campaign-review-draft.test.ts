@@ -299,6 +299,12 @@ describe("campaign review draft generator", () => {
     expect(prompt).not.toContain("야채가 신선하고 직원분들이 친절했어요.");
     expect(itemSchema.properties.styleId).toEqual({ type: "string" });
     expect(itemSchema.properties.evidenceIds.items.enum).toEqual([evidence.id]);
+    expect(requestBody.generationConfig.responseSchema.properties.items).not.toHaveProperty(
+      "minItems",
+    );
+    expect(requestBody.generationConfig.responseSchema.properties.items).not.toHaveProperty(
+      "maxItems",
+    );
   });
 
   it("generates and stores a 30 to 200 non-space character draft from place data and a substantive source", async () => {
