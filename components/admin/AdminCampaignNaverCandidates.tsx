@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui";
-import { safeNaverSmartPlaceUrl } from "@/lib/domain/naver-smartplace-link";
+import { naverSmartPlaceLink } from "@/lib/domain/naver-smartplace-link";
 import type { NaverCandidate } from "@/lib/domain/external-place-providers";
 import type { AdminConnectedNaverPlace } from "@/lib/domain/operator-campaigns";
 
@@ -137,7 +137,11 @@ export function AdminCampaignNaverCandidates({
     }
   };
 
-  const connectedUrl = safeNaverSmartPlaceUrl(connectedPlace?.url);
+  const connectedUrl = naverSmartPlaceLink({
+    url: connectedPlace?.url,
+    name: connectedPlace?.name,
+    address: connectedPlace?.address,
+  });
 
   return (
     <div className="rounded-card border border-line bg-canvas p-3">
@@ -252,7 +256,11 @@ export function AdminCampaignNaverCandidates({
 
               {result.candidates.length ? (
                 result.candidates.map((candidate, index) => {
-                  const link = safeNaverSmartPlaceUrl(candidate.link);
+                  const link = naverSmartPlaceLink({
+                    url: candidate.link,
+                    name: candidate.title,
+                    address: candidate.roadAddress || candidate.address,
+                  });
                   const saved = isSamePlace(connectedPlace, candidate, link);
                   const canConfirmSaved = saved && connectedPlace?.matchStatus === "NEEDS_REVIEW";
                   return (
