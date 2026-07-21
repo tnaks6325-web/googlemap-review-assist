@@ -8,6 +8,7 @@ import {
   selectPreparedDraftItemsForStorage,
   nonSpaceLength,
   normalizeCampaignDraftGuidance,
+  REVIEW_DRAFT_MATRIX_TIMEOUT_MS,
   REVIEW_DRAFT_MAX_REGENERATIONS,
 } from "@/lib/domain/campaign-review-draft";
 import { generateUniqueSlug } from "@/lib/domain/codes";
@@ -291,6 +292,10 @@ describe("campaign review draft generator", () => {
     );
     expect(accumulated.items).toHaveLength(50);
     expect(new Set(accumulated.items.map((item) => item.batchId)).size).toBe(2);
+  });
+
+  it("allows enough time for a 25-draft Gemini matrix response", () => {
+    expect(REVIEW_DRAFT_MATRIX_TIMEOUT_MS).toBe(120_000);
   });
 
   it("reports each completed matrix item while the preview is generated", async () => {
@@ -812,14 +817,12 @@ describe("campaign review draft generator", () => {
     });
     await prisma.campaignDraftEvidence.createMany({
       data: [
-        ["SPACE", "실내 공간은 구역별로 나뉘어 안내되어 있다"],
-        ["ACCESS", "대중교통 접근 경로를 지도에서 확인할 수 있다"],
-        ["OPERATIONS", "운영 시간 정보가 온라인에 공개되어 있다"],
-        ["OTHER", "방문 전 참고 사항이 별도로 정리되어 있다"],
-        ["SPACE", "이동 동선을 고려한 공간 정보가 등록되어 있다"],
-        ["ACCESS", "주변 위치를 찾을 수 있는 주소 정보가 제공된다"],
-        ["OPERATIONS", "이용 관련 안내 항목을 사전에 살펴볼 수 있다"],
-        ["OTHER", "장소의 주요 특징이 여러 자료에 기록되어 있다"],
+        ["SPACE", "내부 공간이 구역별로 정돈되어 있다"],
+        ["SPACE", "좌석 사이의 이동 공간이 구분되어 있다"],
+        ["ACCESS", "대중교통 접근 정보를 확인할 수 있다"],
+        ["ACCESS", "위치 안내가 지도에 구체적으로 등록되어 있다"],
+        ["OPERATIONS", "운영 관련 정보가 온라인에 안내되어 있다"],
+        ["OTHER", "이용 전에 참고할 장소 정보가 정리되어 있다"],
       ].map(([facet, fact], index) => ({
         campaignId: campaign.id,
         facet,

@@ -18,6 +18,7 @@ export const REVIEW_DRAFT_MAX_REGENERATIONS = 3;
 export const CAMPAIGN_PREPARED_DRAFT_TARGET = 25;
 export const DEFAULT_REVIEW_DRAFT_MODEL = "gemini-3.5-flash";
 export const REVIEW_DRAFT_MATRIX_MAX_OUTPUT_TOKENS = 16_384;
+export const REVIEW_DRAFT_MATRIX_TIMEOUT_MS = 120_000;
 export const CAMPAIGN_REVIEW_DRAFT_INDUSTRIES = [
   "FOOD_CAFE",
   "BEAUTY_CLINIC",
@@ -1113,7 +1114,7 @@ async function geminiMatrixDrafts(
             },
           },
         }),
-        signal: AbortSignal.timeout(45_000),
+        signal: AbortSignal.timeout(REVIEW_DRAFT_MATRIX_TIMEOUT_MS),
       },
     );
     const data = (await response.json().catch(() => ({}))) as {

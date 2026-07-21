@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import {
@@ -7,6 +8,18 @@ import {
 } from "@/components/admin/AdminCampaignDraftPreview";
 
 describe("admin campaign prepared drafts", () => {
+  it("allows the streaming generation route to run through both Gemini attempts", () => {
+    const routeSource = readFileSync(
+      new URL(
+        "../app/api/admin/campaigns/[campaignId]/draft-preview/route.ts",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+
+    expect(routeSource).toContain("export const maxDuration = 300;");
+  });
+
   it("renders separate generation and archive buttons with 25-draft progress", () => {
     const html = renderToStaticMarkup(
       <AdminCampaignDraftPreview
