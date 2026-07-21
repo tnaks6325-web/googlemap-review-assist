@@ -55,8 +55,10 @@ describe("admin campaign prepared drafts", () => {
     const progress: number[] = [];
     const response = new Response(
       [
-        JSON.stringify({ type: "progress", generatedCount: 1, targetCount: 25 }),
-        JSON.stringify({ type: "progress", generatedCount: 8, targetCount: 25 }),
+        JSON.stringify({ type: "progress", generatedCount: 2, targetCount: 25 }),
+        JSON.stringify({ type: "progress", generatedCount: 3, targetCount: 25 }),
+        JSON.stringify({ type: "progress", generatedCount: 4, targetCount: 25 }),
+        JSON.stringify({ type: "progress", generatedCount: 5, targetCount: 25 }),
         JSON.stringify({ type: "complete" }),
       ].join("\n"),
       { status: 200 },
@@ -64,6 +66,6 @@ describe("admin campaign prepared drafts", () => {
 
     await consumeDraftGenerationStream(response, (count) => progress.push(count));
 
-    expect(progress).toEqual([1, 8]);
+    expect(progress).toEqual([2, 3, 4, 5]);
   });
 });

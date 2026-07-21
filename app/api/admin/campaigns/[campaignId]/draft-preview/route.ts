@@ -99,6 +99,8 @@ export async function POST(
     headers: {
       "content-type": "application/x-ndjson; charset=utf-8",
       "cache-control": "no-cache, no-transform",
+      "x-accel-buffering": "no",
+      "x-content-type-options": "nosniff",
     },
   });
 }

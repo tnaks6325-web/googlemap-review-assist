@@ -8,6 +8,7 @@ import {
   selectPreparedDraftItemsForStorage,
   nonSpaceLength,
   normalizeCampaignDraftGuidance,
+  readGeminiStructuredOutputStream,
   REVIEW_DRAFT_MATRIX_TIMEOUT_MS,
   REVIEW_DRAFT_MAX_REGENERATIONS,
 } from "@/lib/domain/campaign-review-draft";
@@ -18,6 +19,19 @@ let seq = 0;
 const uniq = () => `${Date.now()}_${seq++}_${Math.floor(Math.random() * 1e6)}`;
 const originalProvider = process.env.REVIEW_DRAFT_PROVIDER;
 const originalV2Flag = process.env.REVIEW_DRAFT_V2_ENABLED;
+
+function geminiSseResponse(textChunks: string[]) {
+  return new Response(
+    textChunks
+      .map((text) =>
+        `data: ${JSON.stringify({
+          candidates: [{ content: { parts: [{ text }] } }],
+        })}\n\n`,
+      )
+      .join(""),
+    { status: 200, headers: { "content-type": "text/event-stream" } },
+  );
+}
 
 async function createReviewer() {
   return prisma.reviewer.create({
@@ -298,6 +312,28 @@ describe("campaign review draft generator", () => {
     expect(REVIEW_DRAFT_MATRIX_TIMEOUT_MS).toBe(120_000);
   });
 
+  it("reports each completed draft while Gemini structured output is streaming", async () => {
+    const progress: number[] = [];
+    const items = Array.from({ length: 5 }, (_, index) => ({
+      reviewText: `실시간 생성 원고 ${index + 1}번이며 문자열 안의 } 기호는 완료로 세지 않습니다.`,
+      styleId: `style-${index + 1}`,
+      evidenceIds: [`evidence-${index + 1}`],
+      promptVersion: "review-diversity-v2",
+    }));
+    const response = geminiSseResponse([
+      '{"items":[',
+      ...items.map((item, index) => `${index ? "," : ""}${JSON.stringify(item)}`),
+      "]}",
+    ]);
+
+    const text = await readGeminiStructuredOutputStream(response, (count) => {
+      progress.push(count);
+    });
+
+    expect(JSON.parse(text)).toEqual({ items });
+    expect(progress).toEqual([1, 2, 3, 4, 5]);
+  });
+
   it("reports each completed matrix item while the preview is generated", async () => {
     const { campaign } = await createAssignment({
       googlePlace: true,
@@ -522,9 +558,14 @@ describe("campaign review draft generator", () => {
       ),
     );
     vi.stubGlobal("fetch", fetchMock);
+    const progress: number[] = [];
 
-    await generateCampaignReviewDraftPreview(campaign.id);
+    await generateCampaignReviewDraftPreview(campaign.id, prisma, (count) => {
+      progress.push(count);
+    });
 
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain(":streamGenerateContent?alt=sse&key=");
+    expect(progress).toEqual(Array.from({ length: 25 }, (_, index) => index + 1));
     const requestBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
     const prompt = requestBody.contents[0].parts[0].text;
     const itemSchema =

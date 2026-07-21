@@ -1066,17 +1066,134 @@ function matrixPrompt(context: DraftContext) {
   ].join("\n\n");
 }
 
+type GeminiGenerateContentResponse = {
+  candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  error?: { message?: string };
+};
+
+function geminiResponseText(data: GeminiGenerateContentResponse) {
+  return data.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
+}
+
+function completedMatrixItemCount(value: string) {
+  const itemsMatch = /"items"\s*:\s*\[/.exec(value);
+  if (!itemsMatch) return 0;
+
+  let arrayDepth = 1;
+  let objectDepth = 0;
+  let completed = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = itemsMatch.index + itemsMatch[0].length; index < value.length; index += 1) {
+    const char = value[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      continue;
+    }
+    if (char === "[") arrayDepth += 1;
+    else if (char === "]") {
+      arrayDepth -= 1;
+      if (arrayDepth === 0) break;
+    } else if (char === "{") objectDepth += 1;
+    else if (char === "}" && objectDepth > 0) {
+      objectDepth -= 1;
+      if (objectDepth === 0 && arrayDepth === 1) completed += 1;
+    }
+  }
+  return completed;
+}
+
+export async function readGeminiStructuredOutputStream(
+  response: Response,
+  onProgress?: (generatedCount: number, targetCount: number) => void,
+) {
+  const reportCompletedItems = (text: string, lastReported: number) => {
+    const completed = Math.min(
+      completedMatrixItemCount(text),
+      CAMPAIGN_PREPARED_DRAFT_TARGET,
+    );
+    for (let count = lastReported + 1; count <= completed; count += 1) {
+      onProgress?.(count, CAMPAIGN_PREPARED_DRAFT_TARGET);
+    }
+    return Math.max(lastReported, completed);
+  };
+
+  if (!response.ok) {
+    const data = (await response.json().catch(() => ({}))) as GeminiGenerateContentResponse;
+    throw new Error(data.error?.message ?? `Gemini request failed: ${response.status}`);
+  }
+
+  if (!response.headers.get("content-type")?.includes("text/event-stream")) {
+    const data = (await response.json().catch(() => ({}))) as GeminiGenerateContentResponse;
+    const text = geminiResponseText(data);
+    reportCompletedItems(text, 0);
+    return text;
+  }
+  if (!response.body) throw new Error("Gemini streaming response body is missing");
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let sseBuffer = "";
+  let generatedText = "";
+  let lastReported = 0;
+
+  const consumeEvent = (event: string) => {
+    const payload = event
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trimStart())
+      .join("\n");
+    if (!payload || payload === "[DONE]") return;
+    const data = JSON.parse(payload) as GeminiGenerateContentResponse;
+    if (data.error?.message) throw new Error(data.error.message);
+    generatedText += geminiResponseText(data);
+    lastReported = reportCompletedItems(generatedText, lastReported);
+  };
+
+  while (true) {
+    const { value, done } = await reader.read();
+    sseBuffer += decoder.decode(value, { stream: !done });
+    let separator = /\r?\n\r?\n/.exec(sseBuffer);
+    while (separator) {
+      consumeEvent(sseBuffer.slice(0, separator.index));
+      sseBuffer = sseBuffer.slice(separator.index + separator[0].length);
+      separator = /\r?\n\r?\n/.exec(sseBuffer);
+    }
+    if (done) break;
+  }
+  consumeEvent(sseBuffer);
+  if (!generatedText) throw new Error("Gemini returned an empty streaming response");
+  return generatedText;
+}
+
 async function geminiMatrixDrafts(
   context: DraftContext,
   model: string,
   apiKey: string,
+  onProgress?: (generatedCount: number, targetCount: number) => void,
 ) {
+  let reportedCount = 0;
+  const reportProgress = (generatedCount: number, targetCount: number) => {
+    if (generatedCount <= reportedCount) return;
+    reportedCount = generatedCount;
+    onProgress?.(generatedCount, targetCount);
+  };
   const request = async () => {
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`,
       {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          accept: "text/event-stream",
+          "content-type": "application/json",
+        },
         body: JSON.stringify({
           contents: [{ role: "user", parts: [{ text: matrixPrompt(context) }] }],
           generationConfig: {
@@ -1117,12 +1234,7 @@ async function geminiMatrixDrafts(
         signal: AbortSignal.timeout(REVIEW_DRAFT_MATRIX_TIMEOUT_MS),
       },
     );
-    const data = (await response.json().catch(() => ({}))) as {
-      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-      error?: { message?: string };
-    };
-    if (!response.ok) throw new Error(data.error?.message ?? `Gemini request failed: ${response.status}`);
-    const text = data.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
+    const text = await readGeminiStructuredOutputStream(response, reportProgress);
     const parsed = JSON.parse(text) as { items?: unknown[] };
     if (!Array.isArray(parsed.items) || parsed.items.length !== 25) {
       throw new Error("Gemini returned an incomplete 25-slot matrix");
@@ -1159,7 +1271,7 @@ async function generateMatrixPreviewItems(
     provider === "template"
       ? REVIEW_DRAFT_STYLE_SLOTS.map((slot) => templateStructuredDraft(context, slot, 0))
       : provider === "gemini" && apiKey
-        ? await geminiMatrixDrafts(context, model, apiKey)
+        ? await geminiMatrixDrafts(context, model, apiKey, onProgress)
         : null;
   if (!structured) {
     throw new CampaignReviewDraftError(
@@ -1188,7 +1300,7 @@ async function generateMatrixPreviewItems(
       maxSimilarity,
       qualityPassed,
     };
-    onProgress?.(index + 1, structured.length);
+    if (provider === "template") onProgress?.(index + 1, structured.length);
     return previewItem;
   });
 }
