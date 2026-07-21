@@ -499,6 +499,7 @@ describe("campaign review draft generator", () => {
     const prompt = requestBody.contents[0].parts[0].text;
     const itemSchema =
       requestBody.generationConfig.responseSchema.properties.items.items;
+    expect(requestBody.generationConfig.maxOutputTokens).toBe(16_384);
     expect(prompt).toContain(evidence.id);
     expect(prompt).toContain("신선한 야채 구성이 안내되어 있다");
     expect(prompt).not.toContain("시트 리뷰작성 가이드 키워드");

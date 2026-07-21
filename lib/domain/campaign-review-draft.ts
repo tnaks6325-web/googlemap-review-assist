@@ -17,6 +17,7 @@ export const REVIEW_DRAFT_MIN_SOURCE_GROUPS = 2;
 export const REVIEW_DRAFT_MAX_REGENERATIONS = 3;
 export const CAMPAIGN_PREPARED_DRAFT_TARGET = 25;
 export const DEFAULT_REVIEW_DRAFT_MODEL = "gemini-3.5-flash";
+export const REVIEW_DRAFT_MATRIX_MAX_OUTPUT_TOKENS = 16_384;
 export const CAMPAIGN_REVIEW_DRAFT_INDUSTRIES = [
   "FOOD_CAFE",
   "BEAUTY_CLINIC",
@@ -1080,7 +1081,7 @@ async function geminiMatrixDrafts(
         body: JSON.stringify({
           contents: [{ role: "user", parts: [{ text: matrixPrompt(context) }] }],
           generationConfig: {
-            maxOutputTokens: 8000,
+            maxOutputTokens: REVIEW_DRAFT_MATRIX_MAX_OUTPUT_TOKENS,
             responseMimeType: "application/json",
             responseSchema: {
               type: "object",
