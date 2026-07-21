@@ -9,7 +9,7 @@ import {
   nonSpaceLength,
   normalizeCampaignDraftGuidance,
   readGeminiStructuredOutputStream,
-  REVIEW_DRAFT_MATRIX_TIMEOUT_MS,
+  REVIEW_DRAFT_MATRIX_BATCH_TIMEOUT_MS,
   REVIEW_DRAFT_MAX_REGENERATIONS,
 } from "@/lib/domain/campaign-review-draft";
 import { generateUniqueSlug } from "@/lib/domain/codes";
@@ -308,8 +308,8 @@ describe("campaign review draft generator", () => {
     expect(new Set(accumulated.items.map((item) => item.batchId)).size).toBe(2);
   });
 
-  it("allows enough time for a 25-draft Gemini matrix response", () => {
-    expect(REVIEW_DRAFT_MATRIX_TIMEOUT_MS).toBe(120_000);
+  it("bounds each five-draft Gemini batch timeout", () => {
+    expect(REVIEW_DRAFT_MATRIX_BATCH_TIMEOUT_MS).toBe(45_000);
   });
 
   it("reports each completed draft while Gemini structured output is streaming", async () => {
@@ -332,6 +332,66 @@ describe("campaign review draft generator", () => {
 
     expect(JSON.parse(text)).toEqual({ items });
     expect(progress).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("generates a long 25-draft matrix in five bounded batches", async () => {
+    const { campaign } = await createAssignment({
+      googlePlace: true,
+      naverPlace: true,
+      googleReview: true,
+    });
+    const evidence = await prisma.campaignDraftEvidence.create({
+      data: {
+        campaignId: campaign.id,
+        facet: "MENU_PRODUCT",
+        fact: "신선한 재료 구성이 구체적으로 안내되어 있다",
+        sourceType: "ADMIN_APPROVED",
+        sourceRef: "bounded-matrix-batch-test",
+        sourceExcerpt: "신선한 재료 구성",
+        status: "APPROVED",
+      },
+    });
+    process.env.REVIEW_DRAFT_PROVIDER = "gemini";
+    process.env.GEMINI_API_KEY = "test-gemini-api-key";
+    const fetchMock = vi.fn().mockImplementation(async (_url, init: RequestInit) => {
+      const requestBody = JSON.parse(String(init.body));
+      const styleIds = requestBody.generationConfig.responseSchema.properties.items.items
+        .properties.styleId.enum as string[] | undefined;
+      if (!styleIds || styleIds.length > 5) {
+        throw new Error("matrix request was not split into bounded style batches");
+      }
+      const items = styleIds.map((styleId) => {
+        const slot = REVIEW_DRAFT_STYLE_SLOTS.find((candidate) => candidate.id === styleId);
+        if (!slot) throw new Error(`unknown test style ${styleId}`);
+        return {
+          reviewText:
+            slot.structure === "SHORT_SINGLE"
+              ? "신선한 재료 구성이 구체적으로 안내되어 있어 필요한 내용을 방문 전에 차분하게 확인하기 좋아 보여요"
+              : slot.structure === "THREE_STEP"
+                ? "신선한 재료 구성이 안내되어 있어요. 필요한 정보를 구체적으로 확인할 수 있습니다. 방문 전에 살펴볼 내용까지 정리되어 있어요."
+                : "신선한 재료 구성이 구체적으로 안내되어 있어요. 방문 전에 필요한 내용을 차분하게 확인하기 좋아 보입니다.",
+          styleId,
+          evidenceIds: [evidence.id],
+          promptVersion: "review-diversity-v2",
+        };
+      });
+      return new Response(
+        JSON.stringify({
+          candidates: [{ content: { parts: [{ text: JSON.stringify({ items }) }] } }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const progress: number[] = [];
+
+    const preview = await generateCampaignReviewDraftPreview(campaign.id, prisma, (count) => {
+      progress.push(count);
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(preview.items).toHaveLength(25);
+    expect(progress).toEqual(Array.from({ length: 25 }, (_, index) => index + 1));
   });
 
   it("reports each completed matrix item while the preview is generated", async () => {
@@ -531,14 +591,17 @@ describe("campaign review draft generator", () => {
     });
     process.env.REVIEW_DRAFT_PROVIDER = "gemini";
     process.env.GEMINI_API_KEY = "test-gemini-api-key";
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
+    const fetchMock = vi.fn().mockImplementation(async (_url, init: RequestInit) => {
+      const requestBody = JSON.parse(String(init.body));
+      const styleIds = requestBody.generationConfig.responseSchema.properties.items.items
+        .properties.styleId.enum as string[];
+      return new Response(
         JSON.stringify({
           candidates: [{
             content: {
               parts: [{
                 text: JSON.stringify({
-                  items: REVIEW_DRAFT_STYLE_SLOTS.map((slot) => ({
+                  items: REVIEW_DRAFT_STYLE_SLOTS.filter((slot) => styleIds.includes(slot.id)).map((slot) => ({
                     reviewText:
                       slot.structure === "SHORT_SINGLE"
                         ? "신선한 야채 구성이 구체적으로 안내되어 있어 필요한 내용을 방문 전에 차분히 확인하기 좋아 보여요."
@@ -555,8 +618,8 @@ describe("campaign review draft generator", () => {
           }],
         }),
         { status: 200, headers: { "content-type": "application/json" } },
-      ),
-    );
+      );
+    });
     vi.stubGlobal("fetch", fetchMock);
     const progress: number[] = [];
 
@@ -575,7 +638,10 @@ describe("campaign review draft generator", () => {
     expect(prompt).toContain("신선한 야채 구성이 안내되어 있다");
     expect(prompt).not.toContain("시트 리뷰작성 가이드 키워드");
     expect(prompt).not.toContain("야채가 신선하고 직원분들이 친절했어요.");
-    expect(itemSchema.properties.styleId).toEqual({ type: "string" });
+    expect(itemSchema.properties.styleId).toEqual({
+      type: "string",
+      enum: REVIEW_DRAFT_STYLE_SLOTS.slice(0, 5).map((slot) => slot.id),
+    });
     expect(itemSchema.properties.evidenceIds.items.enum).toEqual([evidence.id]);
     expect(requestBody.generationConfig.responseSchema.properties.items).not.toHaveProperty(
       "minItems",
