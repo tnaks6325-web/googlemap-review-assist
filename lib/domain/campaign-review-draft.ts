@@ -1142,7 +1142,10 @@ async function geminiMatrixDrafts(
   return retryExternalOperation(request, { attempts: 2, baseDelayMs: 500, maxDelayMs: 1_500 });
 }
 
-async function generateMatrixPreviewItems(context: DraftContext) {
+async function generateMatrixPreviewItems(
+  context: DraftContext,
+  onProgress?: (generatedCount: number, targetCount: number) => void,
+) {
   if (context.approvedEvidence.length === 0) {
     throw new CampaignReviewDraftError(
       "APPROVED_EVIDENCE_REQUIRED",
@@ -1176,7 +1179,7 @@ async function generateMatrixPreviewItems(context: DraftContext) {
     const qualityPassed =
       findDraftQualityIssues(item.reviewText, comparisons).length === 0 &&
       validateSlotConstraints(item.reviewText, slot).length === 0;
-    return {
+    const previewItem = {
       slot: slot.index,
       styleId: item.styleId,
       toneLabel: slot.toneLabel,
@@ -1186,6 +1189,8 @@ async function generateMatrixPreviewItems(context: DraftContext) {
       maxSimilarity,
       qualityPassed,
     };
+    onProgress?.(index + 1, structured.length);
+    return previewItem;
   });
 }
 
@@ -1398,6 +1403,7 @@ export async function migrateLegacyCampaignPreparedDrafts(
 export async function generateCampaignReviewDraftPreview(
   campaignId: string,
   db: DbClient = prisma,
+  onProgress?: (generatedCount: number, targetCount: number) => void,
 ): Promise<CampaignReviewDraftPreview> {
   const cleanCampaignId = campaignId.trim();
   if (!cleanCampaignId) {
@@ -1432,7 +1438,7 @@ export async function generateCampaignReviewDraftPreview(
     business: campaign.business,
   });
   assertDraftContextReady(context);
-  const items = await generateMatrixPreviewItems(context);
+  const items = await generateMatrixPreviewItems(context, onProgress);
   const diversity = analyzeDraftDiversity(items.map((item) => item.text));
   const evidenceUsed = new Set(items.flatMap((item) => item.evidenceIds));
   const provider = envValue("REVIEW_DRAFT_PROVIDER") || "gemini";

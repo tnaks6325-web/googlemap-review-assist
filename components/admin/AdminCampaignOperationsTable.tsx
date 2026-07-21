@@ -222,7 +222,7 @@ export function AdminCampaignOperationsTable({
             onClick={runAllAutomation}
             className="h-10 shrink-0 whitespace-nowrap px-3 text-xs"
           >
-            {automationProgress ?? "네이버 자동보정 + 참고자료 수집"}
+            {automationProgress ?? "원클릭 세팅"}
           </Button>
           <label className="relative block">
             <span className="sr-only">캠페인 검색</span>

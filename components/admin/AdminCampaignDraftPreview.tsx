@@ -40,6 +40,80 @@ interface ErrorResult {
   error?: { message?: string };
 }
 
+type DraftGenerationStreamEvent =
+  | { type: "progress"; generatedCount: number; targetCount: number }
+  | { type: "complete" }
+  | { type: "error"; message: string };
+
+export async function consumeDraftGenerationStream(
+  response: Response,
+  onProgress: (generatedCount: number, targetCount: number) => void,
+) {
+  if (!response.ok) {
+    const data = (await response.json().catch(() => null)) as ErrorResult | null;
+    throw new Error(data?.error?.message || "원고를 사전 생성하지 못했습니다.");
+  }
+  if (!response.body) throw new Error("원고 생성 진행 상태를 확인하지 못했습니다.");
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let completed = false;
+  const consumeLine = (line: string) => {
+    if (!line.trim()) return;
+    const event = JSON.parse(line) as DraftGenerationStreamEvent;
+    if (event.type === "progress") {
+      onProgress(event.generatedCount, event.targetCount);
+    } else if (event.type === "error") {
+      throw new Error(event.message);
+    } else {
+      completed = true;
+    }
+  };
+
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value, { stream: !done });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) consumeLine(line);
+    if (done) break;
+  }
+  consumeLine(buffer);
+  if (!completed) throw new Error("원고 생성이 완료되기 전에 연결이 종료되었습니다.");
+}
+
+export function DraftGenerationProgress({
+  current,
+  target,
+}: {
+  current: number;
+  target: number;
+}) {
+  const safeTarget = Math.max(1, target);
+  const safeCurrent = Math.min(Math.max(0, current), safeTarget);
+  const percent = (safeCurrent / safeTarget) * 100;
+  return (
+    <span
+      role="progressbar"
+      aria-label="원고 생성 진행률"
+      aria-valuemin={0}
+      aria-valuemax={safeTarget}
+      aria-valuenow={safeCurrent}
+      className="absolute inset-0 flex items-center justify-center overflow-hidden rounded-[8px]"
+    >
+      <span
+        aria-hidden="true"
+        className="absolute inset-y-0 left-0 bg-brand/20 transition-[width] duration-300 ease-out"
+        style={{ width: `${percent}%` }}
+      />
+      <span className="relative z-10 tabular-nums">
+        원고생성 {safeCurrent}/{safeTarget}
+      </span>
+    </span>
+  );
+}
+
 const FILTERS: Array<{ status: DraftStatus; label: string; metric: keyof PreparedDraftMetrics }> = [
   { status: "UNASSIGNED", label: "미배정", metric: "unassignedCount" },
   { status: "QUALITY_EXCLUDED", label: "품질 제외", metric: "qualityExcludedCount" },
@@ -67,6 +141,7 @@ export function AdminCampaignDraftPreview({
   const [filter, setFilter] = useState<DraftStatus>("UNASSIGNED");
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  const [generationProgress, setGenerationProgress] = useState<number | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -110,20 +185,22 @@ export function AdminCampaignDraftPreview({
 
   const generate = async () => {
     setBusy("generating");
+    setGenerationProgress(0);
     setError(null);
     try {
       const response = await fetch(`/api/admin/campaigns/${campaignId}/draft-preview`, {
         method: "POST",
       });
-      const data = (await response.json().catch(() => null)) as ErrorResult | null;
-      if (!response.ok) {
-        throw new Error(data?.error?.message || "원고를 사전 생성하지 못했습니다.");
-      }
+      await consumeDraftGenerationStream(response, (generatedCount) => {
+        setGenerationProgress(generatedCount);
+      });
       await loadHistory();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "원고를 사전 생성하지 못했습니다.");
       setOpen(true);
       setBusy(null);
+    } finally {
+      setGenerationProgress(null);
     }
   };
 
@@ -139,10 +216,10 @@ export function AdminCampaignDraftPreview({
         onClick={generate}
         disabled={busy !== null || metrics.unassignedCount >= 25}
         title={`${businessName} 원고 생성`}
-        className="h-9 whitespace-nowrap rounded-[9px] border border-brand/20 bg-brand-tint px-3 text-xs font-bold text-brand transition hover:border-brand/40 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-45"
+        className="relative h-9 min-w-[92px] overflow-hidden whitespace-nowrap rounded-[9px] border border-brand/20 bg-brand-tint px-3 text-xs font-bold text-brand transition hover:border-brand/40 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-70"
       >
-        {busy === "generating"
-          ? "생성 중…"
+        {busy === "generating" && generationProgress !== null
+          ? <DraftGenerationProgress current={generationProgress} target={25} />
           : `원고생성 ${Math.min(metrics.unassignedCount, 25)}/25`}
       </button>
       <button

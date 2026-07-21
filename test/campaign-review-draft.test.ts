@@ -293,6 +293,31 @@ describe("campaign review draft generator", () => {
     expect(new Set(accumulated.items.map((item) => item.batchId)).size).toBe(2);
   });
 
+  it("reports each completed matrix item while the preview is generated", async () => {
+    const { campaign } = await createAssignment({
+      googlePlace: true,
+      googleReview: true,
+    });
+    await prisma.campaignDraftEvidence.create({
+      data: {
+        campaignId: campaign.id,
+        facet: "SERVICE",
+        fact: "예약제로 운영합니다.",
+        sourceType: "ADMIN",
+        sourceRef: "progress-test",
+        sourceExcerpt: "예약제로 운영합니다.",
+        status: "APPROVED",
+      },
+    });
+    const progress: number[] = [];
+
+    await generateCampaignReviewDraftPreview(campaign.id, prisma, (count) => {
+      progress.push(count);
+    });
+
+    expect(progress).toEqual(Array.from({ length: 25 }, (_, index) => index + 1));
+  });
+
   it("migrates legacy prepared drafts exactly once without deleting the originals", async () => {
     const { campaign } = await createAssignment({
       googlePlace: true,
