@@ -211,7 +211,6 @@ async function fetchActiveCampaignRows(db: DbClient) {
       },
       draftGuidance: true,
       draftEvidence: {
-        where: { status: "APPROVED" },
         select: { id: true, facet: true },
         take: 30,
       },

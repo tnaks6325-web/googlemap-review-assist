@@ -845,7 +845,37 @@ describe("campaign review draft generator", () => {
     expect(new Set(stored.map((row) => row.reviewDraftSequence)).size).toBe(2);
   });
 
-  it("rejects a v2 model response that cites unapproved evidence", async () => {
+  it("uses a pending legacy fact card automatically without manual approval", async () => {
+    const { reviewer, campaign, receipt } = await createAssignment({
+      googlePlace: true,
+      googleReview: true,
+    });
+    await prisma.campaignDraftEvidence.createMany({
+      data: [
+        ["SPACE", "내부 공간이 구역별로 정돈되어 있다"],
+        ["SPACE", "좌석 사이의 이동 공간이 구분되어 있다"],
+        ["ACCESS", "대중교통 접근 정보를 확인할 수 있다"],
+        ["ACCESS", "위치 안내가 지도에 구체적으로 등록되어 있다"],
+        ["OPERATIONS", "운영 관련 정보가 온라인에 안내되어 있다"],
+        ["OTHER", "이용 전에 참고할 장소 정보가 정리되어 있다"],
+      ].map(([facet, fact], index) => ({
+        campaignId: campaign.id,
+        facet,
+        fact,
+        sourceType: "GOOGLE_PLACE",
+        sourceRef: `legacy-pending-source-${index}`,
+        sourceExcerpt: fact,
+        status: "PENDING",
+      })),
+    });
+    process.env.REVIEW_DRAFT_V2_ENABLED = "true";
+
+    const result = await generateCampaignReviewDraftForAssignment(reviewer.id, receipt.id);
+
+    expect(result.evidenceIds?.length).toBeGreaterThan(0);
+  });
+
+  it("rejects a v2 model response that cites an unknown evidence card", async () => {
     const { reviewer, campaign, receipt } = await createAssignment({
       googlePlace: true,
       googleReview: true,
@@ -891,7 +921,7 @@ describe("campaign review draft generator", () => {
     await expect(
       generateCampaignReviewDraftForAssignment(reviewer.id, receipt.id),
     ).rejects.toMatchObject({
-      code: "UNAPPROVED_DRAFT_EVIDENCE",
+      code: "UNKNOWN_DRAFT_EVIDENCE",
       status: 422,
     });
   });

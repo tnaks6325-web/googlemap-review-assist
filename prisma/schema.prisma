@@ -140,7 +140,7 @@ model Campaign {
   createdAt               DateTime                     @default(now())
 }
 
-// 원고 생성에 사용할 관리자 승인 사실과 업종별 금지 표현.
+// 원고 생성에 사용할 관리자 입력 사실과 업종별 금지 표현.
 // SQLite 호환을 위해 목록은 JSON 문자열로 저장한다.
 model CampaignDraftGuidance {
   id                 String   @id @default(cuid())
@@ -187,7 +187,7 @@ model CampaignDraftEvidence {
   sourceType    String
   sourceRef     String
   sourceExcerpt String
-  status        String   @default("PENDING")
+  status        String   @default("APPROVED") // legacy column; fact cards are applied automatically
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import {
@@ -8,7 +9,6 @@ import {
   summarizeCampaignDraftEvidenceFailure,
   extractCampaignDraftEvidence,
   summarizeEvidenceReadiness,
-  updateCampaignDraftEvidence,
 } from "@/lib/domain/campaign-draft-evidence";
 import { generateUniqueSlug } from "@/lib/domain/codes";
 
@@ -80,25 +80,25 @@ describe("campaign draft evidence", () => {
     expect(normalized[0].sourceExcerpt).toBe("역 인근");
   });
 
-  it("requires six approved cards across three facets for a ready campaign", () => {
+  it("automatically applies every fact card regardless of its legacy status", () => {
     const weak = summarizeEvidenceReadiness([
-      { status: "APPROVED", facet: "SPACE" },
-      { status: "APPROVED", facet: "SPACE" },
+      { status: "PENDING", facet: "SPACE" },
+      { status: "REJECTED", facet: "SPACE" },
     ]);
     const ready = summarizeEvidenceReadiness([
       { status: "APPROVED", facet: "SPACE" },
-      { status: "APPROVED", facet: "SPACE" },
-      { status: "APPROVED", facet: "ACCESS" },
-      { status: "APPROVED", facet: "ACCESS" },
+      { status: "PENDING", facet: "SPACE" },
+      { status: "REJECTED", facet: "ACCESS" },
+      { status: "PENDING", facet: "ACCESS" },
       { status: "APPROVED", facet: "OPERATIONS" },
-      { status: "APPROVED", facet: "OPERATIONS" },
+      { status: "REJECTED", facet: "OPERATIONS" },
     ]);
 
     expect(weak.ready).toBe(false);
-    expect(ready).toMatchObject({ ready: true, approvedCount: 6, approvedFacetCount: 3 });
+    expect(ready).toMatchObject({ ready: true, evidenceCount: 6, facetCount: 3 });
   });
 
-  it("extracts idempotent pending cards and persists admin decisions", async () => {
+  it("extracts idempotent cards that are immediately applied", async () => {
     const owner = await prisma.owner.create({
       data: { email: `evidence-${Date.now()}-${evidenceSequence++}@test.local`, password: "x" },
     });
@@ -128,14 +128,23 @@ describe("campaign draft evidence", () => {
       const first = await extractCampaignDraftEvidence(campaign.id);
       const second = await extractCampaignDraftEvidence(campaign.id);
       expect(second.evidence).toHaveLength(first.evidence.length);
-      const target = second.evidence[0];
-      const updated = await updateCampaignDraftEvidence(campaign.id, [
-        { id: target.id, status: "APPROVED" },
-      ]);
-      expect(updated.evidence.find((item) => item.id === target.id)?.status).toBe("APPROVED");
+      expect(second.evidence.length).toBeGreaterThan(0);
+      expect(second.evidence.every((item) => item.status === "APPROVED")).toBe(true);
     } finally {
       if (originalProvider == null) delete process.env.REVIEW_DRAFT_PROVIDER;
       else process.env.REVIEW_DRAFT_PROVIDER = originalProvider;
     }
+  });
+
+  it("removes approval and rejection controls from the fact-card UI", () => {
+    const source = readFileSync(
+      new URL("../components/admin/AdminCampaignDraftEvidence.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(source).toContain("추출 즉시 원고 생성에 자동 적용됩니다.");
+    expect(source).not.toContain("onClick={() => decide");
+    expect(source).not.toContain(">승인<");
+    expect(source).not.toContain(">반려<");
   });
 });
