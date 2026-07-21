@@ -3,6 +3,7 @@ import { getAdminId } from "@/lib/auth/session";
 import {
   CampaignReviewDraftError,
   generateCampaignReviewDraftPreview,
+  listCampaignPreparedDrafts,
 } from "@/lib/domain/campaign-review-draft";
 import { recordOperationalError } from "@/lib/error-logging";
 import { err, ok } from "@/lib/http";
@@ -12,6 +13,24 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const HOUR = 60 * 60 * 1000;
+
+export async function GET(
+  _req: Request,
+  { params }: { params: Promise<{ campaignId: string }> },
+) {
+  const adminId = await getAdminId();
+  if (!adminId) return err("UNAUTHORIZED", "관리자 로그인이 필요해요", 401);
+
+  const { campaignId } = await params;
+  try {
+    return ok(await listCampaignPreparedDrafts(campaignId));
+  } catch (error) {
+    if (error instanceof CampaignReviewDraftError) {
+      return err(error.code, error.message, error.status);
+    }
+    return err("PREPARED_DRAFT_LIST_FAILED", "저장된 원고를 불러오지 못했어요", 500);
+  }
+}
 
 export async function POST(
   req: Request,

@@ -15,6 +15,7 @@ import {
 
 export const REVIEW_DRAFT_MIN_SOURCE_GROUPS = 2;
 export const REVIEW_DRAFT_MAX_REGENERATIONS = 3;
+export const CAMPAIGN_PREPARED_DRAFT_TARGET = 25;
 export const DEFAULT_REVIEW_DRAFT_MODEL = "gemini-3.5-flash";
 export const CAMPAIGN_REVIEW_DRAFT_INDUSTRIES = [
   "FOOD_CAFE",
@@ -106,6 +107,36 @@ export interface CampaignReviewDraftPreview {
     evidenceCoverage: number;
   };
   promptVersion: string;
+}
+
+export interface CampaignPreparedDraftHistory {
+  campaignId: string;
+  hasMore: boolean;
+  metrics: {
+    totalCount: number;
+    unassignedCount: number;
+    qualityExcludedCount: number;
+    assignedCount: number;
+    batchCount: number;
+  };
+  items: Array<{
+    id: string;
+    batchId: string;
+    slot: number;
+    styleId: string;
+    toneLabel: string;
+    structureLabel: string;
+    text: string;
+    evidenceIds: string[];
+    maxSimilarity: number;
+    qualityPassed: boolean;
+    status: "UNASSIGNED" | "QUALITY_EXCLUDED" | "ASSIGNED";
+    assignmentId: string | null;
+    generatedAt: string;
+    provider: string;
+    model: string;
+    promptVersion: string;
+  }>;
 }
 
 export class CampaignReviewDraftError extends Error {
@@ -1256,6 +1287,21 @@ function assertDraftContextReady(context: DraftContext) {
   }
 }
 
+export function selectPreparedDraftItemsForStorage<
+  T extends { qualityPassed: boolean },
+>(items: T[], currentUnassignedCount: number): T[] {
+  let remainingPassed = Math.max(
+    0,
+    CAMPAIGN_PREPARED_DRAFT_TARGET - Math.max(0, currentUnassignedCount),
+  );
+  return items.filter((item) => {
+    if (!item.qualityPassed) return true;
+    if (remainingPassed === 0) return false;
+    remainingPassed -= 1;
+    return true;
+  });
+}
+
 export async function generateCampaignReviewDraftPreview(
   campaignId: string,
   db: DbClient = prisma,
@@ -1268,6 +1314,20 @@ export async function generateCampaignReviewDraftPreview(
   const campaign = await fetchCampaignWithContext(db, cleanCampaignId);
   if (!campaign) {
     throw new CampaignReviewDraftError("CAMPAIGN_NOT_FOUND", "캠페인을 찾을 수 없습니다.", 404);
+  }
+  const currentUnassignedCount = await db.campaignPreparedDraft.count({
+    where: {
+      campaignId: campaign.id,
+      qualityPassed: true,
+      assignedReceiptId: null,
+    },
+  });
+  if (currentUnassignedCount >= CAMPAIGN_PREPARED_DRAFT_TARGET) {
+    throw new CampaignReviewDraftError(
+      "PREPARED_DRAFT_TARGET_REACHED",
+      "미배정 원고 25건이 이미 준비되어 있습니다.",
+      409,
+    );
   }
 
   const context = buildDraftContext({
@@ -1287,7 +1347,7 @@ export async function generateCampaignReviewDraftPreview(
       ? "template-v2"
       : envValue("REVIEW_DRAFT_MODEL") || DEFAULT_REVIEW_DRAFT_MODEL;
   const sourceGroups = sourceGroupMeta(context.sourceGroups);
-  return {
+  const preview: CampaignReviewDraftPreview = {
     campaignId: campaign.id,
     text: items[0]?.text ?? "",
     provider,
@@ -1306,6 +1366,130 @@ export async function generateCampaignReviewDraftPreview(
         : 0,
     },
     promptVersion: REVIEW_DRAFT_DIVERSITY_VERSION,
+  };
+  const itemsToStore = selectPreparedDraftItemsForStorage(
+    preview.items,
+    currentUnassignedCount,
+  );
+  await db.campaignPreparedDraftBatch.create({
+    data: {
+      campaignId: campaign.id,
+      provider: preview.provider,
+      model: preview.model,
+      sourceGroupsJson: JSON.stringify(preview.sourceGroups),
+      sourceGroupCount: preview.sourceGroupCount,
+      promptVersion: preview.promptVersion,
+      metricsJson: JSON.stringify(preview.metrics),
+      generatedAt: new Date(preview.generatedAt),
+      drafts: {
+        create: itemsToStore.map((item) => ({
+          campaignId: campaign.id,
+          slot: item.slot,
+          styleId: item.styleId,
+          toneLabel: item.toneLabel,
+          structureLabel: item.structureLabel,
+          text: item.text,
+          evidenceIdsJson: JSON.stringify(item.evidenceIds),
+          maxSimilarity: item.maxSimilarity,
+          qualityPassed: item.qualityPassed,
+        })),
+      },
+    },
+  });
+  return preview;
+}
+
+export async function listCampaignPreparedDrafts(
+  campaignId: string,
+  db: DbClient = prisma,
+): Promise<CampaignPreparedDraftHistory> {
+  const cleanCampaignId = campaignId.trim();
+  if (!cleanCampaignId) {
+    throw new CampaignReviewDraftError("INVALID_CAMPAIGN", "캠페인 정보를 확인해 주세요.");
+  }
+  const campaign = await db.campaign.findUnique({
+    where: { id: cleanCampaignId },
+    select: { id: true },
+  });
+  if (!campaign) {
+    throw new CampaignReviewDraftError("CAMPAIGN_NOT_FOUND", "캠페인을 찾을 수 없습니다.", 404);
+  }
+  const [
+    rows,
+    totalCount,
+    unassignedCount,
+    qualityExcludedCount,
+    assignedCount,
+    batchCount,
+  ] = await Promise.all([
+    db.campaignPreparedDraft.findMany({
+      where: { campaignId: cleanCampaignId },
+      orderBy: { createdAt: "desc" },
+      take: 250,
+      include: {
+        batch: {
+          select: {
+            provider: true,
+            model: true,
+            promptVersion: true,
+            generatedAt: true,
+          },
+        },
+      },
+    }),
+    db.campaignPreparedDraft.count({ where: { campaignId: cleanCampaignId } }),
+    db.campaignPreparedDraft.count({
+      where: {
+        campaignId: cleanCampaignId,
+        qualityPassed: true,
+        assignedReceiptId: null,
+      },
+    }),
+    db.campaignPreparedDraft.count({
+      where: { campaignId: cleanCampaignId, qualityPassed: false },
+    }),
+    db.campaignPreparedDraft.count({
+      where: {
+        campaignId: cleanCampaignId,
+        qualityPassed: true,
+        assignedReceiptId: { not: null },
+      },
+    }),
+    db.campaignPreparedDraftBatch.count({ where: { campaignId: cleanCampaignId } }),
+  ]);
+  const items: CampaignPreparedDraftHistory["items"] = rows.map((row) => ({
+    id: row.id,
+    batchId: row.batchId,
+    slot: row.slot,
+    styleId: row.styleId,
+    toneLabel: row.toneLabel,
+    structureLabel: row.structureLabel,
+    text: row.text,
+    evidenceIds: parseTextList(row.evidenceIdsJson, 12, 120),
+    maxSimilarity: row.maxSimilarity,
+    qualityPassed: row.qualityPassed,
+    status: !row.qualityPassed
+      ? "QUALITY_EXCLUDED"
+      : row.assignedReceiptId
+        ? "ASSIGNED"
+        : "UNASSIGNED",
+    assignmentId: row.assignedReceiptId,
+    generatedAt: row.batch.generatedAt.toISOString(),
+    provider: row.batch.provider,
+    model: row.batch.model,
+    promptVersion: row.batch.promptVersion,
+  }));
+  return {
+    campaignId: cleanCampaignId,
+    hasMore: totalCount > items.length,
+    metrics: {
+      totalCount,
+      unassignedCount,
+      qualityExcludedCount,
+      assignedCount,
+      batchCount,
+    },
+    items,
   };
 }
 
@@ -1391,6 +1575,110 @@ async function recentCampaignDrafts(
   return rows
     .map((row) => row.reviewDraftText?.trim() ?? "")
     .filter(Boolean);
+}
+
+async function claimPreparedCampaignDraft(
+  receipt: Awaited<ReturnType<typeof fetchAssignmentWithContext>> & {},
+  context: DraftContext,
+  db: DbClient,
+): Promise<{ result: CampaignReviewDraftResult | null; poolExists: boolean }> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const prepared = await db.campaignPreparedDraft.findFirst({
+      where: {
+        campaignId: receipt.campaignId,
+        qualityPassed: true,
+        assignedReceiptId: null,
+      },
+      orderBy: { createdAt: "asc" },
+      include: { batch: true },
+    });
+    if (!prepared) {
+      const poolExists =
+        (await db.campaignPreparedDraftBatch.count({
+          where: { campaignId: receipt.campaignId },
+        })) > 0;
+      return { result: null, poolExists };
+    }
+
+    const assignedAt = new Date();
+    const claimed = await db.campaignPreparedDraft.updateMany({
+      where: { id: prepared.id, assignedReceiptId: null },
+      data: { assignedReceiptId: receipt.id, assignedAt },
+    });
+    if (claimed.count !== 1) continue;
+
+    const returnedDraft = concealPlaceIdentifiers(prepared.text, context);
+    const version = receipt.reviewDraftVersion + 1;
+    let updatedReceiptCount = 0;
+    try {
+      const updatedReceipt = await db.receipt.updateMany({
+        where: {
+          id: receipt.id,
+          reviewDraftVersion: receipt.reviewDraftVersion,
+        },
+        data: {
+          reviewDraftText: returnedDraft,
+          reviewDraftProvider: prepared.batch.provider,
+          reviewDraftModel: prepared.batch.model,
+          reviewDraftSourceGroupsJson: prepared.batch.sourceGroupsJson,
+          reviewDraftContextHash: context.contextHash,
+          reviewDraftGeneratedAt: prepared.batch.generatedAt,
+          reviewDraftVersion: version,
+          reviewDraftSequence: prepared.slot,
+          reviewDraftStyleId: prepared.styleId,
+          reviewDraftEvidenceIdsJson: prepared.evidenceIdsJson,
+          reviewDraftSimilarity: prepared.maxSimilarity,
+          reviewDraftPromptVersion: prepared.batch.promptVersion,
+        },
+      });
+      updatedReceiptCount = updatedReceipt.count;
+    } catch (error) {
+      await db.campaignPreparedDraft.updateMany({
+        where: { id: prepared.id, assignedReceiptId: receipt.id },
+        data: { assignedReceiptId: null, assignedAt: null },
+      });
+      throw error;
+    }
+    if (updatedReceiptCount !== 1) {
+      await db.campaignPreparedDraft.updateMany({
+        where: { id: prepared.id, assignedReceiptId: receipt.id },
+        data: { assignedReceiptId: null, assignedAt: null },
+      });
+      throw new CampaignReviewDraftError(
+        "PREPARED_DRAFT_CLAIM_CONFLICT",
+        "이미 원고가 배정되었습니다. 저장된 원고를 다시 확인해 주세요.",
+        409,
+      );
+    }
+
+    const sourceGroups = JSON.parse(
+      prepared.batch.sourceGroupsJson,
+    ) as CampaignReviewDraftResult["sourceGroups"];
+    return {
+      poolExists: true,
+      result: {
+        assignmentId: receipt.id,
+        text: returnedDraft,
+        provider: prepared.batch.provider,
+        model: prepared.batch.model,
+        sourceGroups,
+        sourceGroupCount: prepared.batch.sourceGroupCount,
+        version,
+        generatedAt: prepared.batch.generatedAt.toISOString(),
+        reused: true,
+        styleId: prepared.styleId,
+        slot: prepared.slot,
+        promptVersion: prepared.batch.promptVersion,
+        evidenceIds: parseTextList(prepared.evidenceIdsJson, 12, 120),
+        maxSimilarity: prepared.maxSimilarity,
+      },
+    };
+  }
+  throw new CampaignReviewDraftError(
+    "PREPARED_DRAFT_CLAIM_CONFLICT",
+    "다른 참여자에게 원고가 배정되었습니다. 다시 시도해 주세요.",
+    409,
+  );
 }
 
 export async function generateCampaignReviewDraftForAssignment(
@@ -1490,6 +1778,16 @@ export async function generateCampaignReviewDraftForAssignment(
   }
   if (receipt.reviewDraftVersion >= REVIEW_DRAFT_MAX_REGENERATIONS) {
     throw new CampaignReviewDraftError("REGENERATION_LIMIT_EXCEEDED", "원고 재생성은 최대 3회까지만 가능합니다.", 429);
+  }
+
+  const prepared = await claimPreparedCampaignDraft(receipt, context, db);
+  if (prepared.result) return prepared.result;
+  if (prepared.poolExists) {
+    throw new CampaignReviewDraftError(
+      "PREPARED_DRAFTS_EXHAUSTED",
+      "배정 가능한 원고를 준비 중입니다. 잠시 후 다시 시도해 주세요.",
+      409,
+    );
   }
 
   assertDraftContextReady(context);

@@ -3,6 +3,8 @@ import { prisma } from "@/lib/db";
 import {
   generateCampaignReviewDraftPreview,
   generateCampaignReviewDraftForAssignment,
+  listCampaignPreparedDrafts,
+  selectPreparedDraftItemsForStorage,
   nonSpaceLength,
   normalizeCampaignDraftGuidance,
   REVIEW_DRAFT_MAX_REGENERATIONS,
@@ -231,6 +233,161 @@ describe("campaign review draft generator", () => {
     expect(nonSpaceLength(preview.text)).toBeGreaterThanOrEqual(30);
     expect(after.reviewDraftText).toBe(before.reviewDraftText);
     expect(after.reviewDraftVersion).toBe(before.reviewDraftVersion);
+  });
+
+  it("keeps five existing drafts and stores only the remaining twenty passed drafts", () => {
+    const generated = [
+      ...Array.from({ length: 25 }, (_, index) => ({
+        id: `passed-${index}`,
+        qualityPassed: true,
+      })),
+      ...Array.from({ length: 2 }, (_, index) => ({
+        id: `excluded-${index}`,
+        qualityPassed: false,
+      })),
+    ];
+
+    const selected = selectPreparedDraftItemsForStorage(generated, 5);
+
+    expect(selected.filter((item) => item.qualityPassed)).toHaveLength(20);
+    expect(selected.filter((item) => !item.qualityPassed)).toHaveLength(2);
+    expect(selected.map((item) => item.id)).toContain("passed-0");
+  });
+
+  it("stores every admin preview item and accumulates passed and excluded drafts", async () => {
+    const { campaign } = await createAssignment({
+      googlePlace: true,
+      naverPlace: true,
+      googleReview: true,
+    });
+    await prisma.campaignDraftEvidence.createMany({
+      data: Array.from({ length: 8 }, (_, index) => ({
+        campaignId: campaign.id,
+        facet: ["SPACE", "ACCESS", "OPERATIONS", "OTHER"][index % 4],
+        fact: `누적 저장 검증을 위한 승인 사실 ${index + 1}이 안내되어 있다`,
+        sourceType: "ADMIN_APPROVED",
+        sourceRef: `stored-preview-${index}`,
+        sourceExcerpt: `승인 사실 ${index + 1}`,
+        status: "APPROVED",
+      })),
+    });
+
+    const first = await generateCampaignReviewDraftPreview(campaign.id);
+    const firstHistory = await listCampaignPreparedDrafts(campaign.id);
+    const second = await generateCampaignReviewDraftPreview(campaign.id);
+    const accumulated = await listCampaignPreparedDrafts(campaign.id);
+
+    expect(firstHistory.metrics.totalCount).toBe(25);
+    expect(firstHistory.metrics.unassignedCount).toBe(
+      first.items.filter((item) => item.qualityPassed).length,
+    );
+    expect(firstHistory.metrics.qualityExcludedCount).toBe(
+      first.items.filter((item) => !item.qualityPassed).length,
+    );
+    expect(accumulated.metrics.totalCount).toBe(50);
+    expect(accumulated.metrics.unassignedCount).toBe(
+      [...first.items, ...second.items].filter((item) => item.qualityPassed).length,
+    );
+    expect(accumulated.items).toHaveLength(50);
+    expect(new Set(accumulated.items.map((item) => item.batchId)).size).toBe(2);
+  });
+
+  it("assigns a stored unassigned draft before generating a new reviewer draft", async () => {
+    const { reviewer, campaign, receipt } = await createAssignment({
+      googlePlace: true,
+      naverPlace: true,
+      googleReview: true,
+    });
+    await prisma.campaignDraftEvidence.createMany({
+      data: Array.from({ length: 8 }, (_, index) => ({
+        campaignId: campaign.id,
+        facet: ["SPACE", "ACCESS", "OPERATIONS", "OTHER"][index % 4],
+        fact: `원고 배정 검증을 위한 승인 사실 ${index + 1}이 안내되어 있다`,
+        sourceType: "ADMIN_APPROVED",
+        sourceRef: `assignment-preview-${index}`,
+        sourceExcerpt: `승인 사실 ${index + 1}`,
+        status: "APPROVED",
+      })),
+    });
+    const storedText = "저장된 정상 원고를 리뷰어에게 우선 배정하는 흐름을 확인하기 위한 충분한 길이의 테스트 원고입니다.";
+    await prisma.campaignPreparedDraftBatch.create({
+      data: {
+        campaignId: campaign.id,
+        provider: "template",
+        model: "template-v2",
+        sourceGroupsJson: "[]",
+        sourceGroupCount: 2,
+        promptVersion: "review-diversity-v2",
+        metricsJson: "{}",
+        drafts: {
+          create: {
+            campaignId: campaign.id,
+            slot: 0,
+            styleId: "stored-test-style",
+            toneLabel: "담백형",
+            structureLabel: "세부 우선",
+            text: storedText,
+            evidenceIdsJson: "[]",
+            maxSimilarity: 0.1,
+            qualityPassed: true,
+          },
+        },
+      },
+    });
+
+    const result = await generateCampaignReviewDraftForAssignment(reviewer.id, receipt.id);
+    const history = await listCampaignPreparedDrafts(campaign.id);
+
+    expect(result.text).toBe(storedText);
+    expect(result.reused).toBe(true);
+    expect(history.metrics.assignedCount).toBe(1);
+    expect(history.metrics.unassignedCount).toBe(0);
+    expect(history.items.find((item) => item.assignmentId === receipt.id)?.text).toBe(result.text);
+  });
+
+  it("consumes only one prepared draft when the same assignment requests concurrently", async () => {
+    const { reviewer, campaign, receipt } = await createAssignment({
+      googlePlace: true,
+      naverPlace: true,
+      googleReview: true,
+    });
+    await prisma.campaignPreparedDraftBatch.create({
+      data: {
+        campaignId: campaign.id,
+        provider: "template",
+        model: "template-v2",
+        sourceGroupsJson: "[]",
+        sourceGroupCount: 2,
+        promptVersion: "review-diversity-v2",
+        metricsJson: "{}",
+        drafts: {
+          create: [0, 1].map((slot) => ({
+            campaignId: campaign.id,
+            slot,
+            styleId: `concurrent-style-${slot}`,
+            toneLabel: "담백형",
+            structureLabel: "세부 우선",
+            text: `동시 배정 검증용 저장 원고 ${slot + 1}번이며 한 참여건에는 한 건만 소비되어야 합니다.`,
+            evidenceIdsJson: "[]",
+            maxSimilarity: 0.1,
+            qualityPassed: true,
+          })),
+        },
+      },
+    });
+
+    const attempts = await Promise.allSettled([
+      generateCampaignReviewDraftForAssignment(reviewer.id, receipt.id),
+      generateCampaignReviewDraftForAssignment(reviewer.id, receipt.id),
+    ]);
+    const stored = await prisma.receipt.findUniqueOrThrow({ where: { id: receipt.id } });
+    const assigned = await prisma.campaignPreparedDraft.findMany({
+      where: { assignedReceiptId: receipt.id },
+    });
+
+    expect(attempts.filter((attempt) => attempt.status === "fulfilled")).toHaveLength(1);
+    expect(assigned).toHaveLength(1);
+    expect(assigned[0]?.text).toBe(stored.reviewDraftText);
   });
 
   it("sends only approved evidence, not raw guide examples, to the v2 preview prompt", async () => {

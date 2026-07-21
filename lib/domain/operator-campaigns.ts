@@ -74,6 +74,13 @@ export interface AdminCampaignRow extends PublicCampaignCard {
   reviewReferenceCount: number;
   draftSourceGroupCount: number;
   canGenerateReviewDraft: boolean;
+  preparedDraftMetrics: {
+    totalCount: number;
+    unassignedCount: number;
+    qualityExcludedCount: number;
+    assignedCount: number;
+    batchCount: number;
+  };
   draftGuidance: CampaignDraftGuidance;
   draftSourceGroups: {
     googlePlace: boolean;
@@ -329,7 +336,14 @@ export async function listAdminCampaigns(): Promise<AdminCampaignRow[]> {
   await expireStaleCampaignAssignments(prisma, now);
   const campaigns = await fetchCampaigns(true);
   const campaignIds = campaigns.map((campaign) => campaign.id);
-  const [statsByCampaignId, completedReceipts] = await Promise.all([
+  const [
+    statsByCampaignId,
+    completedReceipts,
+    unassignedPreparedDrafts,
+    excludedPreparedDrafts,
+    assignedPreparedDrafts,
+    preparedDraftBatches,
+  ] = await Promise.all([
     fetchCampaignParticipationStats(prisma, campaignIds, now),
     prisma.receipt.findMany({
       where: {
@@ -339,7 +353,77 @@ export async function listAdminCampaigns(): Promise<AdminCampaignRow[]> {
       },
       select: { id: true, campaignId: true },
     }),
+    prisma.campaignPreparedDraft.groupBy({
+      by: ["campaignId"],
+      where: {
+        campaignId: { in: campaignIds },
+        qualityPassed: true,
+        assignedReceiptId: null,
+      },
+      _count: { _all: true },
+    }),
+    prisma.campaignPreparedDraft.groupBy({
+      by: ["campaignId"],
+      where: { campaignId: { in: campaignIds }, qualityPassed: false },
+      _count: { _all: true },
+    }),
+    prisma.campaignPreparedDraft.groupBy({
+      by: ["campaignId"],
+      where: {
+        campaignId: { in: campaignIds },
+        qualityPassed: true,
+        assignedReceiptId: { not: null },
+      },
+      _count: { _all: true },
+    }),
+    prisma.campaignPreparedDraftBatch.groupBy({
+      by: ["campaignId"],
+      where: { campaignId: { in: campaignIds } },
+      _count: { _all: true },
+    }),
   ]);
+  const preparedMetricsByCampaignId = new Map<
+    string,
+    AdminCampaignRow["preparedDraftMetrics"]
+  >();
+
+  const setPreparedCount = (
+    campaignId: string,
+    key: "unassignedCount" | "qualityExcludedCount" | "assignedCount",
+    count: number,
+  ) => {
+    const metrics = preparedMetricsByCampaignId.get(campaignId) ?? {
+      totalCount: 0,
+      unassignedCount: 0,
+      qualityExcludedCount: 0,
+      assignedCount: 0,
+      batchCount: 0,
+    };
+    metrics[key] = count;
+    metrics.totalCount =
+      metrics.unassignedCount + metrics.qualityExcludedCount + metrics.assignedCount;
+    preparedMetricsByCampaignId.set(campaignId, metrics);
+  };
+  for (const row of unassignedPreparedDrafts) {
+    setPreparedCount(row.campaignId, "unassignedCount", row._count._all);
+  }
+  for (const row of excludedPreparedDrafts) {
+    setPreparedCount(row.campaignId, "qualityExcludedCount", row._count._all);
+  }
+  for (const row of assignedPreparedDrafts) {
+    setPreparedCount(row.campaignId, "assignedCount", row._count._all);
+  }
+  for (const batch of preparedDraftBatches) {
+    const metrics = preparedMetricsByCampaignId.get(batch.campaignId) ?? {
+      totalCount: 0,
+      unassignedCount: 0,
+      qualityExcludedCount: 0,
+      assignedCount: 0,
+      batchCount: 0,
+    };
+    metrics.batchCount = batch._count._all;
+    preparedMetricsByCampaignId.set(batch.campaignId, metrics);
+  }
   const receiptIds = completedReceipts.map((receipt) => receipt.id);
   const paidTransactions = receiptIds.length
     ? await prisma.pointTransaction.findMany({
@@ -407,6 +491,13 @@ export async function listAdminCampaigns(): Promise<AdminCampaignRow[]> {
       reviewReferenceCount: draftSummary.reviewReferenceCount,
       draftSourceGroupCount: draftSummary.sourceGroupCount,
       canGenerateReviewDraft: draftSummary.canGenerateReviewDraft,
+      preparedDraftMetrics: preparedMetricsByCampaignId.get(campaign.id) ?? {
+        totalCount: 0,
+        unassignedCount: 0,
+        qualityExcludedCount: 0,
+        assignedCount: 0,
+        batchCount: 0,
+      },
       draftGuidance: {
         ...draftGuidance,
         industry: draftGuidance.industry ?? draftSummary.industry,

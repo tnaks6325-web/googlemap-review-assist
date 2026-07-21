@@ -1,16 +1,24 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-interface PreviewResult {
+type DraftStatus = "UNASSIGNED" | "QUALITY_EXCLUDED" | "ASSIGNED";
+
+interface PreparedDraftMetrics {
+  totalCount: number;
+  unassignedCount: number;
+  qualityExcludedCount: number;
+  assignedCount: number;
+  batchCount: number;
+}
+
+interface PreparedDraftHistory {
   campaignId: string;
-  text: string;
-  provider: string;
-  model: string;
-  sourceGroupCount: number;
-  generatedAt: string;
-  promptVersion: string;
+  hasMore: boolean;
+  metrics: PreparedDraftMetrics;
   items: Array<{
+    id: string;
+    batchId: string;
     slot: number;
     styleId: string;
     toneLabel: string;
@@ -19,29 +27,44 @@ interface PreviewResult {
     evidenceIds: string[];
     maxSimilarity: number;
     qualityPassed: boolean;
+    status: DraftStatus;
+    assignmentId: string | null;
+    generatedAt: string;
+    provider: string;
+    model: string;
+    promptVersion: string;
   }>;
-  metrics: {
-    styleCoverage: number;
-    maxSimilarity: number;
-    averageSimilarity: number;
-    duplicateCount: number;
-    evidenceCoverage: number;
-  };
 }
 
 interface ErrorResult {
   error?: { message?: string };
 }
 
+const FILTERS: Array<{ status: DraftStatus; label: string; metric: keyof PreparedDraftMetrics }> = [
+  { status: "UNASSIGNED", label: "미배정", metric: "unassignedCount" },
+  { status: "QUALITY_EXCLUDED", label: "품질 제외", metric: "qualityExcludedCount" },
+  { status: "ASSIGNED", label: "배정 완료", metric: "assignedCount" },
+];
+
 export function AdminCampaignDraftPreview({
   campaignId,
   businessName,
+  initialMetrics = {
+    totalCount: 0,
+    unassignedCount: 0,
+    qualityExcludedCount: 0,
+    assignedCount: 0,
+    batchCount: 0,
+  },
 }: {
   campaignId: string;
   businessName: string;
+  initialMetrics?: PreparedDraftMetrics;
 }) {
-  const [loading, setLoading] = useState(false);
-  const [preview, setPreview] = useState<PreviewResult | null>(null);
+  const [busy, setBusy] = useState<"loading" | "generating" | null>(null);
+  const [history, setHistory] = useState<PreparedDraftHistory | null>(null);
+  const [metrics, setMetrics] = useState(initialMetrics);
+  const [filter, setFilter] = useState<DraftStatus>("UNASSIGNED");
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -60,40 +83,76 @@ export function AdminCampaignDraftPreview({
     };
   }, [open]);
 
+  const loadHistory = async () => {
+    setBusy("loading");
+    setError(null);
+    try {
+      const response = await fetch(`/api/admin/campaigns/${campaignId}/draft-preview`);
+      const data = (await response.json().catch(() => null)) as
+        | (PreparedDraftHistory & ErrorResult)
+        | null;
+      if (!response.ok || !data?.metrics || !Array.isArray(data.items)) {
+        throw new Error(data?.error?.message || "저장된 원고를 불러오지 못했습니다.");
+      }
+      setHistory(data);
+      setMetrics(data.metrics);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "저장된 원고를 불러오지 못했습니다.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const openHistory = () => {
+    setOpen(true);
+    void loadHistory();
+  };
+
   const generate = async () => {
-    setLoading(true);
+    setBusy("generating");
     setError(null);
     try {
       const response = await fetch(`/api/admin/campaigns/${campaignId}/draft-preview`, {
         method: "POST",
       });
-      const data = (await response.json().catch(() => null)) as
-        | (PreviewResult & ErrorResult)
-        | null;
+      const data = (await response.json().catch(() => null)) as ErrorResult | null;
       if (!response.ok) {
-        throw new Error(data?.error?.message || "테스트 원고를 생성하지 못했습니다.");
+        throw new Error(data?.error?.message || "원고를 사전 생성하지 못했습니다.");
       }
-      if (!data?.items?.length) throw new Error("생성된 25개 테스트 원고가 없습니다.");
-      setPreview(data);
-      setOpen(true);
+      await loadHistory();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "테스트 원고를 생성하지 못했습니다.");
+      setError(cause instanceof Error ? cause.message : "원고를 사전 생성하지 못했습니다.");
       setOpen(true);
-    } finally {
-      setLoading(false);
+      setBusy(null);
     }
   };
+
+  const visibleItems = useMemo(
+    () => history?.items.filter((item) => item.status === filter) ?? [],
+    [filter, history],
+  );
 
   return (
     <>
       <button
         type="button"
         onClick={generate}
-        disabled={loading}
-        title={`${businessName} 테스트 원고 생성`}
+        disabled={busy !== null || metrics.unassignedCount >= 25}
+        title={`${businessName} 원고 생성`}
         className="h-9 whitespace-nowrap rounded-[9px] border border-brand/20 bg-brand-tint px-3 text-xs font-bold text-brand transition hover:border-brand/40 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-45"
       >
-        {loading ? "생성 중…" : "원고생성 테스트"}
+        {busy === "generating"
+          ? "생성 중…"
+          : `원고생성 ${Math.min(metrics.unassignedCount, 25)}/25`}
+      </button>
+      <button
+        type="button"
+        onClick={openHistory}
+        disabled={busy !== null}
+        title={`${businessName} 원고 보관함`}
+        className="h-9 whitespace-nowrap rounded-[9px] border border-line bg-surface px-3 text-xs font-bold text-ink-sub transition hover:border-line-strong hover:bg-surface-alt disabled:cursor-not-allowed disabled:opacity-45"
+      >
+        원고보관함
       </button>
 
       {open ? (
@@ -112,71 +171,93 @@ export function AdminCampaignDraftPreview({
           >
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-bold text-brand">원고 생성 테스트</p>
-                <h3
-                  id={`draft-preview-title-${campaignId}`}
-                  className="mt-1 text-lg font-bold text-ink"
-                >
+                <p className="text-xs font-bold text-brand">캠페인 원고 보관함</p>
+                <h3 id={`draft-preview-title-${campaignId}`} className="mt-1 text-lg font-bold text-ink">
                   {businessName}
                 </h3>
                 <p className="mt-1 text-xs text-ink-weak">
-                  실제 참여 기록이나 리뷰어 원고에는 저장되지 않는 미리보기입니다.
+                  사전 생성 결과가 누적 저장되며, 품질 통과 원고는 참여자에게 순서대로 배정됩니다.
                 </p>
               </div>
               <button
                 ref={closeButtonRef}
                 type="button"
                 onClick={() => setOpen(false)}
-                aria-label="원고 생성 테스트 닫기"
+                aria-label="캠페인 원고 보관함 닫기"
                 className="inline-flex size-9 shrink-0 items-center justify-center rounded-[9px] border border-line text-lg text-ink-weak hover:bg-surface-alt"
               >
                 ×
               </button>
             </div>
 
+            <div className="mt-5 grid gap-2 sm:grid-cols-5">
+              <Metric label="저장 원고" value={`${metrics.totalCount}건`} />
+              <Metric label="미배정" value={`${metrics.unassignedCount}건`} />
+              <Metric label="품질 제외" value={`${metrics.qualityExcludedCount}건`} />
+              <Metric label="배정 완료" value={`${metrics.assignedCount}건`} />
+              <Metric label="생성 배치" value={`${metrics.batchCount}회`} />
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-2 border-b border-line pb-3" role="tablist" aria-label="원고 상태">
+              {FILTERS.map((item) => (
+                <button
+                  key={item.status}
+                  type="button"
+                  role="tab"
+                  aria-selected={filter === item.status}
+                  onClick={() => setFilter(item.status)}
+                  className={`rounded-full px-3 py-1.5 text-xs font-bold ${
+                    filter === item.status ? "bg-brand text-white" : "bg-surface-alt text-ink-sub"
+                  }`}
+                >
+                  {item.label} {metrics[item.metric]}건
+                </button>
+              ))}
+            </div>
+
             {error ? (
-              <p className="mt-5 rounded-[12px] border border-red-200 bg-red-50 p-4 text-sm font-semibold leading-6 text-danger">
+              <p className="mt-4 rounded-[12px] border border-red-200 bg-red-50 p-4 text-sm font-semibold leading-6 text-danger">
                 {error}
               </p>
-            ) : preview ? (
-              <>
-                <div className="mt-5 grid gap-2 sm:grid-cols-5">
-                  <Metric label="스타일" value={`${preview.metrics.styleCoverage}/25`} />
-                  <Metric label="최대 유사도" value={preview.metrics.maxSimilarity.toFixed(3)} />
-                  <Metric label="평균 유사도" value={preview.metrics.averageSimilarity.toFixed(3)} />
-                  <Metric label="중복 쌍" value={`${preview.metrics.duplicateCount}개`} />
-                  <Metric label="근거 사용률" value={`${Math.round(preview.metrics.evidenceCoverage * 100)}%`} />
-                </div>
-                <div className="mt-3 grid gap-3 md:grid-cols-2">
-                  {preview.items.map((item) => (
-                    <article
-                      key={item.styleId}
-                      className={`rounded-[12px] border p-4 ${
-                        item.qualityPassed ? "border-line bg-canvas" : "border-amber-200 bg-amber-50"
-                      }`}
-                    >
-                      <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                        <span className="font-bold text-brand">#{item.slot + 1}</span>
-                        <span className="rounded-full bg-brand-tint px-2 py-0.5 font-semibold text-brand">
-                          {item.toneLabel}
-                        </span>
-                        <span className="text-ink-weak">{item.structureLabel}</span>
-                        <span className="ml-auto text-ink-weak">유사도 {item.maxSimilarity.toFixed(3)}</span>
-                      </div>
-                      <p className="mt-2 whitespace-pre-wrap text-[14px] leading-6 text-ink">{item.text}</p>
-                      <p className="mt-2 text-[11px] text-ink-weak">
-                        근거 {item.evidenceIds.length}개 · {item.qualityPassed ? "품질 통과" : "보정 필요"}
-                      </p>
-                    </article>
-                  ))}
-                </div>
-                <p className="mt-3 text-xs text-ink-weak">
-                  참고자료 {preview.sourceGroupCount}종 · {preview.provider} / {preview.model} · {preview.promptVersion}
-                </p>
-              </>
+            ) : busy === "loading" && !history ? (
+              <p className="py-12 text-center text-sm text-ink-weak">저장된 원고를 불러오는 중…</p>
+            ) : visibleItems.length ? (
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                {visibleItems.map((item) => (
+                  <article
+                    key={item.id}
+                    className={`rounded-[12px] border p-4 ${
+                      item.status === "QUALITY_EXCLUDED"
+                        ? "border-amber-200 bg-amber-50"
+                        : "border-line bg-canvas"
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                      <span className="font-bold text-brand">#{item.slot + 1}</span>
+                      <span className="rounded-full bg-brand-tint px-2 py-0.5 font-semibold text-brand">
+                        {item.toneLabel}
+                      </span>
+                      <span className="text-ink-weak">{item.structureLabel}</span>
+                      <span className="ml-auto text-ink-weak">유사도 {item.maxSimilarity.toFixed(3)}</span>
+                    </div>
+                    <p className="mt-2 whitespace-pre-wrap text-[14px] leading-6 text-ink">{item.text}</p>
+                    <p className="mt-2 text-[11px] text-ink-weak">
+                      근거 {item.evidenceIds.length}개 · {statusLabel(item.status)} · {formatGeneratedAt(item.generatedAt)}
+                    </p>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="py-12 text-center text-sm text-ink-weak">이 상태의 저장 원고가 없습니다.</p>
+            )}
+
+            {history?.hasMore ? (
+              <p className="mt-3 text-center text-xs text-ink-weak">
+                최신 원고 250건만 표시하고 있습니다.
+              </p>
             ) : null}
 
-            <div className="mt-5 flex justify-end gap-2">
+            <div className="mt-5 flex justify-end">
               <button
                 type="button"
                 onClick={() => setOpen(false)}
@@ -184,20 +265,27 @@ export function AdminCampaignDraftPreview({
               >
                 닫기
               </button>
-              <button
-                type="button"
-                onClick={generate}
-                disabled={loading}
-                className="h-10 rounded-[9px] bg-brand px-4 text-sm font-bold text-white hover:opacity-90 disabled:opacity-50"
-              >
-                {loading ? "생성 중…" : "다시 생성"}
-              </button>
             </div>
           </section>
         </div>
       ) : null}
     </>
   );
+}
+
+function statusLabel(status: DraftStatus) {
+  if (status === "UNASSIGNED") return "미배정";
+  if (status === "ASSIGNED") return "배정 완료";
+  return "품질 제외";
+}
+
+function formatGeneratedAt(value: string) {
+  return new Intl.DateTimeFormat("ko-KR", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
 }
 
 function Metric({ label, value }: { label: string; value: string }) {

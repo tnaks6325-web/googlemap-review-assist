@@ -36,4 +36,8 @@ describe("admin campaign table layout", () => {
     expect(componentSource).toContain("AdminCampaignRewardPoints");
     expect(componentSource).toContain("initialRewardPoints={campaign.rewardPoints}");
   });
+
+  it("removes the reviewer-page shortcut from the management buttons", () => {
+    expect(componentSource).not.toContain("참여 페이지 열기");
+  });
 });
