@@ -4,6 +4,7 @@ import {
   generateCampaignReviewDraftPreview,
   generateCampaignReviewDraftForAssignment,
   listCampaignPreparedDrafts,
+  migrateLegacyCampaignPreparedDrafts,
   selectPreparedDraftItemsForStorage,
   nonSpaceLength,
   normalizeCampaignDraftGuidance,
@@ -290,6 +291,54 @@ describe("campaign review draft generator", () => {
     );
     expect(accumulated.items).toHaveLength(50);
     expect(new Set(accumulated.items.map((item) => item.batchId)).size).toBe(2);
+  });
+
+  it("migrates legacy prepared drafts exactly once without deleting the originals", async () => {
+    const { campaign } = await createAssignment({
+      googlePlace: true,
+      googleReview: true,
+    });
+    const generatedAt = new Date("2026-07-20T03:00:00.000Z");
+    const legacy = await prisma.campaignReviewDraft.create({
+      data: {
+        campaignId: campaign.id,
+        sequence: 5,
+        text: "기존에 저장되어 있던 검수 통과 원고입니다.",
+        provider: "gemini",
+        model: "gemini-3.5-flash",
+        sourceGroupsJson: JSON.stringify([
+          { key: "GOOGLE_PLACE", label: "Google 장소", count: 1 },
+          { key: "GOOGLE_REVIEWS", label: "Google 리뷰", count: 1 },
+        ]),
+        contextHash: "legacy-context",
+        generatedAt,
+        styleId: "legacy-style",
+        evidenceIdsJson: JSON.stringify(["evidence-1"]),
+        similarity: 0.12,
+        promptVersion: "legacy-v1",
+      },
+    });
+
+    await migrateLegacyCampaignPreparedDrafts(campaign.id, prisma);
+    await migrateLegacyCampaignPreparedDrafts(campaign.id, prisma);
+
+    const history = await listCampaignPreparedDrafts(campaign.id, prisma);
+    expect(history.metrics).toMatchObject({
+      totalCount: 1,
+      unassignedCount: 1,
+      assignedCount: 0,
+      batchCount: 1,
+    });
+    expect(history.items[0]).toMatchObject({
+      text: legacy.text,
+      status: "UNASSIGNED",
+      provider: legacy.provider,
+      model: legacy.model,
+      promptVersion: legacy.promptVersion,
+    });
+    await expect(
+      prisma.campaignReviewDraft.count({ where: { id: legacy.id } }),
+    ).resolves.toBe(1);
   });
 
   it("assigns a stored unassigned draft before generating a new reviewer draft", async () => {

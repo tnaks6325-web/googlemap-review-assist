@@ -1302,6 +1302,98 @@ export function selectPreparedDraftItemsForStorage<
   });
 }
 
+function sourceGroupCountFromJson(value: string): number {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed.length : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export async function migrateLegacyCampaignPreparedDrafts(
+  campaignId?: string,
+  db: DbClient = prisma,
+): Promise<number> {
+  const legacyRows = await db.campaignReviewDraft.findMany({
+    where: campaignId ? { campaignId } : undefined,
+    orderBy: [{ campaignId: "asc" }, { createdAt: "asc" }],
+  });
+  if (legacyRows.length === 0) return 0;
+
+  const existingRows = await db.campaignPreparedDraft.findMany({
+    where: { legacyDraftId: { in: legacyRows.map((row) => row.id) } },
+    select: { legacyDraftId: true },
+  });
+  const existingIds = new Set(
+    existingRows.flatMap((row) => (row.legacyDraftId ? [row.legacyDraftId] : [])),
+  );
+  const pendingRows = legacyRows.filter((row) => !existingIds.has(row.id));
+  if (pendingRows.length === 0) return 0;
+
+  const rowsByCampaign = new Map<string, typeof pendingRows>();
+  for (const row of pendingRows) {
+    const rows = rowsByCampaign.get(row.campaignId) ?? [];
+    rows.push(row);
+    rowsByCampaign.set(row.campaignId, rows);
+  }
+
+  let migratedCount = 0;
+  for (const [legacyCampaignId, rows] of rowsByCampaign) {
+    const first = rows[0];
+    if (!first) continue;
+    const batchId = `legacy-campaign-review-drafts:${legacyCampaignId}`;
+    await db.campaignPreparedDraftBatch.upsert({
+      where: { id: batchId },
+      update: {},
+      create: {
+        id: batchId,
+        campaignId: legacyCampaignId,
+        provider: first.provider,
+        model: first.model,
+        sourceGroupsJson: first.sourceGroupsJson,
+        sourceGroupCount: sourceGroupCountFromJson(first.sourceGroupsJson),
+        promptVersion: first.promptVersion?.trim() || "legacy",
+        metricsJson: JSON.stringify({ migratedFromLegacyPool: true }),
+        generatedAt: first.generatedAt,
+      },
+    });
+
+    for (const row of rows) {
+      try {
+        await db.campaignPreparedDraft.create({
+          data: {
+            campaignId: row.campaignId,
+            batchId,
+            slot: row.sequence,
+            styleId: `legacy:${row.id}`,
+            toneLabel: "기존 원고",
+            structureLabel: row.styleId?.trim() || "이전 저장",
+            text: row.text,
+            evidenceIdsJson: row.evidenceIdsJson || "[]",
+            maxSimilarity: row.similarity ?? 0,
+            qualityPassed: true,
+            assignedReceiptId: row.assignedReceiptId,
+            assignedAt: row.assignedAt,
+            createdAt: row.createdAt,
+            legacyDraftId: row.id,
+          },
+        });
+        migratedCount += 1;
+      } catch (error) {
+        if (
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === "P2002"
+        ) {
+          continue;
+        }
+        throw error;
+      }
+    }
+  }
+  return migratedCount;
+}
+
 export async function generateCampaignReviewDraftPreview(
   campaignId: string,
   db: DbClient = prisma,
@@ -1311,6 +1403,7 @@ export async function generateCampaignReviewDraftPreview(
     throw new CampaignReviewDraftError("INVALID_CAMPAIGN", "캠페인 정보를 확인해 주세요.");
   }
 
+  await migrateLegacyCampaignPreparedDrafts(cleanCampaignId, db);
   const campaign = await fetchCampaignWithContext(db, cleanCampaignId);
   if (!campaign) {
     throw new CampaignReviewDraftError("CAMPAIGN_NOT_FOUND", "캠페인을 찾을 수 없습니다.", 404);
@@ -1414,6 +1507,7 @@ export async function listCampaignPreparedDrafts(
   if (!campaign) {
     throw new CampaignReviewDraftError("CAMPAIGN_NOT_FOUND", "캠페인을 찾을 수 없습니다.", 404);
   }
+  await migrateLegacyCampaignPreparedDrafts(cleanCampaignId, db);
   const [
     rows,
     totalCount,
@@ -1696,6 +1790,7 @@ export async function generateCampaignReviewDraftForAssignment(
   if (!receipt || receipt.reviewerId !== reviewerId) {
     throw new CampaignReviewDraftError("ASSIGNMENT_NOT_FOUND", "참여 정보를 찾을 수 없습니다.", 404);
   }
+  await migrateLegacyCampaignPreparedDrafts(receipt.campaignId, db);
   if (receipt.source !== REVIEWER_ASSIGNMENT_SOURCE) {
     throw new CampaignReviewDraftError("INVALID_ASSIGNMENT", "캠페인 참여 기록이 아닙니다.", 422);
   }

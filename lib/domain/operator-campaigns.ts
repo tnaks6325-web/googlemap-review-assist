@@ -4,6 +4,7 @@ import {
   type AdminCampaignBlogReference,
 } from "@/lib/domain/campaign-blog-references";
 import {
+  migrateLegacyCampaignPreparedDrafts,
   normalizeCampaignDraftGuidance,
   summarizeCampaignReviewDraftSources,
   type CampaignDraftGuidance,
@@ -334,6 +335,7 @@ export async function listPublicCampaigns(): Promise<PublicCampaignCard[]> {
 export async function listAdminCampaigns(): Promise<AdminCampaignRow[]> {
   const now = new Date();
   await expireStaleCampaignAssignments(prisma, now);
+  await migrateLegacyCampaignPreparedDrafts(undefined, prisma);
   const campaigns = await fetchCampaigns(true);
   const campaignIds = campaigns.map((campaign) => campaign.id);
   const [
