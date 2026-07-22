@@ -134,10 +134,11 @@ model Campaign {
   blogReferences          CampaignBlogReference[]
   draftGuidance           CampaignDraftGuidance?
   draftEvidence           CampaignDraftEvidence[]
-  preparedDraftBatches    CampaignPreparedDraftBatch[]
-  preparedDrafts          CampaignPreparedDraft[]
-  preparedDraftRevisions  CampaignPreparedDraftRevision[]
-  reviewDrafts            CampaignReviewDraft[]
+  // Keep these production relations mapped so populated archive tables are never dropped.
+  preparedDraftBatches CampaignPreparedDraftBatch[]
+  preparedDrafts       CampaignPreparedDraft[]
+  preparedDraftRevisions CampaignPreparedDraftRevision[]
+  reviewDrafts         CampaignReviewDraft[]
   nextReviewDraftSequence Int                             @default(0)
   createdAt               DateTime                        @default(now())
 }
@@ -365,8 +366,8 @@ model Receipt {
   dedupeHash                  String                  @unique // 동일 영수증 재사용 차단
   status                      String                  @default("PENDING") // PENDING | VERIFIED | ASSIGNED | REVIEW_SUBMITTED | COMPLETED | REJECTED | EXPIRED
   feedback                    Feedback?
-  assignedPreparedDrafts      CampaignPreparedDraft[]
-  campaignReviewDraft         CampaignReviewDraft?
+  assignedPreparedDrafts CampaignPreparedDraft[]
+  campaignReviewDraft    CampaignReviewDraft?
   createdAt                   DateTime                @default(now())
 
   @@index([reviewerId])
