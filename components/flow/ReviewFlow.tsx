@@ -25,9 +25,9 @@ interface Props {
   cooldownDays: number;
   initialReviewerSignedIn: boolean;
 }
-type Step = "signIn" | "summary" | "assigned" | "draft" | "complete";
+type Step = "signIn" | "summary" | "draft" | "complete";
 
-const FLOW: Step[] = ["signIn", "summary", "assigned", "draft", "complete"];
+const FLOW: Step[] = ["signIn", "summary", "draft", "complete"];
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
   const res = await fetch(url, {
@@ -61,6 +61,7 @@ interface AvailabilityResponse {
     assignmentExpiresAt: string;
     remainingSeconds: number;
     assignedCampaign: ConcealedAssignment;
+    draft: DraftResponse | null;
   } | null;
 }
 
@@ -69,6 +70,7 @@ interface AssignResponse extends AvailabilityResponse {
   assignmentExpiresAt: string | null;
   remainingSeconds: number;
   assignedCampaign: ConcealedAssignment | null;
+  draft: DraftResponse | null;
 }
 
 interface CompleteResponse {
@@ -127,7 +129,6 @@ export function ReviewFlow({
   const [remainingSeconds, setRemainingSeconds] = useState(0);
   const [draft, setDraft] = useState("");
   const [draftMeta, setDraftMeta] = useState<DraftResponse | null>(null);
-  const [copied, setCopied] = useState(false);
   const [completion, setCompletion] = useState<CompleteResponse | null>(null);
   const [screenshot, setScreenshot] = useState<File | null>(null);
   const [reviewGuideOpen, setReviewGuideOpen] = useState(false);
@@ -187,7 +188,10 @@ export function ReviewFlow({
     setAssignmentExpiresAt(data.activeAssignment.assignmentExpiresAt);
     setRemainingSeconds(data.activeAssignment.remainingSeconds);
     setAssignedCampaign(data.activeAssignment.assignedCampaign);
-    setStep("assigned");
+    if (!data.activeAssignment.draft) return false;
+    setDraft(data.activeAssignment.draft.text);
+    setDraftMeta(data.activeAssignment.draft);
+    setStep("draft");
     return true;
   };
 
@@ -236,47 +240,19 @@ export function ReviewFlow({
       setAssignmentExpiresAt(data.assignmentExpiresAt);
       setRemainingSeconds(data.remainingSeconds);
       setAssignedCampaign(data.assignedCampaign);
-      setDraft("");
-      setDraftMeta(null);
+      setDraft(data.draft?.text ?? "");
+      setDraftMeta(data.draft);
       setCompletion(null);
       setScreenshot(null);
       setReviewGuideOpen(false);
       setReviewGuideAcknowledged(false);
       setRevealedPlace(null);
-      if (!data.assignedCampaign) {
+      if (!data.assignedCampaign || !data.draft) {
         setError("지금 참여 가능한 캠페인이 없어요");
         return;
       }
-      setStep("assigned");
-    });
-
-  const copyText = async (text: string) => {
-    await navigator.clipboard.writeText(text);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1800);
-  };
-
-  const requestDraft = (regenerate = false) =>
-    run(async () => {
-      if (!assignmentId) {
-        setError("참여 정보를 확인해 주세요.");
-        return;
-      }
-      const data = await postJson<DraftResponse>("/api/reviewer/campaigns/draft", {
-        assignmentId,
-        regenerate,
-      });
-      setDraft(data.text);
-      setDraftMeta(data);
-      setScreenshot(null);
-      setReviewGuideOpen(false);
-      setReviewGuideAcknowledged(false);
-      setRevealedPlace(null);
-      await copyText(data.text);
       setStep("draft");
     });
-
-  const generateDraft = () => requestDraft(false);
 
   const openReviewRegistration = () =>
     run(async () => {
@@ -338,7 +314,6 @@ export function ReviewFlow({
   const headerTitle = (() => {
     if (step === "signIn") return "리뷰어 참여";
     if (step === "summary") return "캠페인 배정";
-    if (step === "assigned") return "캠페인 배정 완료";
     if (step === "complete") return "적립 완료";
     return "리뷰 등록 준비";
   })();
@@ -393,38 +368,19 @@ export function ReviewFlow({
           </Step>
         )}
 
-        {step === "assigned" && (
-          <Step title="캠페인이 배정됐어요" desc="방문 후 Google 지도 리뷰 작성에 사용할 초안을 만들 수 있어요.">
-            <CampaignCard rewardPoints={currentRewardPoints} assignmentId={assignmentId} />
-          </Step>
-        )}
-
         {step === "draft" && (
-          <Step title="원고가 복사됐어요" desc="아래 버튼으로 Google 지도를 열고 리뷰 작성란에 붙여넣으세요.">
+          <Step title="참여 원고가 배정됐어요" desc="미리 준비된 원고를 확인한 뒤 Google 지도에서 리뷰를 등록해 주세요.">
             <CampaignCard rewardPoints={currentRewardPoints} assignmentId={assignmentId} />
             <Card className="mt-4 space-y-2">
-              <p className="text-sm font-semibold text-ink-weak">복사된 원고</p>
+              <p className="text-sm font-semibold text-ink-weak">배정된 원고</p>
               <p className="text-[15px] leading-7 text-ink">{draft}</p>
               {draftMeta && (
                 <p className="text-xs text-ink-weak">
-                  원고자료 {draftMeta.sourceGroupCount}/4 · 생성 {draftMeta.version}/3회
+                  원고자료 {draftMeta.sourceGroupCount}/4
                   {draftMeta.slot != null ? ` · 다양성 슬롯 ${draftMeta.slot + 1}/25` : ""}
                 </p>
               )}
-              {copied && <p className="text-xs font-medium text-brand">클립보드에 복사했어요.</p>}
               <div className="grid gap-2 pt-2">
-                <Button
-                  fullWidth
-                  variant="secondary"
-                  loading={busy}
-                  disabled={(draftMeta?.version ?? 0) >= 3}
-                  onClick={() => requestDraft(true)}
-                >
-                  원고 다시 생성
-                </Button>
-                <Button fullWidth variant="secondary" loading={busy} onClick={() => copyText(draft)}>
-                  원고 복사 하기
-                </Button>
                 <Button
                   fullWidth
                   loading={busy}
@@ -551,17 +507,6 @@ export function ReviewFlow({
               참여하고 총 {ctaPoints}P 적립받기
             </Button>
           </>
-        )}
-        {step === "assigned" && (
-          assignmentExpired ? (
-            <Button fullWidth loading={busy} onClick={refreshForNextCampaign}>
-              다시 배정받기
-            </Button>
-          ) : (
-            <Button fullWidth loading={busy} onClick={generateDraft}>
-              원고 생성하고 복사하기
-            </Button>
-          )
         )}
         {step === "draft" && (
           <>

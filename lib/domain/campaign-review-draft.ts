@@ -2305,7 +2305,7 @@ async function claimPreparedCampaignDraft(
 export async function generateCampaignReviewDraftForAssignment(
   reviewerId: string,
   assignmentId: string,
-  options: { regenerate?: boolean } = {},
+  options: { regenerate?: boolean; now?: Date } = {},
   db: DbClient = prisma,
 ): Promise<CampaignReviewDraftResult> {
   const cleanAssignmentId = assignmentId.trim();
@@ -2324,7 +2324,7 @@ export async function generateCampaignReviewDraftForAssignment(
   const expiresAt = receipt.assignmentExpiresAt ?? assignmentExpiry(receipt.createdAt);
   if (
     receipt.status === REVIEWER_ASSIGNMENT_STATUS_ASSIGNED &&
-    expiresAt.getTime() <= Date.now()
+    expiresAt.getTime() <= (options.now ?? new Date()).getTime()
   ) {
     await db.receipt.update({
       where: { id: receipt.id },

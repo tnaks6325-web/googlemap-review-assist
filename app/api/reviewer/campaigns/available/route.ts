@@ -27,6 +27,7 @@ export async function GET() {
           assignedCampaign: toConcealedReviewerAssignment(
             availability.activeAssignment.assignedCampaign,
           ),
+          draft: availability.activeAssignment.draft,
         }
       : null,
   });

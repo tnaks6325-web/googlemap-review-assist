@@ -23,7 +23,14 @@ export async function POST(req: Request) {
     };
     const assignmentId = typeof body.assignmentId === "string" ? body.assignmentId : "";
     const regenerate = body.regenerate === true;
-    const result = await generateCampaignReviewDraftForAssignment(reviewerId, assignmentId, { regenerate });
+    if (regenerate) {
+      return err(
+        "DRAFT_REGENERATION_DISABLED",
+        "배정된 원고는 다시 생성할 수 없습니다.",
+        409,
+      );
+    }
+    const result = await generateCampaignReviewDraftForAssignment(reviewerId, assignmentId);
     return ok(result);
   } catch (e) {
     if (e instanceof CampaignReviewDraftError) {
