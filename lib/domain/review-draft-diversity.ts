@@ -1,4 +1,4 @@
-export const REVIEW_DRAFT_DIVERSITY_VERSION = "review-diversity-v2";
+export const REVIEW_DRAFT_DIVERSITY_VERSION = "review-diversity-v6";
 export const REVIEW_DRAFT_SIMILARITY_LIMIT = 0.72;
 
 export const REVIEW_DRAFT_TONES = [
@@ -19,6 +19,18 @@ export const REVIEW_DRAFT_STRUCTURES = [
 
 export type ReviewDraftTone = (typeof REVIEW_DRAFT_TONES)[number];
 export type ReviewDraftStructure = (typeof REVIEW_DRAFT_STRUCTURES)[number];
+export type ReviewDraftEndingStyle =
+  | "FORMAL"
+  | "CONVERSATIONAL"
+  | "OBSERVATIONAL"
+  | "SOFT_COPULA"
+  | "NOUN_PHRASE";
+type ReviewDraftGeneratedEndingStyle = Exclude<ReviewDraftEndingStyle, "NOUN_PHRASE">;
+export type ReviewDraftPunctuationStyle =
+  | "STANDARD"
+  | "TILDE"
+  | "DOUBLE_EXCLAMATION"
+  | "TRIPLE_EXCLAMATION";
 
 export interface ReviewDraftStyleSlot {
   index: number;
@@ -27,6 +39,11 @@ export interface ReviewDraftStyleSlot {
   structure: ReviewDraftStructure;
   toneLabel: string;
   structureLabel: string;
+  endingStyle: ReviewDraftGeneratedEndingStyle;
+  endingLabel: string;
+  endingInstruction: string;
+  punctuationStyle: ReviewDraftPunctuationStyle;
+  punctuationInstruction: string;
   instruction: string;
   minNonSpace: number;
   maxNonSpace: number;
@@ -41,6 +58,86 @@ const TONE_META: Record<ReviewDraftTone, { label: string; instruction: string }>
   CALM: { label: "차분형", instruction: "관찰한 정보를 차분한 서술체로 정리한다." },
   LIVELY: { label: "경쾌형", instruction: "짧고 리듬감 있게 쓰되 감탄부호는 제한한다." },
   SPECIFIC: { label: "구체형", instruction: "승인 근거의 구체적인 특징을 중심으로 쓴다." },
+};
+
+const ENDING_META: Record<
+  ReviewDraftGeneratedEndingStyle,
+  { label: string; instruction: string }
+> = {
+  FORMAL: {
+    label: "간결한 격식형",
+    instruction: "격식체는 꼭 필요한 한 문장에만 쓰고, ~습니다와 ~입니다를 연달아 반복하지 않는다.",
+  },
+  CONVERSATIONAL: {
+    label: "자연스러운 해요체",
+    instruction: "~해요, ~있어요, ~좋아 보여요처럼 부드러운 해요체를 자연스럽게 섞는다.",
+  },
+  OBSERVATIONAL: {
+    label: "관찰형",
+    instruction: "~눈에 띄어요, ~느껴져요, ~인 듯해요처럼 사실을 관찰하는 말투로 마무리한다.",
+  },
+  SOFT_COPULA: {
+    label: "부드러운 서술형",
+    instruction: "~인 곳이에요, ~한 편이에요, ~가 포인트예요처럼 부드러운 서술형을 사용한다.",
+  },
+};
+
+const ENDING_STYLE_SEQUENCE: ReviewDraftGeneratedEndingStyle[] = [
+  "FORMAL",
+  "CONVERSATIONAL",
+  "OBSERVATIONAL",
+  "SOFT_COPULA",
+  "CONVERSATIONAL",
+  "CONVERSATIONAL",
+  "OBSERVATIONAL",
+  "SOFT_COPULA",
+  "CONVERSATIONAL",
+  "CONVERSATIONAL",
+  "FORMAL",
+  "OBSERVATIONAL",
+  "SOFT_COPULA",
+  "OBSERVATIONAL",
+  "CONVERSATIONAL",
+  "OBSERVATIONAL",
+  "SOFT_COPULA",
+  "CONVERSATIONAL",
+  "CONVERSATIONAL",
+  "OBSERVATIONAL",
+  "FORMAL",
+  "SOFT_COPULA",
+  "OBSERVATIONAL",
+  "CONVERSATIONAL",
+  "OBSERVATIONAL",
+];
+
+const PUNCTUATION_STYLE_SEQUENCE: ReviewDraftPunctuationStyle[] = [
+  "STANDARD", "STANDARD", "STANDARD", "TILDE", "STANDARD",
+  "STANDARD", "TILDE", "STANDARD", "DOUBLE_EXCLAMATION", "STANDARD",
+  "STANDARD", "STANDARD", "STANDARD", "STANDARD", "TILDE",
+  "TILDE", "DOUBLE_EXCLAMATION", "STANDARD", "TRIPLE_EXCLAMATION", "DOUBLE_EXCLAMATION",
+  "STANDARD", "STANDARD", "TILDE", "STANDARD", "DOUBLE_EXCLAMATION",
+];
+
+const PUNCTUATION_META: Record<
+  ReviewDraftPunctuationStyle,
+  { instruction: string; maxExclamations: number }
+> = {
+  STANDARD: {
+    instruction: "마침표나 물음표를 자연스럽게 사용하고 느낌표는 슬롯의 허용 개수를 넘기지 않는다.",
+    maxExclamations: 0,
+  },
+  TILDE: {
+    instruction: "마지막 서술어 뒤에 물결표(~) 1개를 붙여 친근하게 마무리한다.",
+    maxExclamations: 0,
+  },
+  DOUBLE_EXCLAMATION: {
+    instruction: "마지막 서술어 뒤에 느낌표를 정확히 2개(!!) 붙여 경쾌하게 마무리한다.",
+    maxExclamations: 2,
+  },
+  TRIPLE_EXCLAMATION: {
+    instruction: "마지막 서술어 뒤에 느낌표를 정확히 3개(!!!) 붙여 생동감 있게 마무리한다.",
+    maxExclamations: 3,
+  },
 };
 
 const STRUCTURE_META: Record<
@@ -108,6 +205,10 @@ export const REVIEW_DRAFT_STYLE_SLOTS: ReviewDraftStyleSlot[] = REVIEW_DRAFT_TON
       const index = toneIndex * REVIEW_DRAFT_STRUCTURES.length + structureIndex;
       const toneMeta = TONE_META[tone];
       const structureMeta = STRUCTURE_META[structure];
+      const endingStyle = ENDING_STYLE_SEQUENCE[index];
+      const endingMeta = ENDING_META[endingStyle];
+      const punctuationStyle = PUNCTUATION_STYLE_SEQUENCE[index];
+      const punctuationMeta = PUNCTUATION_META[punctuationStyle];
       return {
         index,
         id: `v2-${String(index + 1).padStart(2, "0")}-${tone.toLowerCase()}-${structure.toLowerCase()}`,
@@ -115,12 +216,17 @@ export const REVIEW_DRAFT_STYLE_SLOTS: ReviewDraftStyleSlot[] = REVIEW_DRAFT_TON
         structure,
         toneLabel: toneMeta.label,
         structureLabel: structureMeta.label,
-        instruction: `${toneMeta.instruction} ${structureMeta.instruction}`,
+        endingStyle,
+        endingLabel: endingMeta.label,
+        endingInstruction: endingMeta.instruction,
+        punctuationStyle,
+        punctuationInstruction: punctuationMeta.instruction,
+        instruction: `${toneMeta.instruction} ${structureMeta.instruction} ${endingMeta.instruction} ${punctuationMeta.instruction}`,
         minNonSpace: structureMeta.minNonSpace,
         maxNonSpace: structureMeta.maxNonSpace,
         minSentences: structureMeta.minSentences,
         maxSentences: structureMeta.maxSentences,
-        maxExclamations: structureMeta.maxExclamations,
+        maxExclamations: Math.max(structureMeta.maxExclamations, punctuationMeta.maxExclamations),
       };
     }),
 );
@@ -175,9 +281,31 @@ function hasRepeatedLongPhrase(text: string, existing: string[]) {
 }
 
 export interface DraftQualityIssue {
-  code: "HIGH_SIMILARITY" | "REPEATED_OPENING" | "REPEATED_PHRASE";
+  code:
+    | "HIGH_SIMILARITY"
+    | "REPEATED_OPENING"
+    | "REPEATED_PHRASE"
+    | "OVERUSED_ENDING_STYLE"
+    | "DISALLOWED_ENDING_STYLE";
   message: string;
   similarity?: number;
+}
+
+export function draftEndingStyle(text: string): ReviewDraftEndingStyle {
+  const ending = text.trim().replace(/[.!?~…。！？”’"']+$/gu, "").trim();
+  if (/니다$/u.test(ending)) {
+    return "FORMAL";
+  }
+  if (/(?:눈에\s*띄어요|느껴져요|보여요|듯해요)$/u.test(ending)) {
+    return "OBSERVATIONAL";
+  }
+  if (/(?:곳이에요|편이에요|포인트예요|느낌이에요|구성이에요)$/u.test(ending)) {
+    return "SOFT_COPULA";
+  }
+  if (/(?:요|죠|다|까)$/u.test(ending)) {
+    return "CONVERSATIONAL";
+  }
+  return "NOUN_PHRASE";
 }
 
 export function findDraftQualityIssues(text: string, existing: string[]): DraftQualityIssue[] {
@@ -196,6 +324,23 @@ export function findDraftQualityIssues(text: string, existing: string[]): DraftQ
   }
   if (hasRepeatedLongPhrase(text, existing)) {
     issues.push({ code: "REPEATED_PHRASE", message: "기존 원고와 긴 연속 문구가 겹칩니다." });
+  }
+  const endingStyle = draftEndingStyle(text);
+  if (endingStyle === "NOUN_PHRASE") {
+    issues.push({
+      code: "DISALLOWED_ENDING_STYLE",
+      message: "명사형으로 끝내지 말고 자연스러운 서술어로 문장을 완결하세요.",
+    });
+  }
+  const endingStyleCount = existing.filter(
+    (draft) => draftEndingStyle(draft) === endingStyle,
+  ).length;
+  const endingStyleLimit = endingStyle === "FORMAL" ? 4 : 7;
+  if (endingStyle !== "NOUN_PHRASE" && endingStyleCount >= endingStyleLimit) {
+    issues.push({
+      code: "OVERUSED_ENDING_STYLE",
+      message: `${ENDING_META[endingStyle].label} 종결이 이미 ${endingStyleLimit}건 사용되었습니다.`,
+    });
   }
   return issues;
 }

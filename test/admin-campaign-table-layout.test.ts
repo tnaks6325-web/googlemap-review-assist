@@ -36,4 +36,13 @@ describe("admin campaign table layout", () => {
     expect(componentSource).toContain("AdminCampaignRewardPoints");
     expect(componentSource).toContain("initialRewardPoints={campaign.rewardPoints}");
   });
+
+  it("removes the reviewer-page shortcut from the management buttons", () => {
+    expect(componentSource).not.toContain("참여 페이지 열기");
+  });
+
+  it("keeps the campaign automation action labeled as one-click setup", () => {
+    expect(componentSource).toContain('automationProgress ?? "원클릭 세팅"');
+    expect(componentSource).not.toContain('automationProgress ?? "네이버 자동보정 + 참고자료 수집"');
+  });
 });

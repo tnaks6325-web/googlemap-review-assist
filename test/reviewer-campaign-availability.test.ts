@@ -28,6 +28,7 @@ interface CampaignFixtureOptions {
   startDate?: string;
   endDate?: string;
   rewardPoints?: number;
+  preparedDraftCount?: number;
 }
 
 async function createCampaign(
@@ -40,6 +41,7 @@ async function createCampaign(
     startDate = "2020-01-01",
     endDate = "2099-12-31",
     rewardPoints = DEFAULT_REWARD_POINTS,
+    preparedDraftCount = 10,
   }: CampaignFixtureOptions = {},
 ) {
   const owner = await prisma.owner.create({ data: { email: `reviewer-${uniq()}@test.local`, password: "x" } });
@@ -98,7 +100,36 @@ async function createCampaign(
       rewardPoints,
     },
   });
-  return { business, campaign };
+  const preparedDraftBatch = preparedDraftCount > 0
+    ? await prisma.campaignPreparedDraftBatch.create({
+        data: {
+          campaignId: campaign.id,
+          provider: "test-provider",
+          model: "test-model",
+          sourceGroupsJson: JSON.stringify([
+            { key: "GOOGLE_PLACE", label: "Google 장소", count: 1 },
+            { key: "NAVER_PLACE", label: "네이버 장소", count: 1 },
+          ]),
+          sourceGroupCount: 2,
+          promptVersion: "prepared-v1",
+          metricsJson: "{}",
+          drafts: {
+            create: Array.from({ length: preparedDraftCount }, (_, slot) => ({
+              campaign: { connect: { id: campaign.id } },
+              slot,
+              styleId: `test-style-${slot}`,
+              toneLabel: "담백한 후기",
+              structureLabel: "경험 중심",
+              text: `미리 생성된 테스트 원고 ${slot + 1}`,
+              evidenceIdsJson: "[]",
+              maxSimilarity: 0,
+              qualityPassed: true,
+            })),
+          },
+        },
+      })
+    : null;
+  return { business, campaign, preparedDraftBatch };
 }
 
 describe("reviewer campaign availability", () => {
@@ -174,9 +205,41 @@ describe("reviewer campaign availability", () => {
     const receipt = await prisma.receipt.findUnique({ where: { id: result.assignmentId! } });
     expect(receipt).toMatchObject({ reviewerId: reviewer.id, source: "CAMPAIGN_ASSIGNMENT", status: "ASSIGNED" });
     expect(receipt?.assignmentExpiresAt?.getTime()).toBeGreaterThan(receipt!.createdAt.getTime());
+    expect(receipt?.reviewDraftText).toMatch(/^미리 생성된 테스트 원고/);
+    expect(receipt?.reviewDraftProvider).toBe("test-provider");
+    expect(result.draft).toMatchObject({
+      text: receipt?.reviewDraftText,
+      provider: "test-provider",
+      model: "test-model",
+      reused: true,
+    });
+    expect(
+      await prisma.campaignPreparedDraft.count({
+        where: { assignedReceiptId: receipt?.id },
+      }),
+    ).toBe(1);
 
     const nextAvailability = await getReviewerCampaignAvailability(reviewer.id);
     expect(nextAvailability.campaigns.map((campaign) => campaign.id)).not.toContain(result.assignedCampaign!.id);
+  });
+
+  it("does not expose or assign a campaign after its prepared draft pool is exhausted", async () => {
+    const reviewer = await createReviewer();
+    await prisma.campaign.updateMany({ data: { active: false } });
+    const fixture = await createCampaign(`google-place-no-prepared-draft-${uniq()}`, {
+      preparedDraftCount: 0,
+    });
+
+    const availability = await getReviewerCampaignAvailability(reviewer.id);
+    const assigned = await assignReviewerCampaign(reviewer.id);
+
+    expect(availability.campaigns.map((campaign) => campaign.id)).not.toContain(fixture.campaign.id);
+    expect(assigned.assignmentId).toBeNull();
+    expect(
+      await prisma.receipt.count({
+        where: { campaignId: fixture.campaign.id, source: "CAMPAIGN_ASSIGNMENT" },
+      }),
+    ).toBe(0);
   });
 
   it("conceals every place field in assignment responses", async () => {
@@ -197,24 +260,12 @@ describe("reviewer campaign availability", () => {
     expect(serialized).not.toContain("maps.example");
   });
 
-  it("reveals place information only after a draft exists and only to its assigned reviewer", async () => {
+  it("reveals place information with the assigned draft only to its reviewer", async () => {
     const reviewer = await createReviewer();
     const otherReviewer = await createReviewer();
     await prisma.campaign.updateMany({ data: { active: false } });
     const fixture = await createCampaign(`google-place-reveal-${uniq()}`);
     const result = await assignReviewerCampaign(reviewer.id);
-
-    await expect(
-      getReviewerCampaignPlaceReveal(reviewer.id, result.assignmentId!),
-    ).rejects.toMatchObject({ code: "REVIEW_DRAFT_REQUIRED", status: 409 });
-
-    await prisma.receipt.update({
-      where: { id: result.assignmentId! },
-      data: {
-        reviewDraftText: "복사할 리뷰 원고가 준비되어 있습니다.",
-        reviewDraftVersion: 1,
-      },
-    });
 
     await expect(
       getReviewerCampaignPlaceReveal(otherReviewer.id, result.assignmentId!),

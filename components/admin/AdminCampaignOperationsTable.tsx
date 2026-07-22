@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AdminCampaignBlogReferences } from "@/components/admin/AdminCampaignBlogReferences";
@@ -223,7 +222,7 @@ export function AdminCampaignOperationsTable({
             onClick={runAllAutomation}
             className="h-10 shrink-0 whitespace-nowrap px-3 text-xs"
           >
-            {automationProgress ?? "네이버 자동보정 + 참고자료 수집"}
+            {automationProgress ?? "원클릭 세팅"}
           </Button>
           <label className="relative block">
             <span className="sr-only">캠페인 검색</span>
@@ -463,15 +462,8 @@ function CampaignRows({
             <AdminCampaignDraftPreview
               campaignId={campaign.id}
               businessName={campaign.businessName}
+              initialMetrics={campaign.preparedDraftMetrics}
             />
-            <Link
-              href={`/r/${campaign.slug}`}
-              target="_blank"
-              aria-label={`${campaign.businessName} 참여 페이지 열기`}
-              className="inline-flex size-9 items-center justify-center rounded-[9px] border border-line bg-surface text-sm font-bold text-ink-sub transition hover:border-line-strong hover:bg-surface-alt"
-            >
-              ↗
-            </Link>
             <button
               type="button"
               onClick={onToggle}

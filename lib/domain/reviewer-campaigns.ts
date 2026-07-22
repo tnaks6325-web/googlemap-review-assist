@@ -7,8 +7,11 @@ import {
   type PublicCampaignCard,
 } from "@/lib/domain/operator-campaigns";
 import {
+  CampaignReviewDraftError,
+  generateCampaignReviewDraftForAssignment,
   normalizeCampaignDraftGuidance,
   summarizeCampaignReviewDraftSources,
+  type CampaignReviewDraftResult,
 } from "@/lib/domain/campaign-review-draft";
 import type { ReviewProofAnalysis } from "@/lib/domain/review-proof-analysis";
 import {
@@ -62,7 +65,10 @@ export interface ReviewerActiveAssignment {
   assignmentExpiresAt: Date;
   remainingSeconds: number;
   assignedCampaign: ReviewerCampaignAssignment;
+  draft: ReviewerAssignedDraft | null;
 }
+
+export type ReviewerAssignedDraft = CampaignReviewDraftResult;
 
 export interface ReviewerCampaignCategoryCount {
   category: string;
@@ -211,9 +217,13 @@ async function fetchActiveCampaignRows(db: DbClient) {
       },
       draftGuidance: true,
       draftEvidence: {
-        where: { status: "APPROVED" },
         select: { id: true, facet: true },
         take: 30,
+      },
+      preparedDrafts: {
+        where: { qualityPassed: true, assignedReceiptId: null },
+        select: { id: true },
+        take: 1,
       },
     },
   });
@@ -277,6 +287,10 @@ function hasSufficientDraftSources(campaign: CampaignRow) {
     industry: draftGuidance.industry,
     approvedFactCount: draftGuidance.approvedFacts.length,
   }).canGenerateReviewDraft;
+}
+
+function hasPreparedDraft(campaign: CampaignRow) {
+  return campaign.preparedDrafts.length > 0;
 }
 
 function hasUsableReferenceText(value: string | null | undefined) {
@@ -373,9 +387,17 @@ export async function getReviewerCampaignAvailability(
       now,
     ),
   );
+  const campaignRowsById = new Map(campaigns.map((campaign) => [campaign.id, campaign]));
   const eligible = allCampaigns.filter(
-    (campaign) =>
-      campaign.isAvailableToday && !excludedKeys.has(campaign.googlePlaceKey),
+    (campaign) => {
+      const campaignRow = campaignRowsById.get(campaign.id);
+      return Boolean(
+        campaign.isAvailableToday &&
+          campaignRow &&
+          hasPreparedDraft(campaignRow) &&
+          !excludedKeys.has(campaign.googlePlaceKey),
+      );
+    },
   );
   const activeReceipt = await db.receipt.findFirst({
     where: {
@@ -390,6 +412,15 @@ export async function getReviewerCampaignAvailability(
       createdAt: true,
       assignmentExpiresAt: true,
       rewardPoints: true,
+      reviewDraftText: true,
+      reviewDraftProvider: true,
+      reviewDraftModel: true,
+      reviewDraftSourceGroupsJson: true,
+      reviewDraftGeneratedAt: true,
+      reviewDraftVersion: true,
+      reviewDraftSequence: true,
+      reviewDraftStyleId: true,
+      reviewDraftPromptVersion: true,
     },
   });
   const activeCampaign = activeReceipt
@@ -412,6 +443,7 @@ export async function getReviewerCampaignAvailability(
             Math.ceil((activeExpiresAt.getTime() - now.getTime()) / 1000),
           ),
           assignedCampaign: activeCampaignWithSnapshot,
+          draft: toAssignedDraft(activeReceipt),
         }
       : null;
 
@@ -442,11 +474,15 @@ async function getPublicCampaignAvailabilitySummaryUncached(db: DbClient) {
       ),
     )
     .filter((campaign) => campaign.isAvailableToday);
+  const preparedCampaignIds = new Set(
+    rows.filter(hasPreparedDraft).map((campaign) => campaign.id),
+  );
+  const availableCampaigns = campaigns.filter((campaign) => preparedCampaignIds.has(campaign.id));
   return {
-    availableCount: campaigns.length,
-    totalRewardPoints: campaigns.reduce((sum, campaign) => sum + campaign.rewardPoints, 0),
+    availableCount: availableCampaigns.length,
+    totalRewardPoints: availableCampaigns.reduce((sum, campaign) => sum + campaign.rewardPoints, 0),
     cooldownDays: REVIEWER_PLACE_COOLDOWN_DAYS,
-    categoryCounts: buildCategoryCounts(campaigns),
+    categoryCounts: buildCategoryCounts(availableCampaigns),
   };
 }
 
@@ -461,6 +497,49 @@ function randomIndex(length: number) {
 
 function assignmentDedupeHash(reviewerId: string, googlePlaceKey: string) {
   return `assignment:${reviewerId}:${googlePlaceKey}:${Date.now()}:${randomBytes(4).toString("hex")}`;
+}
+
+function parsedSourceGroups(sourceGroupsJson: string | null) {
+  if (!sourceGroupsJson) return [];
+  try {
+    const value = JSON.parse(sourceGroupsJson);
+    return Array.isArray(value)
+      ? (value as CampaignReviewDraftResult["sourceGroups"])
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function toAssignedDraft(receipt: {
+  id: string;
+  reviewDraftText: string | null;
+  reviewDraftProvider: string | null;
+  reviewDraftModel: string | null;
+  reviewDraftSourceGroupsJson: string | null;
+  reviewDraftGeneratedAt: Date | null;
+  reviewDraftVersion: number;
+  reviewDraftSequence: number | null;
+  reviewDraftStyleId: string | null;
+  reviewDraftPromptVersion: string | null;
+}): ReviewerAssignedDraft | null {
+  const text = receipt.reviewDraftText?.trim();
+  if (!text) return null;
+  const sourceGroups = parsedSourceGroups(receipt.reviewDraftSourceGroupsJson);
+  return {
+    assignmentId: receipt.id,
+    text,
+    provider: receipt.reviewDraftProvider ?? "prepared",
+    model: receipt.reviewDraftModel ?? "prepared",
+    sourceGroups,
+    sourceGroupCount: sourceGroups.length,
+    version: receipt.reviewDraftVersion || 1,
+    generatedAt: (receipt.reviewDraftGeneratedAt ?? new Date()).toISOString(),
+    reused: true,
+    styleId: receipt.reviewDraftStyleId ?? undefined,
+    slot: receipt.reviewDraftSequence ?? undefined,
+    promptVersion: receipt.reviewDraftPromptVersion ?? undefined,
+  };
 }
 
 function completionIdempotencyKey(assignmentId: string) {
@@ -675,12 +754,22 @@ export async function assignReviewerCampaign(reviewerId: string, now = new Date(
         async (tx) => {
           const availability = await getReviewerCampaignAvailability(reviewerId, tx, now);
           if (availability.activeAssignment) {
+            const draft =
+              availability.activeAssignment.draft ??
+              (await generateCampaignReviewDraftForAssignment(
+                reviewerId,
+                availability.activeAssignment.assignmentId,
+                { now },
+                tx,
+              ));
             return {
               ...availability,
+              activeAssignment: { ...availability.activeAssignment, draft },
               assignmentId: availability.activeAssignment.assignmentId,
               assignmentExpiresAt: availability.activeAssignment.assignmentExpiresAt,
               remainingSeconds: availability.activeAssignment.remainingSeconds,
               assignedCampaign: availability.activeAssignment.assignedCampaign,
+              draft,
             };
           }
 
@@ -693,6 +782,7 @@ export async function assignReviewerCampaign(reviewerId: string, now = new Date(
               assignmentExpiresAt: null,
               remainingSeconds: 0,
               assignedCampaign: null,
+              draft: null,
             };
           }
 
@@ -711,11 +801,18 @@ export async function assignReviewerCampaign(reviewerId: string, now = new Date(
               rewardPoints: assignedCampaign.rewardPoints,
             },
           });
+          const draft = await generateCampaignReviewDraftForAssignment(
+            reviewerId,
+            receipt.id,
+            { now },
+            tx,
+          );
           const activeAssignment = {
             assignmentId: receipt.id,
             assignmentExpiresAt: expiresAt,
             remainingSeconds: Math.ceil((expiresAt.getTime() - now.getTime()) / 1000),
             assignedCampaign,
+            draft,
           };
 
           return {
@@ -725,6 +822,7 @@ export async function assignReviewerCampaign(reviewerId: string, now = new Date(
             assignmentExpiresAt: expiresAt,
             remainingSeconds: activeAssignment.remainingSeconds,
             assignedCampaign,
+            draft,
           };
         },
         {
@@ -735,7 +833,9 @@ export async function assignReviewerCampaign(reviewerId: string, now = new Date(
       );
     } catch (error) {
       const retryable =
-        error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034";
+        (error instanceof CampaignReviewDraftError &&
+          ["PREPARED_DRAFT_CLAIM_CONFLICT", "PREPARED_DRAFTS_EXHAUSTED"].includes(error.code)) ||
+        (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034");
       if (!retryable) throw error;
       if (attempt === maxAttempts) {
         throw new ReviewerCampaignError(

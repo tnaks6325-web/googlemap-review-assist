@@ -117,27 +117,31 @@ model Menu {
 }
 
 model Campaign {
-  id             String                  @id @default(cuid())
-  businessId     String
-  business       Business                @relation(fields: [businessId], references: [id])
-  slug           String                  @unique
-  name           String
-  active         Boolean                 @default(true)
-  totalQuota     Int?
-  dailyQuota     Int?
-  startDate      String?
-  endDate        String?
-  rewardPoints   Int                     @default(500)
-  receipts       Receipt[]
-  codes          CampaignCode[]
-  blogReferences CampaignBlogReference[]
-  draftGuidance  CampaignDraftGuidance?
-  draftEvidence  CampaignDraftEvidence[]
-  nextReviewDraftSequence Int                   @default(0)
-  createdAt      DateTime                @default(now())
+  id                      String                          @id @default(cuid())
+  businessId              String
+  business                Business                        @relation(fields: [businessId], references: [id])
+  slug                    String                          @unique
+  name                    String
+  active                  Boolean                         @default(true)
+  totalQuota              Int?
+  dailyQuota              Int?
+  startDate               String?
+  endDate                 String?
+  rewardPoints            Int                             @default(500)
+  receipts                Receipt[]
+  codes                   CampaignCode[]
+  blogReferences          CampaignBlogReference[]
+  draftGuidance           CampaignDraftGuidance?
+  draftEvidence           CampaignDraftEvidence[]
+  preparedDraftBatches    CampaignPreparedDraftBatch[]
+  preparedDrafts          CampaignPreparedDraft[]
+  preparedDraftRevisions  CampaignPreparedDraftRevision[]
+  reviewDrafts            CampaignReviewDraft[]
+  nextReviewDraftSequence Int                             @default(0)
+  createdAt               DateTime                        @default(now())
 }
 
-// 원고 생성에 사용할 관리자 승인 사실과 업종별 금지 표현.
+// 원고 생성에 사용할 관리자 입력 사실과 업종별 금지 표현.
 // SQLite 호환을 위해 목록은 JSON 문자열로 저장한다.
 model CampaignDraftGuidance {
   id                 String   @id @default(cuid())
@@ -184,12 +188,98 @@ model CampaignDraftEvidence {
   sourceType    String
   sourceRef     String
   sourceExcerpt String
-  status        String   @default("PENDING")
+  status        String   @default("APPROVED") // legacy column; fact cards are applied automatically
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   @@unique([campaignId, facet, fact, sourceRef])
   @@index([campaignId, status])
+}
+
+// 관리자 사전생성 실행 단위. 생성 당시의 공급자·품질 지표를 보존한다.
+model CampaignPreparedDraftBatch {
+  id               String                  @id @default(cuid())
+  campaignId       String
+  campaign         Campaign                @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  provider         String
+  model            String
+  sourceGroupsJson String
+  sourceGroupCount Int
+  promptVersion    String
+  metricsJson      String
+  drafts           CampaignPreparedDraft[]
+  generatedAt      DateTime                @default(now())
+
+  @@index([campaignId, generatedAt])
+}
+
+// 사전생성 원고 풀. 품질제외 원고도 감사·확인을 위해 함께 보존한다.
+model CampaignPreparedDraft {
+  id                String                     @id @default(cuid())
+  campaignId        String
+  campaign          Campaign                   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  batchId           String
+  batch             CampaignPreparedDraftBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  slot              Int
+  styleId           String
+  toneLabel         String
+  structureLabel    String
+  text              String
+  evidenceIdsJson   String                     @default("[]")
+  maxSimilarity     Float
+  qualityPassed     Boolean
+  assignedReceiptId String?
+  assignedReceipt   Receipt?                   @relation(fields: [assignedReceiptId], references: [id], onDelete: SetNull)
+  assignedAt        DateTime?
+  createdAt         DateTime                   @default(now())
+  legacyDraftId     String?                    @unique
+
+  @@unique([batchId, styleId])
+  @@index([campaignId, qualityPassed, assignedReceiptId, createdAt])
+  @@index([batchId])
+}
+
+// 관리자가 원고를 고친 전후 문장을 보존한다. draftId는 원고 삭제 후에도 감사·문체 개선에
+// 활용할 수 있도록 의도적으로 외래키를 걸지 않은 스냅샷 식별자다.
+model CampaignPreparedDraftRevision {
+  id         String   @id @default(cuid())
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  draftId    String
+  adminId    String
+  beforeText String
+  afterText  String
+  createdAt  DateTime @default(now())
+
+  @@index([campaignId, createdAt])
+  @@index([draftId, createdAt])
+}
+
+// Legacy production pool retained so existing drafts can be migrated without data loss.
+model CampaignReviewDraft {
+  id                String    @id @default(cuid())
+  campaignId        String
+  campaign          Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  sequence          Int
+  text              String
+  provider          String
+  model             String
+  sourceGroupsJson  String
+  contextHash       String
+  generatedAt       DateTime
+  version           Int       @default(1)
+  styleId           String?
+  evidenceIdsJson   String?
+  similarity        Float?
+  promptVersion     String?
+  assignedReceiptId String?   @unique
+  assignedReceipt   Receipt?  @relation(fields: [assignedReceiptId], references: [id], onDelete: SetNull)
+  assignedAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([campaignId, sequence])
+  @@index([campaignId, assignedReceiptId, sequence])
 }
 
 // 업체가 발급한 1회용 인증 코드(영수증/POS 연동 전 단계의 검증 수단).
@@ -232,13 +322,13 @@ model PointWallet {
 }
 
 model Receipt {
-  id                          String    @id @default(cuid())
+  id                          String                  @id @default(cuid())
   businessId                  String
-  business                    Business  @relation(fields: [businessId], references: [id])
+  business                    Business                @relation(fields: [businessId], references: [id])
   campaignId                  String
-  campaign                    Campaign  @relation(fields: [campaignId], references: [id])
+  campaign                    Campaign                @relation(fields: [campaignId], references: [id])
   reviewerId                  String
-  reviewer                    Reviewer  @relation(fields: [reviewerId], references: [id])
+  reviewer                    Reviewer                @relation(fields: [reviewerId], references: [id])
   code                        String? // 승인번호/식별 코드
   amount                      Int?
   merchantName                String?
@@ -249,7 +339,7 @@ model Receipt {
   reviewDraftSourceGroupsJson String?
   reviewDraftContextHash      String?
   reviewDraftGeneratedAt      DateTime?
-  reviewDraftVersion          Int       @default(0)
+  reviewDraftVersion          Int                     @default(0)
   reviewDraftSequence         Int?
   reviewDraftStyleId          String?
   reviewDraftEvidenceIdsJson  String?
@@ -270,11 +360,13 @@ model Receipt {
   reviewReviewedAt            DateTime?
   reviewReviewedBy            String?
   reviewReviewNote            String?
-  source                      String    @default("CODE") // CODE | OCR | CAMPAIGN_ASSIGNMENT
-  dedupeHash                  String    @unique // 동일 영수증 재사용 차단
-  status                      String    @default("PENDING") // PENDING | VERIFIED | ASSIGNED | REVIEW_SUBMITTED | COMPLETED | REJECTED | EXPIRED
+  source                      String                  @default("CODE") // CODE | OCR | CAMPAIGN_ASSIGNMENT
+  dedupeHash                  String                  @unique // 동일 영수증 재사용 차단
+  status                      String                  @default("PENDING") // PENDING | VERIFIED | ASSIGNED | REVIEW_SUBMITTED | COMPLETED | REJECTED | EXPIRED
   feedback                    Feedback?
-  createdAt                   DateTime  @default(now())
+  assignedPreparedDrafts      CampaignPreparedDraft[]
+  campaignReviewDraft         CampaignReviewDraft?
+  createdAt                   DateTime                @default(now())
 
   @@index([reviewerId])
   @@index([reviewerId, createdAt])

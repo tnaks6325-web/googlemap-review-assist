@@ -14,12 +14,10 @@ export const CAMPAIGN_DRAFT_EVIDENCE_FACETS = [
 export const CAMPAIGN_DRAFT_EVIDENCE_TIMEOUT_MS = 45_000;
 export const CAMPAIGN_DRAFT_EVIDENCE_MAX_OUTPUT_TOKENS = 8_192;
 
-export const CAMPAIGN_DRAFT_EVIDENCE_STATUSES = ["PENDING", "APPROVED", "REJECTED"] as const;
-export const MIN_APPROVED_EVIDENCE = 6;
-export const MIN_APPROVED_EVIDENCE_FACETS = 3;
+export const MIN_DRAFT_EVIDENCE = 6;
+export const MIN_DRAFT_EVIDENCE_FACETS = 3;
 
 export type CampaignDraftEvidenceFacet = (typeof CAMPAIGN_DRAFT_EVIDENCE_FACETS)[number];
-export type CampaignDraftEvidenceStatus = (typeof CAMPAIGN_DRAFT_EVIDENCE_STATUSES)[number];
 type DbClient = PrismaClient;
 
 export interface DraftEvidenceSource {
@@ -109,13 +107,6 @@ function isFacet(value: unknown): value is CampaignDraftEvidenceFacet {
   );
 }
 
-export function isEvidenceStatus(value: unknown): value is CampaignDraftEvidenceStatus {
-  return (
-    typeof value === "string" &&
-    (CAMPAIGN_DRAFT_EVIDENCE_STATUSES as readonly string[]).includes(value)
-  );
-}
-
 export function normalizeExtractedEvidence(
   values: unknown,
   allowedSources: Map<string, DraftEvidenceSource>,
@@ -155,16 +146,13 @@ export function normalizeExtractedEvidence(
 export function summarizeEvidenceReadiness(
   evidence: Array<{ status: string; facet: string }>,
 ) {
-  const approved = evidence.filter((item) => item.status === "APPROVED");
-  const approvedFacetCount = new Set(approved.map((item) => item.facet)).size;
+  const facetCount = new Set(evidence.map((item) => item.facet)).size;
   return {
-    approvedCount: approved.length,
-    approvedFacetCount,
-    pendingCount: evidence.filter((item) => item.status === "PENDING").length,
-    rejectedCount: evidence.filter((item) => item.status === "REJECTED").length,
+    evidenceCount: evidence.length,
+    facetCount,
     ready:
-      approved.length >= MIN_APPROVED_EVIDENCE &&
-      approvedFacetCount >= MIN_APPROVED_EVIDENCE_FACETS,
+      evidence.length >= MIN_DRAFT_EVIDENCE &&
+      facetCount >= MIN_DRAFT_EVIDENCE_FACETS,
   };
 }
 
@@ -366,7 +354,7 @@ export async function listCampaignDraftEvidence(campaignId: string, db: DbClient
   if (!campaign) throw new CampaignDraftEvidenceError("CAMPAIGN_NOT_FOUND", "캠페인을 찾을 수 없습니다.", 404);
   const evidence = await db.campaignDraftEvidence.findMany({
     where: { campaignId },
-    orderBy: [{ status: "asc" }, { createdAt: "asc" }],
+    orderBy: { createdAt: "asc" },
   });
   return { evidence, readiness: summarizeEvidenceReadiness(evidence) };
 }
@@ -415,46 +403,15 @@ export async function extractCampaignDraftEvidence(campaignId: string, db: DbCli
         create: {
           campaignId,
           ...item,
-          status: item.sourceType === "ADMIN_APPROVED" ? "APPROVED" : "PENDING",
+          status: "APPROVED",
         },
         update: {
           sourceType: item.sourceType,
           sourceExcerpt: item.sourceExcerpt,
+          status: "APPROVED",
         },
       }),
     ),
   ]);
-  return listCampaignDraftEvidence(campaignId, db);
-}
-
-export async function updateCampaignDraftEvidence(
-  campaignId: string,
-  decisions: Array<{ id: string; status: CampaignDraftEvidenceStatus }>,
-  db: DbClient = prisma,
-) {
-  const unique = new Map(
-    decisions
-      .filter((decision) => decision.id && isEvidenceStatus(decision.status))
-      .slice(0, 100)
-      .map((decision) => [decision.id, decision]),
-  );
-  if (unique.size === 0) {
-    throw new CampaignDraftEvidenceError("INVALID_INPUT", "승인 또는 반려할 사실 카드를 선택해 주세요.");
-  }
-  const existing = await db.campaignDraftEvidence.findMany({
-    where: { campaignId, id: { in: Array.from(unique.keys()) } },
-    select: { id: true },
-  });
-  if (existing.length !== unique.size) {
-    throw new CampaignDraftEvidenceError("EVIDENCE_NOT_FOUND", "사실 카드 정보를 확인해 주세요.", 404);
-  }
-  await db.$transaction(
-    existing.map(({ id }) =>
-      db.campaignDraftEvidence.update({
-        where: { id },
-        data: { status: unique.get(id)?.status },
-      }),
-    ),
-  );
   return listCampaignDraftEvidence(campaignId, db);
 }

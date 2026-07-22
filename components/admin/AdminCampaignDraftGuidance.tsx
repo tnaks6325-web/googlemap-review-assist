@@ -104,7 +104,7 @@ export function AdminCampaignDraftGuidance({
       </div>
 
       <label className="mt-3 block text-xs font-semibold text-ink">
-        관리자 승인 사실 <span className="font-normal text-ink-weak">(최대 8개)</span>
+        관리자 입력 사실 <span className="font-normal text-ink-weak">(최대 8개)</span>
         <textarea
           value={approvedFacts}
           onChange={(event) => setApprovedFacts(event.target.value)}

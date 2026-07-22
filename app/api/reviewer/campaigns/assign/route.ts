@@ -36,6 +36,7 @@ export async function POST(req: Request) {
       remainingSeconds: 0,
       activeAssignment: null,
       assignedCampaign: null,
+      draft: null,
     });
   }
 
@@ -53,10 +54,12 @@ export async function POST(req: Request) {
           assignmentExpiresAt:
             result.activeAssignment.assignmentExpiresAt.toISOString(),
           remainingSeconds: result.activeAssignment.remainingSeconds,
+          draft: result.activeAssignment.draft,
         }
       : null,
     assignedCampaign: {
       ...toConcealedReviewerAssignment(result.assignedCampaign),
     },
+    draft: result.draft,
   });
 }
