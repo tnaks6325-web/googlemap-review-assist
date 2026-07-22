@@ -800,6 +800,7 @@ function validateSlotConstraints(text: string, slot: ReviewDraftStyleSlot) {
   const length = nonSpaceLength(text);
   const sentences = sentenceCount(text);
   const exclamations = text.match(/[!\uFF01]/gu)?.length ?? 0;
+  const tildes = text.match(/~/gu)?.length ?? 0;
   const issues: string[] = [];
   if (length < slot.minNonSpace || length > slot.maxNonSpace) {
     issues.push(`공백 제외 ${slot.minNonSpace}~${slot.maxNonSpace}자 범위를 지키세요.`);
@@ -809,6 +810,18 @@ function validateSlotConstraints(text: string, slot: ReviewDraftStyleSlot) {
   }
   if (exclamations > slot.maxExclamations) {
     issues.push(`감탄부호는 최대 ${slot.maxExclamations}개만 사용하세요.`);
+  }
+  if (slot.punctuationStyle === "TILDE" && (tildes !== 1 || !/~\s*$/u.test(text))) {
+    issues.push("마지막 서술어 뒤에 물결표(~) 1개를 붙이세요.");
+  }
+  if (slot.punctuationStyle !== "TILDE" && tildes > 0) {
+    issues.push("물결표(~)는 지정된 스타일에서만 사용하세요.");
+  }
+  if (slot.punctuationStyle === "DOUBLE_EXCLAMATION" && !/(?:!|！){2}\s*$/u.test(text)) {
+    issues.push("마지막 서술어 뒤에 느낌표를 정확히 2개(!!) 붙이세요.");
+  }
+  if (slot.punctuationStyle === "TRIPLE_EXCLAMATION" && !/(?:!|！){3}\s*$/u.test(text)) {
+    issues.push("마지막 서술어 뒤에 느낌표를 정확히 3개(!!!) 붙이세요.");
   }
   return issues;
 }
@@ -830,6 +843,7 @@ function v2Prompt(
     `스타일 지시: ${slot.instruction}`,
     `길이: 공백 제외 ${slot.minNonSpace}~${slot.maxNonSpace}자.`,
     `문장 수: ${slot.minSentences}~${slot.maxSentences}개. 감탄부호 최대 ${slot.maxExclamations}개.`,
+    `문장부호: ${slot.punctuationInstruction}`,
     "evidenceIds에는 실제로 사용한 사실 카드 ID만 넣으세요.",
     retryFeedback.length ? `이전 시도 수정사항:\n- ${retryFeedback.join("\n- ")}` : "",
     existingDrafts.length
@@ -1056,6 +1070,8 @@ function matrixPrompt(
     endingStyle: slot.endingStyle,
     ending: slot.endingLabel,
     endingInstruction: slot.endingInstruction,
+    punctuationStyle: slot.punctuationStyle,
+    punctuationInstruction: slot.punctuationInstruction,
     instruction: slot.instruction,
     minNonSpace: slot.minNonSpace,
     maxNonSpace: slot.maxNonSpace,
@@ -1069,7 +1085,9 @@ function matrixPrompt(
     "실제 방문 응답이 없으므로 주문·구매·직원 응대·효과·감정 같은 개인 경험을 만들지 마세요.",
     "상호와 주소, 광고·협찬·제공 표현, 과장된 추천을 쓰지 마세요.",
     "각 슬롯의 어조·구성·길이·문장 수를 지키고 도입과 종결 표현을 반복하지 마세요.",
-    "모든 원고를 '~습니다', '~합니다', '~입니다'로 끝내지 마세요. 격식형으로 지정된 슬롯 외에는 해요체, 관찰형, 부드러운 서술형, 명사형 종결을 따르세요.",
+    "모든 원고를 '~습니다', '~합니다', '~입니다'로 끝내지 마세요. 격식형으로 지정된 슬롯 외에는 해요체, 관찰형, 부드러운 서술형을 따르세요.",
+    "'할인 구성.', '이국적인 공간!'처럼 명사로 끝내지 말고 자연스러운 서술어로 문장을 완결하세요.",
+    "문장부호 스타일이 TILDE, DOUBLE_EXCLAMATION, TRIPLE_EXCLAMATION인 슬롯은 각각 문장 끝에 ~, !!, !!!를 정확히 사용하세요.",
     "'공간입니다', '곳입니다', '구성입니다'처럼 같은 명사와 '~니다'를 결합한 종결을 반복하지 마세요.",
     "'밤 22시', '오후 15시'처럼 12시간제와 24시간제를 섞지 말고 '밤 10시' 또는 '22시' 중 하나로 자연스럽게 쓰세요.",
     "'유용하게 활용', '시끌벅적한 소음', '조용한 ... 조용한'처럼 뜻이나 단어가 겹치는 표현을 쓰지 마세요.",

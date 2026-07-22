@@ -1,4 +1,4 @@
-export const REVIEW_DRAFT_DIVERSITY_VERSION = "review-diversity-v3";
+export const REVIEW_DRAFT_DIVERSITY_VERSION = "review-diversity-v4";
 export const REVIEW_DRAFT_SIMILARITY_LIMIT = 0.72;
 
 export const REVIEW_DRAFT_TONES = [
@@ -25,6 +25,12 @@ export type ReviewDraftEndingStyle =
   | "OBSERVATIONAL"
   | "SOFT_COPULA"
   | "NOUN_PHRASE";
+type ReviewDraftGeneratedEndingStyle = Exclude<ReviewDraftEndingStyle, "NOUN_PHRASE">;
+export type ReviewDraftPunctuationStyle =
+  | "STANDARD"
+  | "TILDE"
+  | "DOUBLE_EXCLAMATION"
+  | "TRIPLE_EXCLAMATION";
 
 export interface ReviewDraftStyleSlot {
   index: number;
@@ -33,9 +39,11 @@ export interface ReviewDraftStyleSlot {
   structure: ReviewDraftStructure;
   toneLabel: string;
   structureLabel: string;
-  endingStyle: ReviewDraftEndingStyle;
+  endingStyle: ReviewDraftGeneratedEndingStyle;
   endingLabel: string;
   endingInstruction: string;
+  punctuationStyle: ReviewDraftPunctuationStyle;
+  punctuationInstruction: string;
   instruction: string;
   minNonSpace: number;
   maxNonSpace: number;
@@ -53,7 +61,7 @@ const TONE_META: Record<ReviewDraftTone, { label: string; instruction: string }>
 };
 
 const ENDING_META: Record<
-  ReviewDraftEndingStyle,
+  ReviewDraftGeneratedEndingStyle,
   { label: string; instruction: string }
 > = {
   FORMAL: {
@@ -72,39 +80,65 @@ const ENDING_META: Record<
     label: "부드러운 서술형",
     instruction: "~인 곳이에요, ~한 편이에요, ~가 포인트예요처럼 부드러운 서술형을 사용한다.",
   },
-  NOUN_PHRASE: {
-    label: "리듬감 있는 명사형",
-    instruction: "마지막을 ~한 구성, ~가 돋보이는 공간 같은 짧은 명사형으로 맺어 리듬을 바꾼다.",
-  },
 };
 
-const ENDING_STYLE_SEQUENCE: ReviewDraftEndingStyle[] = [
+const ENDING_STYLE_SEQUENCE: ReviewDraftGeneratedEndingStyle[] = [
   "FORMAL",
   "CONVERSATIONAL",
   "OBSERVATIONAL",
   "SOFT_COPULA",
-  "NOUN_PHRASE",
+  "CONVERSATIONAL",
   "CONVERSATIONAL",
   "OBSERVATIONAL",
   "SOFT_COPULA",
-  "NOUN_PHRASE",
+  "CONVERSATIONAL",
   "CONVERSATIONAL",
   "FORMAL",
   "OBSERVATIONAL",
   "SOFT_COPULA",
-  "NOUN_PHRASE",
+  "OBSERVATIONAL",
   "CONVERSATIONAL",
   "OBSERVATIONAL",
   "SOFT_COPULA",
-  "NOUN_PHRASE",
+  "CONVERSATIONAL",
   "CONVERSATIONAL",
   "OBSERVATIONAL",
   "FORMAL",
   "SOFT_COPULA",
-  "NOUN_PHRASE",
+  "OBSERVATIONAL",
   "CONVERSATIONAL",
   "OBSERVATIONAL",
 ];
+
+const PUNCTUATION_STYLE_SEQUENCE: ReviewDraftPunctuationStyle[] = [
+  "STANDARD", "STANDARD", "STANDARD", "TILDE", "STANDARD",
+  "STANDARD", "TILDE", "STANDARD", "DOUBLE_EXCLAMATION", "STANDARD",
+  "STANDARD", "STANDARD", "STANDARD", "STANDARD", "TILDE",
+  "TILDE", "DOUBLE_EXCLAMATION", "STANDARD", "TRIPLE_EXCLAMATION", "DOUBLE_EXCLAMATION",
+  "STANDARD", "STANDARD", "TILDE", "STANDARD", "DOUBLE_EXCLAMATION",
+];
+
+const PUNCTUATION_META: Record<
+  ReviewDraftPunctuationStyle,
+  { instruction: string; maxExclamations: number }
+> = {
+  STANDARD: {
+    instruction: "마침표나 물음표를 자연스럽게 사용하고 느낌표는 슬롯의 허용 개수를 넘기지 않는다.",
+    maxExclamations: 0,
+  },
+  TILDE: {
+    instruction: "마지막 서술어 뒤에 물결표(~) 1개를 붙여 친근하게 마무리한다.",
+    maxExclamations: 0,
+  },
+  DOUBLE_EXCLAMATION: {
+    instruction: "마지막 서술어 뒤에 느낌표를 정확히 2개(!!) 붙여 경쾌하게 마무리한다.",
+    maxExclamations: 2,
+  },
+  TRIPLE_EXCLAMATION: {
+    instruction: "마지막 서술어 뒤에 느낌표를 정확히 3개(!!!) 붙여 생동감 있게 마무리한다.",
+    maxExclamations: 3,
+  },
+};
 
 const STRUCTURE_META: Record<
   ReviewDraftStructure,
@@ -173,6 +207,8 @@ export const REVIEW_DRAFT_STYLE_SLOTS: ReviewDraftStyleSlot[] = REVIEW_DRAFT_TON
       const structureMeta = STRUCTURE_META[structure];
       const endingStyle = ENDING_STYLE_SEQUENCE[index];
       const endingMeta = ENDING_META[endingStyle];
+      const punctuationStyle = PUNCTUATION_STYLE_SEQUENCE[index];
+      const punctuationMeta = PUNCTUATION_META[punctuationStyle];
       return {
         index,
         id: `v2-${String(index + 1).padStart(2, "0")}-${tone.toLowerCase()}-${structure.toLowerCase()}`,
@@ -183,12 +219,14 @@ export const REVIEW_DRAFT_STYLE_SLOTS: ReviewDraftStyleSlot[] = REVIEW_DRAFT_TON
         endingStyle,
         endingLabel: endingMeta.label,
         endingInstruction: endingMeta.instruction,
-        instruction: `${toneMeta.instruction} ${structureMeta.instruction} ${endingMeta.instruction}`,
+        punctuationStyle,
+        punctuationInstruction: punctuationMeta.instruction,
+        instruction: `${toneMeta.instruction} ${structureMeta.instruction} ${endingMeta.instruction} ${punctuationMeta.instruction}`,
         minNonSpace: structureMeta.minNonSpace,
         maxNonSpace: structureMeta.maxNonSpace,
         minSentences: structureMeta.minSentences,
         maxSentences: structureMeta.maxSentences,
-        maxExclamations: structureMeta.maxExclamations,
+        maxExclamations: Math.max(structureMeta.maxExclamations, punctuationMeta.maxExclamations),
       };
     }),
 );
@@ -247,13 +285,14 @@ export interface DraftQualityIssue {
     | "HIGH_SIMILARITY"
     | "REPEATED_OPENING"
     | "REPEATED_PHRASE"
-    | "OVERUSED_ENDING_STYLE";
+    | "OVERUSED_ENDING_STYLE"
+    | "DISALLOWED_ENDING_STYLE";
   message: string;
   similarity?: number;
 }
 
 export function draftEndingStyle(text: string): ReviewDraftEndingStyle {
-  const ending = text.trim().replace(/[.!?…。！？”’"']+$/gu, "").trim();
+  const ending = text.trim().replace(/[.!?~…。！？”’"']+$/gu, "").trim();
   if (/니다$/u.test(ending)) {
     return "FORMAL";
   }
@@ -263,7 +302,7 @@ export function draftEndingStyle(text: string): ReviewDraftEndingStyle {
   if (/(?:곳이에요|편이에요|포인트예요|느낌이에요|구성이에요)$/u.test(ending)) {
     return "SOFT_COPULA";
   }
-  if (/(?:해요|어요|아요|예요|이에요|돼요|네요)$/u.test(ending)) {
+  if (/(?:요|죠|다|까)$/u.test(ending)) {
     return "CONVERSATIONAL";
   }
   return "NOUN_PHRASE";
@@ -287,11 +326,17 @@ export function findDraftQualityIssues(text: string, existing: string[]): DraftQ
     issues.push({ code: "REPEATED_PHRASE", message: "기존 원고와 긴 연속 문구가 겹칩니다." });
   }
   const endingStyle = draftEndingStyle(text);
+  if (endingStyle === "NOUN_PHRASE") {
+    issues.push({
+      code: "DISALLOWED_ENDING_STYLE",
+      message: "명사형으로 끝내지 말고 자연스러운 서술어로 문장을 완결하세요.",
+    });
+  }
   const endingStyleCount = existing.filter(
     (draft) => draftEndingStyle(draft) === endingStyle,
   ).length;
   const endingStyleLimit = endingStyle === "FORMAL" ? 4 : 7;
-  if (endingStyleCount >= endingStyleLimit) {
+  if (endingStyle !== "NOUN_PHRASE" && endingStyleCount >= endingStyleLimit) {
     issues.push({
       code: "OVERUSED_ENDING_STYLE",
       message: `${ENDING_META[endingStyle].label} 종결이 이미 ${endingStyleLimit}건 사용되었습니다.`,
