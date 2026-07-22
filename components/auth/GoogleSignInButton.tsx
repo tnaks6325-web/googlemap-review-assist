@@ -1,6 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import {
+  buildChromeIntentUrl,
+  detectGoogleLoginBrowser,
+  type GoogleLoginBrowserEnvironment,
+} from "@/lib/google-login-browser";
 
 interface GoogleSignInButtonProps {
   onSuccess?: () => void;
@@ -71,22 +76,10 @@ let googleScriptPromise: Promise<void> | null = null;
 function GoogleLogo() {
   return (
     <svg aria-hidden viewBox="0 0 18 18" className="size-5 shrink-0">
-      <path
-        fill="#4285F4"
-        d="M17.64 9.205c0-.638-.057-1.252-.164-1.841H9v3.482h4.844a4.14 4.14 0 0 1-1.797 2.716v2.258h2.909c1.702-1.567 2.684-3.875 2.684-6.615Z"
-      />
-      <path
-        fill="#34A853"
-        d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.91-2.258c-.805.54-1.835.86-3.046.86-2.344 0-4.328-1.585-5.037-3.714H.956v2.332A9 9 0 0 0 9 18Z"
-      />
-      <path
-        fill="#FBBC05"
-        d="M3.963 10.708A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.168.281-1.708V4.96H.956A9 9 0 0 0 0 9c0 1.452.347 2.827.956 4.04l3.007-2.332Z"
-      />
-      <path
-        fill="#EA4335"
-        d="M9 3.578c1.322 0 2.508.454 3.441 1.346l2.582-2.582C13.463.89 11.425 0 9 0A9 9 0 0 0 .956 4.96l3.007 2.332C4.672 5.163 6.656 3.578 9 3.578Z"
-      />
+      <path fill="#4285F4" d="M17.64 9.205c0-.638-.057-1.252-.164-1.841H9v3.482h4.844a4.14 4.14 0 0 1-1.797 2.716v2.258h2.909c1.702-1.567 2.684-3.875 2.684-6.615Z" />
+      <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.91-2.258c-.805.54-1.835.86-3.046.86-2.344 0-4.328-1.585-5.037-3.714H.956v2.332A9 9 0 0 0 9 18Z" />
+      <path fill="#FBBC05" d="M3.963 10.708A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.168.281-1.708V4.96H.956A9 9 0 0 0 0 9c0 1.452.347 2.827.956 4.04l3.007-2.332Z" />
+      <path fill="#EA4335" d="M9 3.578c1.322 0 2.508.454 3.441 1.346l2.582-2.582C13.463.89 11.425 0 9 0A9 9 0 0 0 .956 4.96l3.007 2.332C4.672 5.163 6.656 3.578 9 3.578Z" />
     </svg>
   );
 }
@@ -97,24 +90,39 @@ export function loadGoogleScript() {
   if (googleScriptPromise) return googleScriptPromise;
 
   googleScriptPromise = new Promise<void>((resolve, reject) => {
-    const existing = document.getElementById(GOOGLE_SCRIPT_ID) as HTMLScriptElement | null;
-    if (existing) {
-      existing.addEventListener("load", () => resolve(), { once: true });
-      existing.addEventListener(
-        "error",
-        () => reject(new Error("Google 로그인 스크립트를 불러오지 못했어요.")),
-        { once: true },
-      );
-      return;
-    }
+    document.getElementById(GOOGLE_SCRIPT_ID)?.remove();
 
     const script = document.createElement("script");
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      if (!window.google?.accounts?.id && !window.google?.accounts?.oauth2) {
+        fail();
+        return;
+      }
+      settled = true;
+      clearTimeout(timeoutId);
+      resolve();
+    };
+    const fail = (message = "Google 로그인 스크립트를 불러오지 못했어요.") => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      script.remove();
+      googleScriptPromise = null;
+      reject(new Error(message));
+    };
+
     script.id = GOOGLE_SCRIPT_ID;
     script.src = "https://accounts.google.com/gsi/client";
     script.async = true;
     script.defer = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Google 로그인 스크립트를 불러오지 못했어요."));
+    script.onload = finish;
+    script.onerror = () => fail();
+    const timeoutId = setTimeout(
+      () => fail("Google 로그인 연결 시간이 초과됐어요. 다시 시도해 주세요."),
+      10_000,
+    );
     document.head.appendChild(script);
   });
   return googleScriptPromise;
@@ -131,12 +139,38 @@ export function GoogleSignInButton({
   const [fallbackMessage, setFallbackMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [buttonReady, setButtonReady] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+  const [browserEnvironment, setBrowserEnvironment] =
+    useState<GoogleLoginBrowserEnvironment | null>(null);
+  const [externalBrowserUrl, setExternalBrowserUrl] = useState<string | null>(null);
+  const [copyMessage, setCopyMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
     async function setup() {
       try {
+        const environment = detectGoogleLoginBrowser(navigator.userAgent);
+        if (environment.embedded) {
+          if (!cancelled) {
+            setBrowserEnvironment(environment);
+            setExternalBrowserUrl(
+              environment.platform === "android"
+                ? buildChromeIntentUrl(window.location.href)
+                : null,
+            );
+            setFallbackMessage(null);
+            setButtonReady(false);
+          }
+          return;
+        }
+
+        if (!cancelled) {
+          setBrowserEnvironment(null);
+          setExternalBrowserUrl(null);
+          setFallbackMessage(null);
+          setButtonReady(false);
+        }
         const configRes = await fetch("/api/auth/google", { cache: "no-store" });
         const config = (await configRes.json().catch(() => ({}))) as {
           configured?: boolean;
@@ -147,7 +181,10 @@ export function GoogleSignInButton({
           return;
         }
         await loadGoogleScript();
-        if (cancelled || !containerRef.current || !window.google?.accounts?.id) return;
+        if (cancelled || !containerRef.current) return;
+        if (!window.google?.accounts?.id) {
+          throw new Error("Google 로그인 기능을 불러오지 못했어요. 다시 시도해 주세요.");
+        }
 
         containerRef.current.innerHTML = "";
         window.google.accounts.id.initialize({
@@ -174,8 +211,7 @@ export function GoogleSignInButton({
               if (!res.ok) throw new Error(data?.error?.message ?? "Google 로그인에 실패했어요.");
               onSuccess?.();
             } catch (reason) {
-              const message =
-                reason instanceof Error ? reason.message : "Google 로그인에 실패했어요.";
+              const message = reason instanceof Error ? reason.message : "Google 로그인에 실패했어요.";
               setFallbackMessage(message);
               onError?.(message);
             } finally {
@@ -204,11 +240,42 @@ export function GoogleSignInButton({
     return () => {
       cancelled = true;
     };
-  }, [mode, onError, onSuccess]);
+  }, [mode, onError, onSuccess, retryCount]);
+
+  async function copyCurrentLink() {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopyMessage("링크를 복사했어요. Chrome 또는 Safari에 붙여넣어 주세요.");
+    } catch {
+      setCopyMessage("오른쪽 위 메뉴에서 링크 복사를 선택해 주세요.");
+    }
+  }
 
   return (
     <div className={className}>
-      {!buttonReady ? (
+      {browserEnvironment ? (
+        <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-4 text-center">
+          <p className="text-sm font-bold text-ink">앱 안에서는 Google 로그인을 사용할 수 없어요.</p>
+          <p className="mt-1 text-xs leading-5 text-ink-weak">
+            Google 보안 정책에 따라 Chrome 또는 Safari에서 이 페이지를 열어 주세요.
+          </p>
+          <div className="mt-3 grid gap-2">
+            {externalBrowserUrl ? (
+              <a href={externalBrowserUrl} className="rounded-xl bg-brand px-4 py-3 text-sm font-bold text-white">
+                Chrome에서 열기
+              </a>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => void copyCurrentLink()}
+              className="rounded-xl border border-brand/30 bg-white px-4 py-3 text-sm font-bold text-brand"
+            >
+              링크 복사
+            </button>
+          </div>
+          {copyMessage ? <p className="mt-2 text-xs text-brand">{copyMessage}</p> : null}
+        </div>
+      ) : !buttonReady ? (
         <button
           type="button"
           disabled
@@ -216,9 +283,7 @@ export function GoogleSignInButton({
           aria-label={label}
           className="grid h-11 w-full grid-cols-[36px_1fr_36px] items-center rounded border border-[#747775] bg-white px-1.5 font-[Roboto,Arial,sans-serif] text-sm font-medium tracking-[0.01em] text-[#1f1f1f] shadow-[0_1px_2px_rgba(0,0,0,0.08)]"
         >
-          <span className="grid place-items-center">
-            <GoogleLogo />
-          </span>
+          <span className="grid place-items-center"><GoogleLogo /></span>
           <span>{label}</span>
           <span aria-hidden />
         </button>
@@ -229,9 +294,18 @@ export function GoogleSignInButton({
         className={`${buttonReady ? "block" : "hidden"} ${busy ? "pointer-events-none opacity-50" : ""}`}
       />
       {busy && <p className="mt-2 text-center text-xs text-ink-weak">Google 로그인 처리 중...</p>}
-      {fallbackMessage && (
-        <p className="mt-2 text-center text-xs text-danger">{fallbackMessage}</p>
-      )}
+      {fallbackMessage && !browserEnvironment ? (
+        <div className="mt-2 text-center">
+          <p className="text-xs text-danger">{fallbackMessage}</p>
+          <button
+            type="button"
+            onClick={() => setRetryCount((count) => count + 1)}
+            className="mt-2 rounded-lg border border-line bg-white px-3 py-2 text-xs font-bold text-brand"
+          >
+            다시 시도
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }
