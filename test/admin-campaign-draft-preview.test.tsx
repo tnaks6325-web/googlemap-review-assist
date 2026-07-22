@@ -1,11 +1,13 @@
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   AdminCampaignDraftPreview,
   DraftGenerationProgress,
   consumeDraftGenerationStream,
+  deletePreparedDraftRequest,
   runCampaignDraftAutofill,
+  updatePreparedDraftRequest,
 } from "@/components/admin/AdminCampaignDraftPreview";
 
 describe("admin campaign prepared drafts", () => {
@@ -56,6 +58,53 @@ describe("admin campaign prepared drafts", () => {
     expect(html).toContain("원고생성 3/25");
     expect(html).toContain("원고보관함");
     expect(html).not.toContain("원고생성 테스트");
+  });
+
+  it("sends an individual draft edit through the protected PATCH contract", async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      draft: {
+        id: "draft-1",
+        text: "수정된 원고입니다.",
+        qualityPassed: true,
+        status: "UNASSIGNED",
+      },
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+
+    await expect(updatePreparedDraftRequest({
+      campaignId: "campaign 1",
+      draftId: "draft/1",
+      text: "수정된 원고입니다.",
+      fetcher,
+    })).resolves.toMatchObject({ id: "draft-1", status: "UNASSIGNED" });
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/admin/campaigns/campaign%201/drafts/draft%2F1",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ text: "수정된 원고입니다." }),
+      }),
+    );
+  });
+
+  it("sends an individual draft delete and surfaces server errors", async () => {
+    const successFetcher = vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ deletedId: "draft-1" }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    ));
+    await expect(deletePreparedDraftRequest({
+      campaignId: "campaign-1",
+      draftId: "draft-1",
+      fetcher: successFetcher,
+    })).resolves.toEqual({ deletedId: "draft-1" });
+
+    const failureFetcher = vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ error: { message: "이미 배정된 원고입니다." } }),
+      { status: 409, headers: { "content-type": "application/json" } },
+    ));
+    await expect(deletePreparedDraftRequest({
+      campaignId: "campaign-1",
+      draftId: "draft-2",
+      fetcher: failureFetcher,
+    })).rejects.toThrow("이미 배정된 원고입니다.");
   });
 
   it("renders the generation button as a live progress bar", () => {

@@ -12,32 +12,84 @@ interface PreparedDraftMetrics {
   batchCount: number;
 }
 
+export interface PreparedDraftItem {
+  id: string;
+  batchId: string;
+  slot: number;
+  styleId: string;
+  toneLabel: string;
+  structureLabel: string;
+  text: string;
+  evidenceIds: string[];
+  maxSimilarity: number;
+  qualityPassed: boolean;
+  status: DraftStatus;
+  assignmentId: string | null;
+  generatedAt: string;
+  provider: string;
+  model: string;
+  promptVersion: string;
+}
+
 export interface PreparedDraftHistory {
   campaignId: string;
   hasMore: boolean;
   metrics: PreparedDraftMetrics;
-  items: Array<{
-    id: string;
-    batchId: string;
-    slot: number;
-    styleId: string;
-    toneLabel: string;
-    structureLabel: string;
-    text: string;
-    evidenceIds: string[];
-    maxSimilarity: number;
-    qualityPassed: boolean;
-    status: DraftStatus;
-    assignmentId: string | null;
-    generatedAt: string;
-    provider: string;
-    model: string;
-    promptVersion: string;
-  }>;
+  items: PreparedDraftItem[];
 }
 
 interface ErrorResult {
   error?: { message?: string };
+}
+
+type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+
+function preparedDraftUrl(campaignId: string, draftId: string) {
+  return `/api/admin/campaigns/${encodeURIComponent(campaignId)}/drafts/${encodeURIComponent(draftId)}`;
+}
+
+export async function updatePreparedDraftRequest({
+  campaignId,
+  draftId,
+  text,
+  fetcher = fetch,
+}: {
+  campaignId: string;
+  draftId: string;
+  text: string;
+  fetcher?: Fetcher;
+}) {
+  const response = await fetcher(preparedDraftUrl(campaignId, draftId), {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  const data = (await response.json().catch(() => null)) as
+    | { draft?: Pick<PreparedDraftItem, "id" | "text" | "qualityPassed" | "status">; error?: { message?: string } }
+    | null;
+  if (!response.ok || !data?.draft) {
+    throw new Error(data?.error?.message || "원고를 수정하지 못했습니다.");
+  }
+  return data.draft;
+}
+
+export async function deletePreparedDraftRequest({
+  campaignId,
+  draftId,
+  fetcher = fetch,
+}: {
+  campaignId: string;
+  draftId: string;
+  fetcher?: Fetcher;
+}) {
+  const response = await fetcher(preparedDraftUrl(campaignId, draftId), { method: "DELETE" });
+  const data = (await response.json().catch(() => null)) as
+    | { deletedId?: string; error?: { message?: string } }
+    | null;
+  if (!response.ok || !data?.deletedId) {
+    throw new Error(data?.error?.message || "원고를 삭제하지 못했습니다.");
+  }
+  return { deletedId: data.deletedId };
 }
 
 type DraftGenerationStreamEvent =
@@ -206,6 +258,9 @@ export function AdminCampaignDraftPreview({
   const [open, setOpen] = useState(false);
   const [generationProgress, setGenerationProgress] = useState<number | null>(null);
   const [generationTarget, setGenerationTarget] = useState(25);
+  const [editingDraftId, setEditingDraftId] = useState<string | null>(null);
+  const [editText, setEditText] = useState("");
+  const [mutatingDraftId, setMutatingDraftId] = useState<string | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -285,6 +340,46 @@ export function AdminCampaignDraftPreview({
     }
   };
 
+  const beginEdit = (item: PreparedDraftItem) => {
+    setEditingDraftId(item.id);
+    setEditText(item.text);
+    setError(null);
+  };
+
+  const cancelEdit = () => {
+    setEditingDraftId(null);
+    setEditText("");
+  };
+
+  const saveEdit = async (item: PreparedDraftItem) => {
+    setMutatingDraftId(item.id);
+    setError(null);
+    try {
+      await updatePreparedDraftRequest({ campaignId, draftId: item.id, text: editText });
+      applyHistory(await fetchHistory());
+      cancelEdit();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "원고를 수정하지 못했습니다.");
+    } finally {
+      setMutatingDraftId(null);
+    }
+  };
+
+  const removeDraft = async (item: PreparedDraftItem) => {
+    if (!window.confirm("이 원고를 보관함에서 삭제할까요? 삭제한 원고는 복구할 수 없습니다.")) return;
+    setMutatingDraftId(item.id);
+    setError(null);
+    try {
+      await deletePreparedDraftRequest({ campaignId, draftId: item.id });
+      applyHistory(await fetchHistory());
+      if (editingDraftId === item.id) cancelEdit();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "원고를 삭제하지 못했습니다.");
+    } finally {
+      setMutatingDraftId(null);
+    }
+  };
+
   const visibleItems = useMemo(
     () => history?.items.filter((item) => item.status === filter) ?? [],
     [filter, history],
@@ -295,7 +390,7 @@ export function AdminCampaignDraftPreview({
       <button
         type="button"
         onClick={generate}
-        disabled={busy !== null || metrics.unassignedCount >= 25}
+        disabled={busy !== null || mutatingDraftId !== null || metrics.unassignedCount >= 25}
         title={`${businessName} 원고 생성`}
         className="relative h-10 min-w-[112px] overflow-hidden whitespace-nowrap rounded-[9px] border border-brand/20 bg-brand-tint px-3 text-xs font-bold text-brand transition hover:border-brand/40 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-70"
       >
@@ -311,7 +406,7 @@ export function AdminCampaignDraftPreview({
       <button
         type="button"
         onClick={openHistory}
-        disabled={busy !== null}
+        disabled={busy !== null || mutatingDraftId !== null}
         title={`${businessName} 원고 보관함`}
         className="h-9 whitespace-nowrap rounded-[9px] border border-line bg-surface px-3 text-xs font-bold text-ink-sub transition hover:border-line-strong hover:bg-surface-alt disabled:cursor-not-allowed disabled:opacity-45"
       >
@@ -403,10 +498,73 @@ export function AdminCampaignDraftPreview({
                       <span className="text-ink-weak">{item.structureLabel}</span>
                       <span className="ml-auto text-ink-weak">유사도 {item.maxSimilarity.toFixed(3)}</span>
                     </div>
-                    <p className="mt-2 whitespace-pre-wrap text-[14px] leading-6 text-ink">{item.text}</p>
+                    {editingDraftId === item.id ? (
+                      <div className="mt-3">
+                        <label htmlFor={`draft-edit-${item.id}`} className="text-[11px] font-bold text-ink-sub">
+                          원고 수정
+                        </label>
+                        <textarea
+                          id={`draft-edit-${item.id}`}
+                          value={editText}
+                          onChange={(event) => setEditText(event.target.value)}
+                          rows={5}
+                          maxLength={600}
+                          autoFocus
+                          className="mt-1 w-full resize-y rounded-[9px] border border-line bg-surface p-3 text-[14px] leading-6 text-ink outline-none focus:border-brand"
+                        />
+                        <p className="mt-1 text-right text-[10px] text-ink-weak">
+                          공백 제외 {editText.replace(/\s/gu, "").length}/200자 · 최소 30자
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="mt-2 whitespace-pre-wrap text-[14px] leading-6 text-ink">{item.text}</p>
+                    )}
                     <p className="mt-2 text-[11px] text-ink-weak">
                       근거 {item.evidenceIds.length}개 · {statusLabel(item.status)} · {formatGeneratedAt(item.generatedAt)}
                     </p>
+                    {item.status === "ASSIGNED" ? (
+                      <p className="mt-3 text-[11px] font-semibold text-ink-weak">
+                        배정 완료 원고는 수정하거나 삭제할 수 없습니다.
+                      </p>
+                    ) : editingDraftId === item.id ? (
+                      <div className="mt-3 flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={cancelEdit}
+                          disabled={mutatingDraftId === item.id}
+                          className="h-8 rounded-[8px] border border-line px-3 text-xs font-bold text-ink-sub hover:bg-surface-alt disabled:opacity-50"
+                        >
+                          취소
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void saveEdit(item)}
+                          disabled={mutatingDraftId === item.id}
+                          className="h-8 rounded-[8px] bg-brand px-3 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50"
+                        >
+                          {mutatingDraftId === item.id ? "저장 중…" : "저장"}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="mt-3 flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => beginEdit(item)}
+                          disabled={mutatingDraftId !== null}
+                          className="h-8 rounded-[8px] border border-line px-3 text-xs font-bold text-ink-sub hover:bg-surface-alt disabled:opacity-50"
+                        >
+                          수정
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void removeDraft(item)}
+                          disabled={mutatingDraftId !== null}
+                          className="h-8 rounded-[8px] border border-red-200 px-3 text-xs font-bold text-danger hover:bg-red-50 disabled:opacity-50"
+                        >
+                          {mutatingDraftId === item.id ? "삭제 중…" : "삭제"}
+                        </button>
+                      </div>
+                    )}
                   </article>
                 ))}
               </div>
