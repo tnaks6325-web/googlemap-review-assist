@@ -348,6 +348,18 @@ describe("campaign review draft generator", () => {
     expect(evaluated.map((item) => item.qualityPassed)).toEqual([false, false]);
   });
 
+  it("excludes a generated draft that copies a long phrase from a style reference", () => {
+    const slot = REVIEW_DRAFT_STYLE_SLOTS.find((candidate) => candidate.structure === "POINT_FIRST");
+    if (!slot) throw new Error("point-first slot is required");
+    const text =
+      "메뉴별 특징과 재료 구성이 구체적으로 안내되어 있어요. 방문 전에 여러 선택지를 차분하게 살펴보기 편해요.";
+    const styleReference =
+      "메뉴별 특징과 재료 구성이 구체적으로 안내되어 있어요. 다음에는 다른 메뉴도 골라보고 싶어요.";
+
+    expect(evaluateDraftQualitySequentially([{ text, slot }], [], [styleReference])[0])
+      .toMatchObject({ qualityPassed: false });
+  });
+
   it("requires the punctuation assigned to tilde and repeated-exclamation slots", () => {
     const reviewText = "메뉴 구성과 운영 정보가 보기 쉽게 정리되어 있어 방문 전에 차분히 살펴보기 좋아요";
     const cases = [

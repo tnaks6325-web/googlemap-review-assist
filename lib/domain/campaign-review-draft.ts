@@ -5,7 +5,6 @@ import { retryExternalOperation } from "@/lib/resilience";
 import { assignmentExpiry } from "@/lib/domain/campaign-availability-policy";
 import {
   REVIEW_DRAFT_DIVERSITY_VERSION,
-  REVIEW_DRAFT_SIMILARITY_LIMIT,
   REVIEW_DRAFT_STYLE_SLOTS,
   analyzeDraftDiversity,
   draftSimilarity,
@@ -1408,12 +1407,14 @@ export function evaluateDraftQualitySequentially(
     const maxSimilarity = acceptedDrafts.length
       ? Math.max(...acceptedDrafts.map((draft) => draftSimilarity(text, draft)))
       : 0;
+    const styleReferenceCopyIssues = findDraftQualityIssues(
+      text,
+      [...styleReferences],
+    ).filter((issue) => issue.code === "REPEATED_PHRASE" || issue.code === "HIGH_SIMILARITY");
     const qualityPassed =
       findDraftQualityIssues(text, acceptedDrafts).length === 0 &&
       findReviewDraftLanguageIssues(text).length === 0 &&
-      !styleReferences.some(
-        (reference) => draftSimilarity(text, reference) >= REVIEW_DRAFT_SIMILARITY_LIMIT,
-      ) &&
+      styleReferenceCopyIssues.length === 0 &&
       validateSlotConstraints(text, slot).length === 0;
     if (qualityPassed) acceptedDrafts.push(text);
     return { maxSimilarity, qualityPassed };
