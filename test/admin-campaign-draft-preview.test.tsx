@@ -9,6 +9,23 @@ import {
 } from "@/components/admin/AdminCampaignDraftPreview";
 
 describe("admin campaign prepared drafts", () => {
+  it("protects individual draft update and delete routes with admin authorization", () => {
+    const routeSource = readFileSync(
+      new URL(
+        "../app/api/admin/campaigns/[campaignId]/drafts/[draftId]/route.ts",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+
+    expect(routeSource).toContain("export async function PATCH");
+    expect(routeSource).toContain("export async function DELETE");
+    expect(routeSource).toContain("checkOrigin(req)");
+    expect(routeSource).toContain("getAdminId()");
+    expect(routeSource).toContain("updateCampaignPreparedDraft");
+    expect(routeSource).toContain("deleteCampaignPreparedDraft");
+  });
+
   it("allows the streaming generation route to run through both Gemini attempts", () => {
     const routeSource = readFileSync(
       new URL(

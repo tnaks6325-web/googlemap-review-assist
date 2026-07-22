@@ -5,6 +5,8 @@ import {
   generateCampaignReviewDraftForAssignment,
   listCampaignPreparedDrafts,
   migrateLegacyCampaignPreparedDrafts,
+  updateCampaignPreparedDraft,
+  deleteCampaignPreparedDraft,
   selectPreparedDraftItemsForStorage,
   nonSpaceLength,
   normalizeCampaignDraftGuidance,
@@ -1051,6 +1053,134 @@ describe("campaign review draft generator", () => {
     const result = await generateCampaignReviewDraftForAssignment(reviewer.id, receipt.id);
 
     expect(result.evidenceIds?.length).toBeGreaterThan(0);
+  });
+
+  it("updates an unassigned prepared draft after normalization and quality validation", async () => {
+    const { campaign } = await createAssignment({ googlePlace: true, googleReview: true });
+    const batch = await prisma.campaignPreparedDraftBatch.create({
+      data: {
+        campaignId: campaign.id,
+        provider: "gemini",
+        model: "gemini-3.5-flash",
+        sourceGroupsJson: "[]",
+        sourceGroupCount: 2,
+        promptVersion: "review-diversity-v5",
+        metricsJson: "{}",
+      },
+    });
+    const draft = await prisma.campaignPreparedDraft.create({
+      data: {
+        campaignId: campaign.id,
+        batchId: batch.id,
+        slot: 0,
+        styleId: "editable-style",
+        toneLabel: "친근형",
+        structureLabel: "세부 우선",
+        text: "수정하기 전 원고이며 충분한 길이를 갖춘 정상적인 테스트 문장입니다.",
+        maxSimilarity: 0,
+        qualityPassed: true,
+      },
+    });
+
+    const updated = await updateCampaignPreparedDraft(campaign.id, draft.id, {
+      text: "직원들이 안내하는 메뉴 정보가 보기 쉽게 정리되어 있어 방문 전에 차분하게 살펴보기 좋아요.",
+    });
+
+    expect(updated).toMatchObject({
+      id: draft.id,
+      status: "UNASSIGNED",
+      qualityPassed: true,
+    });
+    expect(updated.text).toContain("직원분들이");
+    expect(updated.text).not.toContain("직원들이");
+  });
+
+  it("rejects an unnatural administrator edit without changing the stored draft", async () => {
+    const { campaign } = await createAssignment({ googlePlace: true, googleReview: true });
+    const batch = await prisma.campaignPreparedDraftBatch.create({
+      data: {
+        campaignId: campaign.id,
+        provider: "gemini",
+        model: "gemini-3.5-flash",
+        sourceGroupsJson: "[]",
+        sourceGroupCount: 2,
+        promptVersion: "review-diversity-v5",
+        metricsJson: "{}",
+      },
+    });
+    const originalText = "수정 전 상태를 유지해야 하는 충분한 길이의 정상적인 테스트 원고입니다.";
+    const draft = await prisma.campaignPreparedDraft.create({
+      data: {
+        campaignId: campaign.id,
+        batchId: batch.id,
+        slot: 0,
+        styleId: "invalid-edit-style",
+        toneLabel: "담백형",
+        structureLabel: "핵심 우선",
+        text: originalText,
+        maxSimilarity: 0,
+        qualityPassed: false,
+      },
+    });
+
+    await expect(updateCampaignPreparedDraft(campaign.id, draft.id, {
+      text: "온라인을 통해 간편하게 예약할 수 있고 숙련된 솜씨가 돋보이는 곳이에요.",
+    })).rejects.toMatchObject({ code: "INVALID_DRAFT_TEXT", status: 422 });
+    await expect(prisma.campaignPreparedDraft.findUniqueOrThrow({ where: { id: draft.id } }))
+      .resolves.toMatchObject({ text: originalText, qualityPassed: false });
+  });
+
+  it("deletes only unassigned or quality-excluded prepared drafts", async () => {
+    const { campaign, receipt } = await createAssignment({ googlePlace: true, googleReview: true });
+    const batch = await prisma.campaignPreparedDraftBatch.create({
+      data: {
+        campaignId: campaign.id,
+        provider: "gemini",
+        model: "gemini-3.5-flash",
+        sourceGroupsJson: "[]",
+        sourceGroupCount: 2,
+        promptVersion: "review-diversity-v5",
+        metricsJson: "{}",
+      },
+    });
+    const [deletable, assigned] = await Promise.all([
+      prisma.campaignPreparedDraft.create({
+        data: {
+          campaignId: campaign.id,
+          batchId: batch.id,
+          slot: 0,
+          styleId: "deletable-style",
+          toneLabel: "담백형",
+          structureLabel: "핵심 우선",
+          text: "삭제 가능한 미배정 원고이며 충분한 길이를 갖춘 테스트 문장입니다.",
+          maxSimilarity: 0,
+          qualityPassed: true,
+        },
+      }),
+      prisma.campaignPreparedDraft.create({
+        data: {
+          campaignId: campaign.id,
+          batchId: batch.id,
+          slot: 1,
+          styleId: "assigned-style",
+          toneLabel: "담백형",
+          structureLabel: "핵심 우선",
+          text: "이미 배정되어 변경할 수 없는 충분한 길이의 테스트 원고입니다.",
+          maxSimilarity: 0,
+          qualityPassed: true,
+          assignedReceiptId: receipt.id,
+          assignedAt: new Date(),
+        },
+      }),
+    ]);
+
+    await expect(deleteCampaignPreparedDraft(campaign.id, deletable.id))
+      .resolves.toEqual({ deletedId: deletable.id });
+    await expect(deleteCampaignPreparedDraft(campaign.id, assigned.id))
+      .rejects.toMatchObject({ code: "DRAFT_ALREADY_ASSIGNED", status: 409 });
+    await expect(updateCampaignPreparedDraft(campaign.id, assigned.id, {
+      text: "배정된 원고를 수정하려는 충분한 길이의 테스트 문장입니다.",
+    })).rejects.toMatchObject({ code: "DRAFT_ALREADY_ASSIGNED", status: 409 });
   });
 
   it("rejects a v2 model response that cites an unknown evidence card", async () => {

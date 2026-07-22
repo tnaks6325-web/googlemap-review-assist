@@ -713,6 +713,13 @@ function renderEvidenceContext(context: DraftContext) {
     .join("\n");
 }
 
+export interface CampaignPreparedDraftMutationResult {
+  id: string;
+  text: string;
+  qualityPassed: boolean;
+  status: "UNASSIGNED" | "QUALITY_EXCLUDED";
+}
+
 function renderStyleReferences(context: DraftContext) {
   if (!context.styleReferences.length) return "";
   return [
@@ -1877,6 +1884,107 @@ export async function listCampaignPreparedDrafts(
     },
     items,
   };
+}
+
+async function findMutablePreparedDraft(campaignId: string, draftId: string, db: DbClient) {
+  const cleanCampaignId = campaignId.trim();
+  const cleanDraftId = draftId.trim();
+  if (!cleanCampaignId || !cleanDraftId) {
+    throw new CampaignReviewDraftError("INVALID_DRAFT", "원고 정보를 확인해 주세요.", 400);
+  }
+  const draft = await db.campaignPreparedDraft.findFirst({
+    where: { id: cleanDraftId, campaignId: cleanCampaignId },
+    select: { id: true, campaignId: true, text: true, assignedReceiptId: true },
+  });
+  if (!draft) {
+    throw new CampaignReviewDraftError("DRAFT_NOT_FOUND", "저장된 원고를 찾을 수 없습니다.", 404);
+  }
+  if (draft.assignedReceiptId) {
+    throw new CampaignReviewDraftError(
+      "DRAFT_ALREADY_ASSIGNED",
+      "이미 참여자에게 배정된 원고는 수정하거나 삭제할 수 없습니다.",
+      409,
+    );
+  }
+  return draft;
+}
+
+export async function updateCampaignPreparedDraft(
+  campaignId: string,
+  draftId: string,
+  input: { text: string },
+  db: DbClient = prisma,
+): Promise<CampaignPreparedDraftMutationResult> {
+  const draft = await findMutablePreparedDraft(campaignId, draftId, db);
+  const text = normalizeReviewDraftLanguage(input.text);
+  const length = nonSpaceLength(text);
+  if (length < 30 || length > 200) {
+    throw new CampaignReviewDraftError(
+      "INVALID_DRAFT_TEXT",
+      "원고는 공백 제외 30자 이상 200자 이하로 입력해 주세요.",
+      422,
+    );
+  }
+  const languageIssues = findReviewDraftLanguageIssues(text);
+  if (languageIssues.length) {
+    throw new CampaignReviewDraftError(
+      "INVALID_DRAFT_TEXT",
+      languageIssues[0].message,
+      422,
+    );
+  }
+  const existingDrafts = await db.campaignPreparedDraft.findMany({
+    where: {
+      campaignId: draft.campaignId,
+      id: { not: draft.id },
+      qualityPassed: true,
+    },
+    select: { text: true },
+    take: 250,
+  });
+  const existingTexts = existingDrafts.map((item) => item.text);
+  const qualityIssues = findDraftQualityIssues(text, existingTexts);
+  if (qualityIssues.length) {
+    throw new CampaignReviewDraftError(
+      "INVALID_DRAFT_TEXT",
+      qualityIssues[0].message,
+      422,
+    );
+  }
+  const maxSimilarity = existingTexts.length
+    ? Math.max(...existingTexts.map((existing) => draftSimilarity(text, existing)))
+    : 0;
+  const updated = await db.campaignPreparedDraft.updateMany({
+    where: { id: draft.id, campaignId: draft.campaignId, assignedReceiptId: null },
+    data: { text, qualityPassed: true, maxSimilarity },
+  });
+  if (updated.count !== 1) {
+    throw new CampaignReviewDraftError(
+      "DRAFT_ALREADY_ASSIGNED",
+      "원고를 수정하는 동안 참여자에게 배정되어 변경할 수 없습니다.",
+      409,
+    );
+  }
+  return { id: draft.id, text, qualityPassed: true, status: "UNASSIGNED" };
+}
+
+export async function deleteCampaignPreparedDraft(
+  campaignId: string,
+  draftId: string,
+  db: DbClient = prisma,
+) {
+  const draft = await findMutablePreparedDraft(campaignId, draftId, db);
+  const deleted = await db.campaignPreparedDraft.deleteMany({
+    where: { id: draft.id, campaignId: draft.campaignId, assignedReceiptId: null },
+  });
+  if (deleted.count !== 1) {
+    throw new CampaignReviewDraftError(
+      "DRAFT_ALREADY_ASSIGNED",
+      "원고를 삭제하는 동안 참여자에게 배정되어 변경할 수 없습니다.",
+      409,
+    );
+  }
+  return { deletedId: draft.id };
 }
 
 async function generateDraftText(context: DraftContext) {
