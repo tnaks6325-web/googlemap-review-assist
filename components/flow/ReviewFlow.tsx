@@ -108,6 +108,24 @@ interface CategoryCount {
   count: number;
 }
 
+interface ClipboardWriter {
+  writeText(text: string): Promise<void>;
+}
+
+export async function copyReviewDraftToClipboard(
+  text: string,
+  clipboard: ClipboardWriter | undefined =
+    typeof navigator === "undefined" ? undefined : navigator.clipboard,
+) {
+  if (!text.trim() || !clipboard?.writeText) return false;
+  try {
+    await clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function ReviewFlow({
   initialRewardPoints,
   initialAvailableCount,
@@ -129,6 +147,7 @@ export function ReviewFlow({
   const [remainingSeconds, setRemainingSeconds] = useState(0);
   const [draft, setDraft] = useState("");
   const [draftMeta, setDraftMeta] = useState<DraftResponse | null>(null);
+  const [clipboardStatus, setClipboardStatus] = useState<"idle" | "copied" | "failed">("idle");
   const [completion, setCompletion] = useState<CompleteResponse | null>(null);
   const [screenshot, setScreenshot] = useState<File | null>(null);
   const [reviewGuideOpen, setReviewGuideOpen] = useState(false);
@@ -163,6 +182,17 @@ export function ReviewFlow({
     return () => window.clearInterval(timer);
   }, [assignmentExpiresAt, step]);
 
+  useEffect(() => {
+    if (step !== "draft" || !draft) return;
+    let cancelled = false;
+    void copyReviewDraftToClipboard(draft).then((copied) => {
+      if (!cancelled) setClipboardStatus(copied ? "copied" : "failed");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [draft, step]);
+
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
     setError(null);
@@ -189,6 +219,7 @@ export function ReviewFlow({
     setRemainingSeconds(data.activeAssignment.remainingSeconds);
     setAssignedCampaign(data.activeAssignment.assignedCampaign);
     if (!data.activeAssignment.draft) return false;
+    setClipboardStatus("idle");
     setDraft(data.activeAssignment.draft.text);
     setDraftMeta(data.activeAssignment.draft);
     setStep("draft");
@@ -240,6 +271,7 @@ export function ReviewFlow({
       setAssignmentExpiresAt(data.assignmentExpiresAt);
       setRemainingSeconds(data.remainingSeconds);
       setAssignedCampaign(data.assignedCampaign);
+      setClipboardStatus("idle");
       setDraft(data.draft?.text ?? "");
       setDraftMeta(data.draft);
       setCompletion(null);
@@ -258,6 +290,12 @@ export function ReviewFlow({
     run(async () => {
       if (!assignmentId) {
         setError("참여 정보를 확인해 주세요.");
+        return;
+      }
+      const copied = await copyReviewDraftToClipboard(draft);
+      setClipboardStatus(copied ? "copied" : "failed");
+      if (!copied) {
+        setError("클립보드 복사를 허용한 뒤 리뷰 등록 버튼을 다시 눌러 주세요.");
         return;
       }
       const place = await postJson<RevealedPlace>(
@@ -303,6 +341,7 @@ export function ReviewFlow({
       setRemainingSeconds(0);
       setDraft("");
       setDraftMeta(null);
+      setClipboardStatus("idle");
       setScreenshot(null);
       setCompletion(null);
       setReviewGuideOpen(false);
@@ -380,6 +419,18 @@ export function ReviewFlow({
                   {draftMeta.slot != null ? ` · 다양성 슬롯 ${draftMeta.slot + 1}/25` : ""}
                 </p>
               )}
+              <p
+                className={`text-xs font-medium ${
+                  clipboardStatus === "failed" ? "text-danger" : "text-brand"
+                }`}
+                aria-live="polite"
+              >
+                {clipboardStatus === "copied"
+                  ? "원고가 클립보드에 자동 복사됐어요."
+                  : clipboardStatus === "failed"
+                    ? "자동 복사가 차단됐어요. 리뷰 등록 버튼을 누르면 다시 복사합니다."
+                    : "원고를 클립보드에 복사하고 있어요."}
+              </p>
               <div className="grid gap-2 pt-2">
                 <Button
                   fullWidth
@@ -510,7 +561,11 @@ export function ReviewFlow({
         )}
         {step === "draft" && (
           <>
-            <label className="block rounded-card border border-line bg-surface p-3 text-sm">
+            <label
+              className={`block rounded-card border border-line bg-surface p-4 text-sm transition ${
+                assignmentExpired ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:border-brand/50"
+              }`}
+            >
               <span className="block font-semibold text-ink">구글맵 리뷰 캡처본</span>
               <span className="mt-1 block text-xs leading-5 text-ink-weak">
                 리뷰 등록 후 작성 완료 화면이나 내 리뷰가 보이는 화면을 첨부해 주세요.
@@ -519,12 +574,40 @@ export function ReviewFlow({
                 type="file"
                 accept="image/png,image/jpeg,image/webp"
                 disabled={assignmentExpired}
-                className="mt-3 block w-full text-sm text-ink-sub"
+                aria-label="리뷰 캡처 이미지 첨부하기"
+                className="peer sr-only"
                 onChange={(event) => setScreenshot(event.target.files?.[0] ?? null)}
               />
-              {screenshot && (
-                <span className="mt-2 block text-xs font-semibold text-brand">{screenshot.name}</span>
-              )}
+              <span className="mt-4 flex min-h-32 flex-col items-center justify-center rounded-xl border-2 border-dashed border-brand/35 bg-brand-tint px-4 py-5 text-center transition peer-focus-visible:ring-2 peer-focus-visible:ring-brand peer-focus-visible:ring-offset-2">
+                <span
+                  aria-hidden="true"
+                  className="flex size-11 items-center justify-center rounded-full bg-white text-brand shadow-sm"
+                >
+                  {screenshot ? (
+                    <svg viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth="2.25">
+                      <path d="m5 12 4 4L19 6" />
+                    </svg>
+                  ) : (
+                    <svg viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5" />
+                      <path d="M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4" />
+                    </svg>
+                  )}
+                </span>
+                <span className="mt-3 block font-bold text-brand">
+                  {screenshot ? "첨부 완료" : "리뷰 캡처 이미지 첨부하기"}
+                </span>
+                {screenshot ? (
+                  <>
+                    <span className="mt-1 block max-w-full truncate text-xs font-medium text-ink-sub">
+                      {screenshot.name}
+                    </span>
+                    <span className="mt-2 block text-xs text-ink-weak">눌러서 다른 이미지 선택</span>
+                  </>
+                ) : (
+                  <span className="mt-1 block text-xs text-ink-weak">여기를 눌러 선택 · PNG, JPG, WEBP</span>
+                )}
+              </span>
             </label>
             {assignmentExpired ? (
               <Button fullWidth loading={busy} onClick={refreshForNextCampaign}>
@@ -719,7 +802,7 @@ function CampaignCard({
           참여 캠페인이 준비됐어요
         </h2>
         <p className="mt-1 text-sm leading-5 text-ink-weak">
-          장소 정보는 원고를 복사한 뒤 리뷰 등록 버튼을 누르면 확인할 수 있어요.
+          원고는 자동으로 복사되며, 리뷰 등록 버튼을 누르면 장소를 확인할 수 있어요.
         </p>
       </div>
       <div className="grid grid-cols-1 gap-2">
