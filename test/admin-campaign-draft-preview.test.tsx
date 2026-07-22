@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AdminCampaignDraftPreview,
   DraftGenerationProgress,
+  PreparedDraftReviewRequiredError,
   consumeDraftGenerationStream,
   deletePreparedDraftRequest,
   deleteQualityExcludedDraftsRequest,
@@ -28,6 +29,9 @@ describe("admin campaign prepared drafts", () => {
     expect(routeSource).toContain("getAdminId()");
     expect(routeSource).toContain("updateCampaignPreparedDraft");
     expect(routeSource).toContain("deleteCampaignPreparedDraft");
+    expect(routeSource).toContain("CampaignReviewDraftWarningError");
+    expect(routeSource).toContain("warnings: error.warnings");
+    expect(routeSource).toContain("force: body.force === true");
   });
 
   it("protects the quality-excluded bulk delete route with admin authorization", () => {
@@ -86,6 +90,7 @@ describe("admin campaign prepared drafts", () => {
     expect(componentSource).toContain("미배정으로 이동");
     expect(componentSource).toContain("품질제외 모두 삭제");
     expect(componentSource).toContain("삭제한 원고는 복구할 수 없습니다");
+    expect(componentSource).toContain("경고 무시하고 반영");
   });
 
   it("sends an individual draft edit through the protected PATCH contract", async () => {
@@ -109,6 +114,47 @@ describe("admin campaign prepared drafts", () => {
       expect.objectContaining({
         method: "PATCH",
         body: JSON.stringify({ text: "수정된 원고입니다." }),
+      }),
+    );
+  });
+
+  it("preserves edit warnings and sends an explicit force override", async () => {
+    const warningFetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      error: {
+        code: "DRAFT_REVIEW_REQUIRED",
+        message: "품질 경고를 확인해 주세요.",
+        warnings: ["자연스러운 해요체 종결이 이미 7건 사용되었습니다."],
+      },
+    }), { status: 409, headers: { "content-type": "application/json" } }));
+
+    const warning = await updatePreparedDraftRequest({
+      campaignId: "campaign-1",
+      draftId: "draft-1",
+      text: "관리자가 검토 중인 충분한 길이의 원고를 저장하려고 합니다.",
+      fetcher: warningFetcher,
+    }).catch((error: unknown) => error);
+    expect(warning).toBeInstanceOf(PreparedDraftReviewRequiredError);
+    expect(warning).toMatchObject({
+      warnings: ["자연스러운 해요체 종결이 이미 7건 사용되었습니다."],
+    });
+
+    const forceFetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      draft: { id: "draft-1", text: "강제 반영 원고입니다.", qualityPassed: true, status: "UNASSIGNED" },
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+    await updatePreparedDraftRequest({
+      campaignId: "campaign-1",
+      draftId: "draft-1",
+      text: "관리자가 검토 중인 충분한 길이의 원고를 저장하려고 합니다.",
+      force: true,
+      fetcher: forceFetcher,
+    });
+    expect(forceFetcher).toHaveBeenCalledWith(
+      "/api/admin/campaigns/campaign-1/drafts/draft-1",
+      expect.objectContaining({
+        body: JSON.stringify({
+          text: "관리자가 검토 중인 충분한 길이의 원고를 저장하려고 합니다.",
+          force: true,
+        }),
       }),
     );
   });
@@ -147,6 +193,37 @@ describe("admin campaign prepared drafts", () => {
       expect.objectContaining({
         method: "PATCH",
         body: JSON.stringify({ action: "PROMOTE_TO_UNASSIGNED" }),
+      }),
+    );
+  });
+
+  it("preserves promotion warnings and sends an explicit force override", async () => {
+    const warningFetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      error: {
+        code: "DRAFT_REVIEW_REQUIRED",
+        message: "품질 경고를 확인해 주세요.",
+        warnings: ["품질 검사에서 제외된 원고입니다."],
+      },
+    }), { status: 409, headers: { "content-type": "application/json" } }));
+    await expect(promotePreparedDraftRequest({
+      campaignId: "campaign-1",
+      draftId: "draft-1",
+      fetcher: warningFetcher,
+    })).rejects.toBeInstanceOf(PreparedDraftReviewRequiredError);
+
+    const forceFetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      draft: { id: "draft-1", text: "검토한 원고입니다.", qualityPassed: true, status: "UNASSIGNED" },
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+    await promotePreparedDraftRequest({
+      campaignId: "campaign-1",
+      draftId: "draft-1",
+      force: true,
+      fetcher: forceFetcher,
+    });
+    expect(forceFetcher).toHaveBeenCalledWith(
+      "/api/admin/campaigns/campaign-1/drafts/draft-1",
+      expect.objectContaining({
+        body: JSON.stringify({ action: "PROMOTE_TO_UNASSIGNED", force: true }),
       }),
     );
   });

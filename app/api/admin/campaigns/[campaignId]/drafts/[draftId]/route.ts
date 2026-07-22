@@ -2,6 +2,7 @@ import { checkOrigin } from "@/lib/auth/origin";
 import { getAdminId } from "@/lib/auth/session";
 import {
   CampaignReviewDraftError,
+  CampaignReviewDraftWarningError,
   deleteCampaignPreparedDraft,
   promoteCampaignQualityExcludedDraft,
   updateCampaignPreparedDraft,
@@ -31,6 +32,15 @@ async function authorizeMutation(req: Request, action: string) {
 }
 
 function mutationError(error: unknown, fallbackCode: string, fallbackMessage: string) {
+  if (error instanceof CampaignReviewDraftWarningError) {
+    return ok({
+      error: {
+        code: error.code,
+        message: error.message,
+        warnings: error.warnings,
+      },
+    }, error.status);
+  }
   if (error instanceof CampaignReviewDraftError) {
     return err(error.code, error.message, error.status);
   }
@@ -42,13 +52,18 @@ export async function PATCH(req: Request, { params }: DraftRouteContext) {
   if (typeof authorization !== "string") return authorization;
 
   const body = (await req.json().catch(() => null)) as
-    | { text?: unknown; action?: unknown }
+    | { text?: unknown; action?: unknown; force?: unknown }
     | null;
+  if (body?.force !== undefined && typeof body.force !== "boolean") {
+    return err("INVALID_DRAFT_OVERRIDE", "경고 무시 여부를 확인해 주세요", 400);
+  }
   const { campaignId, draftId } = await params;
   try {
     if (body?.action === "PROMOTE_TO_UNASSIGNED") {
       return ok({
-        draft: await promoteCampaignQualityExcludedDraft(campaignId, draftId),
+        draft: await promoteCampaignQualityExcludedDraft(campaignId, draftId, {
+          force: body.force === true,
+        }),
       });
     }
     if (typeof body?.text !== "string" || body.text.length > 2_000) {
@@ -58,6 +73,7 @@ export async function PATCH(req: Request, { params }: DraftRouteContext) {
       draft: await updateCampaignPreparedDraft(campaignId, draftId, {
         text: body.text,
         adminId: authorization,
+        force: body.force === true,
       }),
     });
   } catch (error) {

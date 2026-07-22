@@ -1131,7 +1131,7 @@ describe("campaign review draft generator", () => {
     });
   });
 
-  it("rejects an unnatural administrator edit without changing the stored draft", async () => {
+  it("warns about an unnatural administrator edit and saves it only after an explicit override", async () => {
     const { campaign } = await createAssignment({ googlePlace: true, googleReview: true });
     const batch = await prisma.campaignPreparedDraftBatch.create({
       data: {
@@ -1159,18 +1159,70 @@ describe("campaign review draft generator", () => {
       },
     });
 
+    const adminId = `admin-${uniq()}`;
+    const editedText = "온라인을 통해 간편하게 예약할 수 있고 숙련된 솜씨가 돋보이는 곳이에요.";
     await expect(updateCampaignPreparedDraft(campaign.id, draft.id, {
-      text: "온라인을 통해 간편하게 예약할 수 있고 숙련된 솜씨가 돋보이는 곳이에요.",
-      adminId: `admin-${uniq()}`,
-    })).rejects.toMatchObject({ code: "INVALID_DRAFT_TEXT", status: 422 });
+      text: editedText,
+      adminId,
+    })).rejects.toMatchObject({
+      code: "DRAFT_REVIEW_REQUIRED",
+      status: 409,
+      warnings: expect.arrayContaining([
+        expect.stringContaining("온라인을 통해"),
+        expect.stringContaining("숙련된 솜씨"),
+      ]),
+    });
     await expect(prisma.campaignPreparedDraft.findUniqueOrThrow({ where: { id: draft.id } }))
       .resolves.toMatchObject({ text: originalText, qualityPassed: false });
     await expect(prisma.campaignPreparedDraftRevision.count({
       where: { campaignId: campaign.id, draftId: draft.id },
     })).resolves.toBe(0);
+
+    await expect(updateCampaignPreparedDraft(campaign.id, draft.id, {
+      text: editedText,
+      adminId,
+      force: true,
+    })).resolves.toMatchObject({ text: editedText, qualityPassed: true, status: "UNASSIGNED" });
+    await expect(prisma.campaignPreparedDraftRevision.findFirstOrThrow({
+      where: { campaignId: campaign.id, draftId: draft.id },
+    })).resolves.toMatchObject({ adminId, beforeText: originalText, afterText: editedText });
   });
 
-  it("promotes a quality-excluded draft to the unassigned pool without changing its text", async () => {
+  it("keeps the 30-to-200 character storage boundary even with a warning override", async () => {
+    const { campaign } = await createAssignment({ googlePlace: true, googleReview: true });
+    const batch = await prisma.campaignPreparedDraftBatch.create({
+      data: {
+        campaignId: campaign.id,
+        provider: "gemini",
+        model: "gemini-3.5-flash",
+        sourceGroupsJson: "[]",
+        sourceGroupCount: 2,
+        promptVersion: "review-diversity-v6",
+        metricsJson: "{}",
+      },
+    });
+    const draft = await prisma.campaignPreparedDraft.create({
+      data: {
+        campaignId: campaign.id,
+        batchId: batch.id,
+        slot: 0,
+        styleId: "forced-length-boundary-style",
+        toneLabel: "담백형",
+        structureLabel: "핵심 우선",
+        text: "길이 검증을 유지하는 데 필요한 충분한 길이의 기존 테스트 원고입니다.",
+        maxSimilarity: 0,
+        qualityPassed: false,
+      },
+    });
+
+    await expect(updateCampaignPreparedDraft(campaign.id, draft.id, {
+      text: "너무 짧아요.",
+      adminId: `admin-${uniq()}`,
+      force: true,
+    })).rejects.toMatchObject({ code: "INVALID_DRAFT_TEXT", status: 422 });
+  });
+
+  it("warns before promoting a quality-excluded draft and allows an explicit override", async () => {
     const { campaign } = await createAssignment({ googlePlace: true, googleReview: true });
     const batch = await prisma.campaignPreparedDraftBatch.create({
       data: {
@@ -1198,6 +1250,15 @@ describe("campaign review draft generator", () => {
     });
 
     await expect(promoteCampaignQualityExcludedDraft(campaign.id, draft.id))
+      .rejects.toMatchObject({
+        code: "DRAFT_REVIEW_REQUIRED",
+        status: 409,
+        warnings: expect.arrayContaining([expect.stringContaining("품질 검사에서 제외")]),
+      });
+    await expect(prisma.campaignPreparedDraft.findUniqueOrThrow({ where: { id: draft.id } }))
+      .resolves.toMatchObject({ qualityPassed: false });
+
+    await expect(promoteCampaignQualityExcludedDraft(campaign.id, draft.id, { force: true }))
       .resolves.toMatchObject({ id: draft.id, qualityPassed: true, status: "UNASSIGNED" });
     await expect(prisma.campaignPreparedDraft.findUniqueOrThrow({ where: { id: draft.id } }))
       .resolves.toMatchObject({ text: draft.text, qualityPassed: true, maxSimilarity: 0.72 });

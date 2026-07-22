@@ -39,7 +39,7 @@ export interface PreparedDraftHistory {
 }
 
 interface ErrorResult {
-  error?: { message?: string };
+  error?: { code?: string; message?: string; warnings?: unknown };
 }
 
 type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -52,27 +52,51 @@ function qualityExcludedDraftsUrl(campaignId: string) {
   return `/api/admin/campaigns/${encodeURIComponent(campaignId)}/drafts/quality-excluded`;
 }
 
+export class PreparedDraftReviewRequiredError extends Error {
+  constructor(public warnings: string[]) {
+    super("품질 경고를 확인한 뒤 반영 여부를 선택해 주세요.");
+    this.name = "PreparedDraftReviewRequiredError";
+  }
+}
+
+function throwPreparedDraftMutationError(
+  error: ErrorResult["error"] | undefined,
+  fallbackMessage: string,
+): never {
+  const warnings = Array.isArray(error?.warnings)
+    ? error.warnings.filter((warning): warning is string => typeof warning === "string").slice(0, 8)
+    : [];
+  if (error?.code === "DRAFT_REVIEW_REQUIRED") {
+    throw new PreparedDraftReviewRequiredError(
+      warnings.length ? warnings : [error.message || "원고 품질 경고를 확인해 주세요."],
+    );
+  }
+  throw new Error(error?.message || fallbackMessage);
+}
+
 export async function updatePreparedDraftRequest({
   campaignId,
   draftId,
   text,
+  force = false,
   fetcher = fetch,
 }: {
   campaignId: string;
   draftId: string;
   text: string;
+  force?: boolean;
   fetcher?: Fetcher;
 }) {
   const response = await fetcher(preparedDraftUrl(campaignId, draftId), {
     method: "PATCH",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ text }),
+    body: JSON.stringify({ text, ...(force ? { force: true } : {}) }),
   });
   const data = (await response.json().catch(() => null)) as
-    | { draft?: Pick<PreparedDraftItem, "id" | "text" | "qualityPassed" | "status">; error?: { message?: string } }
+    | { draft?: Pick<PreparedDraftItem, "id" | "text" | "qualityPassed" | "status">; error?: ErrorResult["error"] }
     | null;
   if (!response.ok || !data?.draft) {
-    throw new Error(data?.error?.message || "원고를 수정하지 못했습니다.");
+    throwPreparedDraftMutationError(data?.error, "원고를 수정하지 못했습니다.");
   }
   return data.draft;
 }
@@ -99,22 +123,27 @@ export async function deletePreparedDraftRequest({
 export async function promotePreparedDraftRequest({
   campaignId,
   draftId,
+  force = false,
   fetcher = fetch,
 }: {
   campaignId: string;
   draftId: string;
+  force?: boolean;
   fetcher?: Fetcher;
 }) {
   const response = await fetcher(preparedDraftUrl(campaignId, draftId), {
     method: "PATCH",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ action: "PROMOTE_TO_UNASSIGNED" }),
+    body: JSON.stringify({
+      action: "PROMOTE_TO_UNASSIGNED",
+      ...(force ? { force: true } : {}),
+    }),
   });
   const data = (await response.json().catch(() => null)) as
-    | { draft?: Pick<PreparedDraftItem, "id" | "text" | "qualityPassed" | "status">; error?: { message?: string } }
+    | { draft?: Pick<PreparedDraftItem, "id" | "text" | "qualityPassed" | "status">; error?: ErrorResult["error"] }
     | null;
   if (!response.ok || !data?.draft) {
-    throw new Error(data?.error?.message || "품질 제외 원고를 미배정으로 이동하지 못했습니다.");
+    throwPreparedDraftMutationError(data?.error, "품질 제외 원고를 미배정으로 이동하지 못했습니다.");
   }
   return data.draft;
 }
@@ -279,6 +308,10 @@ const FILTERS: Array<{ status: DraftStatus; label: string; metric: keyof Prepare
   { status: "ASSIGNED", label: "배정 완료", metric: "assignedCount" },
 ];
 
+type PendingDraftReview =
+  | { kind: "edit"; item: PreparedDraftItem; text: string; warnings: string[] }
+  | { kind: "promote"; item: PreparedDraftItem; warnings: string[] };
+
 export function AdminCampaignDraftPreview({
   campaignId,
   businessName,
@@ -305,6 +338,7 @@ export function AdminCampaignDraftPreview({
   const [editingDraftId, setEditingDraftId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
   const [mutatingDraftId, setMutatingDraftId] = useState<string | null>(null);
+  const [pendingReview, setPendingReview] = useState<PendingDraftReview | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -350,6 +384,7 @@ export function AdminCampaignDraftPreview({
   };
 
   const openHistory = () => {
+    setPendingReview(null);
     setOpen(true);
     void loadHistory();
   };
@@ -388,22 +423,29 @@ export function AdminCampaignDraftPreview({
     setEditingDraftId(item.id);
     setEditText(item.text);
     setError(null);
+    setPendingReview(null);
   };
 
   const cancelEdit = () => {
     setEditingDraftId(null);
     setEditText("");
+    setPendingReview(null);
   };
 
-  const saveEdit = async (item: PreparedDraftItem) => {
+  const saveEdit = async (item: PreparedDraftItem, force = false, text = editText) => {
     setMutatingDraftId(item.id);
     setError(null);
     try {
-      await updatePreparedDraftRequest({ campaignId, draftId: item.id, text: editText });
+      await updatePreparedDraftRequest({ campaignId, draftId: item.id, text, force });
       applyHistory(await fetchHistory());
+      setPendingReview(null);
       cancelEdit();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "원고를 수정하지 못했습니다.");
+      if (cause instanceof PreparedDraftReviewRequiredError) {
+        setPendingReview({ kind: "edit", item, text, warnings: cause.warnings });
+      } else {
+        setError(cause instanceof Error ? cause.message : "원고를 수정하지 못했습니다.");
+      }
     } finally {
       setMutatingDraftId(null);
     }
@@ -424,18 +466,32 @@ export function AdminCampaignDraftPreview({
     }
   };
 
-  const promoteDraft = async (item: PreparedDraftItem) => {
+  const promoteDraft = async (item: PreparedDraftItem, force = false) => {
     setMutatingDraftId(item.id);
     setError(null);
     try {
-      await promotePreparedDraftRequest({ campaignId, draftId: item.id });
+      await promotePreparedDraftRequest({ campaignId, draftId: item.id, force });
       applyHistory(await fetchHistory());
+      setPendingReview(null);
       if (editingDraftId === item.id) cancelEdit();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "품질 제외 원고를 미배정으로 이동하지 못했습니다.");
+      if (cause instanceof PreparedDraftReviewRequiredError) {
+        setPendingReview({ kind: "promote", item, warnings: cause.warnings });
+      } else {
+        setError(cause instanceof Error ? cause.message : "품질 제외 원고를 미배정으로 이동하지 못했습니다.");
+      }
     } finally {
       setMutatingDraftId(null);
     }
+  };
+
+  const applyPendingReview = () => {
+    if (!pendingReview) return;
+    if (pendingReview.kind === "edit") {
+      void saveEdit(pendingReview.item, true, pendingReview.text);
+      return;
+    }
+    void promoteDraft(pendingReview.item, true);
   };
 
   const removeAllQualityExcludedDrafts = async () => {
@@ -538,7 +594,11 @@ export function AdminCampaignDraftPreview({
                   type="button"
                   role="tab"
                   aria-selected={filter === item.status}
-                  onClick={() => setFilter(item.status)}
+                  onClick={() => {
+                    setFilter(item.status);
+                    setPendingReview(null);
+                    setError(null);
+                  }}
                   className={`rounded-full px-3 py-1.5 text-xs font-bold ${
                     filter === item.status ? "bg-brand text-white" : "bg-surface-alt text-ink-sub"
                   }`}
@@ -558,11 +618,42 @@ export function AdminCampaignDraftPreview({
               ) : null}
             </div>
 
+            {pendingReview ? (
+              <div role="alert" className="mt-4 rounded-[12px] border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+                <p className="font-bold">원고 품질 경고</p>
+                <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5">
+                  {pendingReview.warnings.map((warning) => <li key={warning}>{warning}</li>)}
+                </ul>
+                <p className="mt-2 text-xs leading-5">
+                  경고를 무시하면 이 원고가 참여자에게 배정될 수 있습니다.
+                </p>
+                <div className="mt-3 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPendingReview(null)}
+                    disabled={mutatingDraftId !== null}
+                    className="h-8 rounded-[8px] border border-amber-300 px-3 text-xs font-bold hover:bg-amber-100 disabled:opacity-50"
+                  >
+                    돌아가기
+                  </button>
+                  <button
+                    type="button"
+                    onClick={applyPendingReview}
+                    disabled={mutatingDraftId !== null}
+                    className="h-8 rounded-[8px] bg-amber-600 px-3 text-xs font-bold text-white hover:bg-amber-700 disabled:opacity-50"
+                  >
+                    {mutatingDraftId !== null ? "반영 중…" : "경고 무시하고 반영"}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
             {error ? (
               <p className="mt-4 rounded-[12px] border border-red-200 bg-red-50 p-4 text-sm font-semibold leading-6 text-danger">
                 {error}
               </p>
-            ) : busy === "loading" && !history ? (
+            ) : null}
+            {busy === "loading" && !history ? (
               <p className="py-12 text-center text-sm text-ink-weak">저장된 원고를 불러오는 중…</p>
             ) : visibleItems.length ? (
               <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -591,7 +682,10 @@ export function AdminCampaignDraftPreview({
                         <textarea
                           id={`draft-edit-${item.id}`}
                           value={editText}
-                          onChange={(event) => setEditText(event.target.value)}
+                          onChange={(event) => {
+                            setEditText(event.target.value);
+                            setPendingReview(null);
+                          }}
                           rows={5}
                           maxLength={600}
                           autoFocus

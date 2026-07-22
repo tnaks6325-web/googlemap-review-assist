@@ -160,6 +160,12 @@ export class CampaignReviewDraftError extends Error {
   }
 }
 
+export class CampaignReviewDraftWarningError extends CampaignReviewDraftError {
+  constructor(public warnings: string[]) {
+    super("DRAFT_REVIEW_REQUIRED", "품질 경고를 확인한 뒤 반영 여부를 선택해 주세요.", 409);
+  }
+}
+
 type DbClient = PrismaClient | Prisma.TransactionClient;
 
 type SourceGroup = {
@@ -1952,7 +1958,7 @@ async function inTransaction<T>(db: DbClient, operation: (tx: DbClient) => Promi
 export async function updateCampaignPreparedDraft(
   campaignId: string,
   draftId: string,
-  input: { text: string; adminId: string },
+  input: { text: string; adminId: string; force?: boolean },
   db: DbClient = prisma,
 ): Promise<CampaignPreparedDraftMutationResult> {
   const draft = await findMutablePreparedDraft(campaignId, draftId, db);
@@ -1970,13 +1976,6 @@ export async function updateCampaignPreparedDraft(
     );
   }
   const languageIssues = findReviewDraftLanguageIssues(text);
-  if (languageIssues.length) {
-    throw new CampaignReviewDraftError(
-      "INVALID_DRAFT_TEXT",
-      languageIssues[0].message,
-      422,
-    );
-  }
   const existingDrafts = await db.campaignPreparedDraft.findMany({
     where: {
       campaignId: draft.campaignId,
@@ -1988,12 +1987,12 @@ export async function updateCampaignPreparedDraft(
   });
   const existingTexts = existingDrafts.map((item) => item.text);
   const qualityIssues = findDraftQualityIssues(text, existingTexts);
-  if (qualityIssues.length) {
-    throw new CampaignReviewDraftError(
-      "INVALID_DRAFT_TEXT",
-      qualityIssues[0].message,
-      422,
-    );
+  const warnings = [...new Set([
+    ...languageIssues.map((issue) => issue.message),
+    ...qualityIssues.map((issue) => issue.message),
+  ])].slice(0, 8);
+  if (warnings.length && !input.force) {
+    throw new CampaignReviewDraftWarningError(warnings);
   }
   const maxSimilarity = existingTexts.length
     ? Math.max(...existingTexts.map((existing) => draftSimilarity(text, existing)))
@@ -2028,10 +2027,29 @@ export async function updateCampaignPreparedDraft(
 export async function promoteCampaignQualityExcludedDraft(
   campaignId: string,
   draftId: string,
+  input: { force?: boolean } = {},
   db: DbClient = prisma,
 ): Promise<CampaignPreparedDraftMutationResult> {
   const draft = await findMutablePreparedDraft(campaignId, draftId, db);
   if (!draft.qualityPassed) {
+    const existingDrafts = await db.campaignPreparedDraft.findMany({
+      where: {
+        campaignId: draft.campaignId,
+        id: { not: draft.id },
+        qualityPassed: true,
+      },
+      select: { text: true },
+      take: 250,
+    });
+    const warnings = [...new Set([
+      "품질 검사에서 제외된 원고입니다. 내용을 확인한 뒤 미배정 원고로 이동해 주세요.",
+      ...findReviewDraftLanguageIssues(draft.text).map((issue) => issue.message),
+      ...findDraftQualityIssues(draft.text, existingDrafts.map((item) => item.text))
+        .map((issue) => issue.message),
+    ])].slice(0, 8);
+    if (!input.force) {
+      throw new CampaignReviewDraftWarningError(warnings);
+    }
     const updated = await db.campaignPreparedDraft.updateMany({
       where: {
         id: draft.id,
