@@ -48,6 +48,10 @@ function preparedDraftUrl(campaignId: string, draftId: string) {
   return `/api/admin/campaigns/${encodeURIComponent(campaignId)}/drafts/${encodeURIComponent(draftId)}`;
 }
 
+function qualityExcludedDraftsUrl(campaignId: string) {
+  return `/api/admin/campaigns/${encodeURIComponent(campaignId)}/drafts/quality-excluded`;
+}
+
 export async function updatePreparedDraftRequest({
   campaignId,
   draftId,
@@ -90,6 +94,46 @@ export async function deletePreparedDraftRequest({
     throw new Error(data?.error?.message || "원고를 삭제하지 못했습니다.");
   }
   return { deletedId: data.deletedId };
+}
+
+export async function promotePreparedDraftRequest({
+  campaignId,
+  draftId,
+  fetcher = fetch,
+}: {
+  campaignId: string;
+  draftId: string;
+  fetcher?: Fetcher;
+}) {
+  const response = await fetcher(preparedDraftUrl(campaignId, draftId), {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action: "PROMOTE_TO_UNASSIGNED" }),
+  });
+  const data = (await response.json().catch(() => null)) as
+    | { draft?: Pick<PreparedDraftItem, "id" | "text" | "qualityPassed" | "status">; error?: { message?: string } }
+    | null;
+  if (!response.ok || !data?.draft) {
+    throw new Error(data?.error?.message || "품질 제외 원고를 미배정으로 이동하지 못했습니다.");
+  }
+  return data.draft;
+}
+
+export async function deleteQualityExcludedDraftsRequest({
+  campaignId,
+  fetcher = fetch,
+}: {
+  campaignId: string;
+  fetcher?: Fetcher;
+}) {
+  const response = await fetcher(qualityExcludedDraftsUrl(campaignId), { method: "DELETE" });
+  const data = (await response.json().catch(() => null)) as
+    | { deletedCount?: number; error?: { message?: string } }
+    | null;
+  if (!response.ok || typeof data?.deletedCount !== "number") {
+    throw new Error(data?.error?.message || "품질 제외 원고를 모두 삭제하지 못했습니다.");
+  }
+  return { deletedCount: data.deletedCount };
 }
 
 type DraftGenerationStreamEvent =
@@ -380,6 +424,37 @@ export function AdminCampaignDraftPreview({
     }
   };
 
+  const promoteDraft = async (item: PreparedDraftItem) => {
+    setMutatingDraftId(item.id);
+    setError(null);
+    try {
+      await promotePreparedDraftRequest({ campaignId, draftId: item.id });
+      applyHistory(await fetchHistory());
+      if (editingDraftId === item.id) cancelEdit();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "품질 제외 원고를 미배정으로 이동하지 못했습니다.");
+    } finally {
+      setMutatingDraftId(null);
+    }
+  };
+
+  const removeAllQualityExcludedDrafts = async () => {
+    const count = metrics.qualityExcludedCount;
+    if (!count) return;
+    if (!window.confirm(`품질 제외 원고 ${count}건을 모두 삭제할까요? 삭제한 원고는 복구할 수 없습니다.`)) return;
+    setMutatingDraftId("quality-excluded-all");
+    setError(null);
+    try {
+      await deleteQualityExcludedDraftsRequest({ campaignId });
+      applyHistory(await fetchHistory());
+      cancelEdit();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "품질 제외 원고를 모두 삭제하지 못했습니다.");
+    } finally {
+      setMutatingDraftId(null);
+    }
+  };
+
   const visibleItems = useMemo(
     () => history?.items.filter((item) => item.status === filter) ?? [],
     [filter, history],
@@ -471,6 +546,16 @@ export function AdminCampaignDraftPreview({
                   {item.label} {metrics[item.metric]}건
                 </button>
               ))}
+              {filter === "QUALITY_EXCLUDED" ? (
+                <button
+                  type="button"
+                  onClick={() => void removeAllQualityExcludedDrafts()}
+                  disabled={metrics.qualityExcludedCount === 0 || mutatingDraftId !== null}
+                  className="ml-auto rounded-[8px] border border-red-200 px-3 py-1.5 text-xs font-bold text-danger hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  {mutatingDraftId === "quality-excluded-all" ? "삭제 중…" : "품질제외 모두 삭제"}
+                </button>
+              ) : null}
             </div>
 
             {error ? (
@@ -547,6 +632,16 @@ export function AdminCampaignDraftPreview({
                       </div>
                     ) : (
                       <div className="mt-3 flex justify-end gap-2">
+                        {item.status === "QUALITY_EXCLUDED" ? (
+                          <button
+                            type="button"
+                            onClick={() => void promoteDraft(item)}
+                            disabled={mutatingDraftId !== null}
+                            className="h-8 rounded-[8px] border border-brand/30 bg-brand-tint px-3 text-xs font-bold text-brand hover:bg-blue-100 disabled:opacity-50"
+                          >
+                            {mutatingDraftId === item.id ? "이동 중…" : "미배정으로 이동"}
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           onClick={() => beginEdit(item)}

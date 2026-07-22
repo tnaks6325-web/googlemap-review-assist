@@ -72,6 +72,52 @@ function redactPlaceNames(text: string, placeNames: readonly string[]) {
   }, text);
 }
 
+export interface DraftCorrectionExample {
+  beforeText: string;
+  afterText: string;
+}
+
+export function retrieveDraftCorrectionExamples({
+  revisions,
+  placeNames = [],
+  maxExamples = 8,
+}: {
+  revisions: readonly DraftCorrectionExample[];
+  placeNames?: readonly string[];
+  maxExamples?: number;
+}) {
+  const limit = Math.min(8, Math.max(0, Math.floor(maxExamples)));
+  const selected: DraftCorrectionExample[] = [];
+  const seen = new Set<string>();
+
+  for (const revision of revisions) {
+    const beforeText = redactPlaceNames(cleanStyleReference(revision.beforeText), placeNames);
+    const afterText = redactPlaceNames(cleanStyleReference(revision.afterText), placeNames);
+    const beforeLength = beforeText.replace(/\s/gu, "").length;
+    const afterLength = afterText.replace(/\s/gu, "").length;
+    const key = `${beforeText}\u0000${afterText}`;
+    if (
+      beforeLength < 10 ||
+      beforeLength > 200 ||
+      afterLength < 20 ||
+      afterLength > 200 ||
+      beforeText === afterText ||
+      seen.has(key) ||
+      URL_OR_CONTACT.test(beforeText) ||
+      URL_OR_CONTACT.test(afterText) ||
+      INSTRUCTION_LIKE_TEXT.test(beforeText) ||
+      INSTRUCTION_LIKE_TEXT.test(afterText) ||
+      findReviewDraftLanguageIssues(afterText).length > 0
+    ) {
+      continue;
+    }
+    seen.add(key);
+    selected.push({ beforeText, afterText });
+    if (selected.length >= limit) break;
+  }
+  return selected;
+}
+
 function bigrams(text: string) {
   const normalized = text.normalize("NFKC").toLocaleLowerCase("ko-KR").replace(/[^0-9a-z가-힣]/gu, "");
   const result = new Set<string>();

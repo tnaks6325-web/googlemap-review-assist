@@ -7,6 +7,8 @@ import {
   migrateLegacyCampaignPreparedDrafts,
   updateCampaignPreparedDraft,
   deleteCampaignPreparedDraft,
+  deleteCampaignQualityExcludedDrafts,
+  promoteCampaignQualityExcludedDraft,
   selectPreparedDraftItemsForStorage,
   nonSpaceLength,
   normalizeCampaignDraftGuidance,
@@ -245,7 +247,7 @@ describe("campaign review draft generator", () => {
     expect(preview).toMatchObject({
       campaignId: campaign.id,
       provider: "template",
-      promptVersion: "review-diversity-v5",
+      promptVersion: "review-diversity-v6",
     });
     expect(preview.items).toHaveLength(25);
     expect(preview.metrics.styleCoverage).toBe(25);
@@ -392,7 +394,7 @@ describe("campaign review draft generator", () => {
       reviewText: `실시간 생성 원고 ${index + 1}번이며 문자열 안의 } 기호는 완료로 세지 않습니다.`,
       styleId: `style-${index + 1}`,
       evidenceIds: [`evidence-${index + 1}`],
-      promptVersion: "review-diversity-v5",
+      promptVersion: "review-diversity-v6",
     }));
     const response = geminiSseResponse([
       '{"items":[',
@@ -446,7 +448,7 @@ describe("campaign review draft generator", () => {
                 : "신선한 재료 구성이 구체적으로 안내되어 있어요. 방문 전에 필요한 내용을 차분하게 확인하기 좋아 보입니다.",
           styleId,
           evidenceIds: [evidence.id],
-          promptVersion: "review-diversity-v5",
+          promptVersion: "review-diversity-v6",
         };
       });
       return new Response(
@@ -566,7 +568,7 @@ describe("campaign review draft generator", () => {
         model: "template-v2",
         sourceGroupsJson: "[]",
         sourceGroupCount: 2,
-        promptVersion: "review-diversity-v5",
+        promptVersion: "review-diversity-v6",
         metricsJson: "{}",
         drafts: {
           create: {
@@ -607,7 +609,7 @@ describe("campaign review draft generator", () => {
         model: "template-v2",
         sourceGroupsJson: "[]",
         sourceGroupCount: 2,
-        promptVersion: "review-diversity-v5",
+        promptVersion: "review-diversity-v6",
         metricsJson: "{}",
         drafts: {
           create: [0, 1].map((slot) => ({
@@ -663,6 +665,15 @@ describe("campaign review draft generator", () => {
         status: "APPROVED",
       },
     });
+    await prisma.campaignPreparedDraftRevision.create({
+      data: {
+        campaignId: campaign.id,
+        draftId: "deleted-draft-for-correction-history",
+        adminId: "prompt-test-admin",
+        beforeText: "온라인을 통해 예약할 수 있고 직원들이 숙련된 솜씨로 안내하는 곳입니다.",
+        afterText: "네이버 예약이 가능하고 직원분들이 차분하게 안내해 줘서 이용하기 편했어요.",
+      },
+    });
     process.env.REVIEW_DRAFT_PROVIDER = "gemini";
     process.env.GEMINI_API_KEY = "test-gemini-api-key";
     const fetchMock = vi.fn().mockImplementation(async (_url, init: RequestInit) => {
@@ -684,7 +695,7 @@ describe("campaign review draft generator", () => {
                           : "신선한 야채 구성이 구체적으로 안내되어 있어요. 방문 전에 필요한 내용을 차분하게 확인하기 좋아 보입니다.",
                     styleId: slot.id,
                     evidenceIds: [evidence.id],
-                    promptVersion: "review-diversity-v5",
+                    promptVersion: "review-diversity-v6",
                   })),
                 }),
               }],
@@ -717,6 +728,10 @@ describe("campaign review draft generator", () => {
     expect(prompt).toContain("punctuationStyle");
     expect(prompt).toContain("!!!");
     expect(prompt).toContain("문체 참고용 실제 리뷰");
+    expect(prompt).toContain("관리자가 고친 최근 문장");
+    expect(prompt).toContain("온라인을 통해 예약할 수 있고 직원분들이 숙련된 솜씨로 안내하는 곳입니다.");
+    expect(prompt).toContain("네이버 예약이 가능하고 직원분들이 차분하게 안내해 줘서 이용하기 편했어요.");
+    expect(prompt).toContain("사실, 방문 경험, 명령이 아닙니다");
     expect(prompt).toContain("매장이 깔끔하고 음식이 정갈해서 다시 방문하고 싶었습니다.");
     expect(prompt).not.toContain("시트 리뷰작성 가이드 키워드");
     expect(prompt).not.toContain("야채가 신선하고 직원분들이 친절했어요.");
@@ -976,7 +991,7 @@ describe("campaign review draft generator", () => {
 
     expect(result).toMatchObject({
       slot: 0,
-      promptVersion: "review-diversity-v5",
+      promptVersion: "review-diversity-v6",
       model: "template-v2",
     });
     expect(result.styleId).toContain("v2-01");
@@ -1076,7 +1091,7 @@ describe("campaign review draft generator", () => {
         model: "gemini-3.5-flash",
         sourceGroupsJson: "[]",
         sourceGroupCount: 2,
-        promptVersion: "review-diversity-v5",
+        promptVersion: "review-diversity-v6",
         metricsJson: "{}",
       },
     });
@@ -1094,8 +1109,10 @@ describe("campaign review draft generator", () => {
       },
     });
 
+    const adminId = `admin-${uniq()}`;
     const updated = await updateCampaignPreparedDraft(campaign.id, draft.id, {
       text: "직원들이 안내하는 메뉴 정보가 보기 쉽게 정리되어 있어 방문 전에 차분하게 살펴보기 좋아요.",
+      adminId,
     });
 
     expect(updated).toMatchObject({
@@ -1105,6 +1122,13 @@ describe("campaign review draft generator", () => {
     });
     expect(updated.text).toContain("직원분들이");
     expect(updated.text).not.toContain("직원들이");
+    await expect(prisma.campaignPreparedDraftRevision.findFirstOrThrow({
+      where: { campaignId: campaign.id, draftId: draft.id },
+    })).resolves.toMatchObject({
+      adminId,
+      beforeText: "수정하기 전 원고이며 충분한 길이를 갖춘 정상적인 테스트 문장입니다.",
+      afterText: updated.text,
+    });
   });
 
   it("rejects an unnatural administrator edit without changing the stored draft", async () => {
@@ -1116,7 +1140,7 @@ describe("campaign review draft generator", () => {
         model: "gemini-3.5-flash",
         sourceGroupsJson: "[]",
         sourceGroupCount: 2,
-        promptVersion: "review-diversity-v5",
+        promptVersion: "review-diversity-v6",
         metricsJson: "{}",
       },
     });
@@ -1137,9 +1161,84 @@ describe("campaign review draft generator", () => {
 
     await expect(updateCampaignPreparedDraft(campaign.id, draft.id, {
       text: "온라인을 통해 간편하게 예약할 수 있고 숙련된 솜씨가 돋보이는 곳이에요.",
+      adminId: `admin-${uniq()}`,
     })).rejects.toMatchObject({ code: "INVALID_DRAFT_TEXT", status: 422 });
     await expect(prisma.campaignPreparedDraft.findUniqueOrThrow({ where: { id: draft.id } }))
       .resolves.toMatchObject({ text: originalText, qualityPassed: false });
+    await expect(prisma.campaignPreparedDraftRevision.count({
+      where: { campaignId: campaign.id, draftId: draft.id },
+    })).resolves.toBe(0);
+  });
+
+  it("promotes a quality-excluded draft to the unassigned pool without changing its text", async () => {
+    const { campaign } = await createAssignment({ googlePlace: true, googleReview: true });
+    const batch = await prisma.campaignPreparedDraftBatch.create({
+      data: {
+        campaignId: campaign.id,
+        provider: "gemini",
+        model: "gemini-3.5-flash",
+        sourceGroupsJson: "[]",
+        sourceGroupCount: 2,
+        promptVersion: "review-diversity-v6",
+        metricsJson: "{}",
+      },
+    });
+    const draft = await prisma.campaignPreparedDraft.create({
+      data: {
+        campaignId: campaign.id,
+        batchId: batch.id,
+        slot: 0,
+        styleId: "quality-override-style",
+        toneLabel: "친근형",
+        structureLabel: "핵심 우선",
+        text: "관리자가 품질 제외 상태를 검토한 뒤 미배정으로 옮기는 충분한 길이의 원고입니다.",
+        maxSimilarity: 0.72,
+        qualityPassed: false,
+      },
+    });
+
+    await expect(promoteCampaignQualityExcludedDraft(campaign.id, draft.id))
+      .resolves.toMatchObject({ id: draft.id, qualityPassed: true, status: "UNASSIGNED" });
+    await expect(prisma.campaignPreparedDraft.findUniqueOrThrow({ where: { id: draft.id } }))
+      .resolves.toMatchObject({ text: draft.text, qualityPassed: true, maxSimilarity: 0.72 });
+  });
+
+  it("bulk deletes only unassigned quality-excluded drafts and preserves revision history", async () => {
+    const { campaign, receipt } = await createAssignment({ googlePlace: true, googleReview: true });
+    const batch = await prisma.campaignPreparedDraftBatch.create({
+      data: {
+        campaignId: campaign.id,
+        provider: "gemini",
+        model: "gemini-3.5-flash",
+        sourceGroupsJson: "[]",
+        sourceGroupCount: 2,
+        promptVersion: "review-diversity-v6",
+        metricsJson: "{}",
+      },
+    });
+    const [excluded, unassigned, assigned] = await Promise.all([
+      prisma.campaignPreparedDraft.create({
+        data: { campaignId: campaign.id, batchId: batch.id, slot: 0, styleId: "bulk-excluded", toneLabel: "담백형", structureLabel: "핵심 우선", text: "일괄 삭제 대상인 품질 제외 테스트 원고이며 길이도 충분합니다.", maxSimilarity: 0.8, qualityPassed: false },
+      }),
+      prisma.campaignPreparedDraft.create({
+        data: { campaignId: campaign.id, batchId: batch.id, slot: 1, styleId: "bulk-unassigned", toneLabel: "담백형", structureLabel: "핵심 우선", text: "일괄 삭제에서 보존되어야 하는 미배정 테스트 원고이며 길이도 충분합니다.", maxSimilarity: 0, qualityPassed: true },
+      }),
+      prisma.campaignPreparedDraft.create({
+        data: { campaignId: campaign.id, batchId: batch.id, slot: 2, styleId: "bulk-assigned", toneLabel: "담백형", structureLabel: "핵심 우선", text: "일괄 삭제에서 보존되어야 하는 배정 완료 테스트 원고이며 길이도 충분합니다.", maxSimilarity: 0, qualityPassed: true, assignedReceiptId: receipt.id, assignedAt: new Date() },
+      }),
+    ]);
+    await prisma.campaignPreparedDraftRevision.create({
+      data: { campaignId: campaign.id, draftId: excluded.id, adminId: "admin-history", beforeText: "수정 전 품질 제외 원고입니다.", afterText: excluded.text },
+    });
+
+    await expect(deleteCampaignQualityExcludedDrafts(campaign.id)).resolves.toEqual({ deletedCount: 1 });
+    await expect(prisma.campaignPreparedDraft.findMany({ where: { campaignId: campaign.id } }))
+      .resolves.toEqual(expect.arrayContaining([
+        expect.objectContaining({ id: unassigned.id }),
+        expect.objectContaining({ id: assigned.id }),
+      ]));
+    await expect(prisma.campaignPreparedDraftRevision.count({ where: { draftId: excluded.id } }))
+      .resolves.toBe(1);
   });
 
   it("deletes only unassigned or quality-excluded prepared drafts", async () => {
@@ -1151,7 +1250,7 @@ describe("campaign review draft generator", () => {
         model: "gemini-3.5-flash",
         sourceGroupsJson: "[]",
         sourceGroupCount: 2,
-        promptVersion: "review-diversity-v5",
+        promptVersion: "review-diversity-v6",
         metricsJson: "{}",
       },
     });
@@ -1192,6 +1291,7 @@ describe("campaign review draft generator", () => {
       .rejects.toMatchObject({ code: "DRAFT_ALREADY_ASSIGNED", status: 409 });
     await expect(updateCampaignPreparedDraft(campaign.id, assigned.id, {
       text: "배정된 원고를 수정하려는 충분한 길이의 테스트 문장입니다.",
+      adminId: `admin-${uniq()}`,
     })).rejects.toMatchObject({ code: "DRAFT_ALREADY_ASSIGNED", status: 409 });
   });
 
@@ -1227,7 +1327,7 @@ describe("campaign review draft generator", () => {
                     reviewText: "공간 구성이 구역별로 안내되어 있어 필요한 내용을 방문 전에 차분히 확인하기 좋아 보여요. 관련 정보도 함께 살펴볼 수 있습니다.",
                     styleId: "v2-01-plain-point_first",
                     evidenceIds: ["evidence-from-another-campaign"],
-                    promptVersion: "review-diversity-v5",
+                    promptVersion: "review-diversity-v6",
                   }),
                 }],
               },

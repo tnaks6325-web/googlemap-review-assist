@@ -3,6 +3,7 @@ import { getAdminId } from "@/lib/auth/session";
 import {
   CampaignReviewDraftError,
   deleteCampaignPreparedDraft,
+  promoteCampaignQualityExcludedDraft,
   updateCampaignPreparedDraft,
 } from "@/lib/domain/campaign-review-draft";
 import { err, ok } from "@/lib/http";
@@ -40,14 +41,24 @@ export async function PATCH(req: Request, { params }: DraftRouteContext) {
   const authorization = await authorizeMutation(req, "update");
   if (typeof authorization !== "string") return authorization;
 
-  const body = (await req.json().catch(() => null)) as { text?: unknown } | null;
-  if (typeof body?.text !== "string" || body.text.length > 2_000) {
-    return err("INVALID_DRAFT_TEXT", "수정할 원고 내용을 확인해 주세요", 400);
-  }
+  const body = (await req.json().catch(() => null)) as
+    | { text?: unknown; action?: unknown }
+    | null;
   const { campaignId, draftId } = await params;
   try {
+    if (body?.action === "PROMOTE_TO_UNASSIGNED") {
+      return ok({
+        draft: await promoteCampaignQualityExcludedDraft(campaignId, draftId),
+      });
+    }
+    if (typeof body?.text !== "string" || body.text.length > 2_000) {
+      return err("INVALID_DRAFT_TEXT", "수정할 원고 내용을 확인해 주세요", 400);
+    }
     return ok({
-      draft: await updateCampaignPreparedDraft(campaignId, draftId, { text: body.text }),
+      draft: await updateCampaignPreparedDraft(campaignId, draftId, {
+        text: body.text,
+        adminId: authorization,
+      }),
     });
   } catch (error) {
     return mutationError(error, "DRAFT_UPDATE_FAILED", "원고를 수정하지 못했어요");

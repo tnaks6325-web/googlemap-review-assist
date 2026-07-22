@@ -6,6 +6,8 @@ import {
   DraftGenerationProgress,
   consumeDraftGenerationStream,
   deletePreparedDraftRequest,
+  deleteQualityExcludedDraftsRequest,
+  promotePreparedDraftRequest,
   runCampaignDraftAutofill,
   updatePreparedDraftRequest,
 } from "@/components/admin/AdminCampaignDraftPreview";
@@ -26,6 +28,21 @@ describe("admin campaign prepared drafts", () => {
     expect(routeSource).toContain("getAdminId()");
     expect(routeSource).toContain("updateCampaignPreparedDraft");
     expect(routeSource).toContain("deleteCampaignPreparedDraft");
+  });
+
+  it("protects the quality-excluded bulk delete route with admin authorization", () => {
+    const routeSource = readFileSync(
+      new URL(
+        "../app/api/admin/campaigns/[campaignId]/drafts/quality-excluded/route.ts",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+
+    expect(routeSource).toContain("export async function DELETE");
+    expect(routeSource).toContain("checkOrigin(req)");
+    expect(routeSource).toContain("getAdminId()");
+    expect(routeSource).toContain("deleteCampaignQualityExcludedDrafts");
   });
 
   it("allows the streaming generation route to run through both Gemini attempts", () => {
@@ -58,6 +75,17 @@ describe("admin campaign prepared drafts", () => {
     expect(html).toContain("원고생성 3/25");
     expect(html).toContain("원고보관함");
     expect(html).not.toContain("원고생성 테스트");
+  });
+
+  it("offers quality-excluded promotion and confirmed bulk deletion controls", () => {
+    const componentSource = readFileSync(
+      new URL("../components/admin/AdminCampaignDraftPreview.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(componentSource).toContain("미배정으로 이동");
+    expect(componentSource).toContain("품질제외 모두 삭제");
+    expect(componentSource).toContain("삭제한 원고는 복구할 수 없습니다");
   });
 
   it("sends an individual draft edit through the protected PATCH contract", async () => {
@@ -105,6 +133,36 @@ describe("admin campaign prepared drafts", () => {
       draftId: "draft-2",
       fetcher: failureFetcher,
     })).rejects.toThrow("이미 배정된 원고입니다.");
+  });
+
+  it("moves a quality-excluded draft into the unassigned pool", async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      draft: { id: "draft-1", text: "검토한 원고입니다.", qualityPassed: true, status: "UNASSIGNED" },
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+
+    await expect(promotePreparedDraftRequest({ campaignId: "campaign-1", draftId: "draft-1", fetcher }))
+      .resolves.toMatchObject({ id: "draft-1", status: "UNASSIGNED" });
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/admin/campaigns/campaign-1/drafts/draft-1",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ action: "PROMOTE_TO_UNASSIGNED" }),
+      }),
+    );
+  });
+
+  it("deletes all quality-excluded drafts through the dedicated endpoint", async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ deletedCount: 7 }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }));
+
+    await expect(deleteQualityExcludedDraftsRequest({ campaignId: "campaign 1", fetcher }))
+      .resolves.toEqual({ deletedCount: 7 });
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/admin/campaigns/campaign%201/drafts/quality-excluded",
+      { method: "DELETE" },
+    );
   });
 
   it("renders the generation button as a live progress bar", () => {

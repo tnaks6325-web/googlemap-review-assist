@@ -117,17 +117,17 @@ model Menu {
 }
 
 model Campaign {
-  id                      String                       @id @default(cuid())
+  id                      String                          @id @default(cuid())
   businessId              String
-  business                Business                     @relation(fields: [businessId], references: [id])
-  slug                    String                       @unique
+  business                Business                        @relation(fields: [businessId], references: [id])
+  slug                    String                          @unique
   name                    String
-  active                  Boolean                      @default(true)
+  active                  Boolean                         @default(true)
   totalQuota              Int?
   dailyQuota              Int?
   startDate               String?
   endDate                 String?
-  rewardPoints            Int                          @default(500)
+  rewardPoints            Int                             @default(500)
   receipts                Receipt[]
   codes                   CampaignCode[]
   blogReferences          CampaignBlogReference[]
@@ -135,9 +135,10 @@ model Campaign {
   draftEvidence           CampaignDraftEvidence[]
   preparedDraftBatches    CampaignPreparedDraftBatch[]
   preparedDrafts          CampaignPreparedDraft[]
+  preparedDraftRevisions  CampaignPreparedDraftRevision[]
   reviewDrafts            CampaignReviewDraft[]
-  nextReviewDraftSequence Int                          @default(0)
-  createdAt               DateTime                     @default(now())
+  nextReviewDraftSequence Int                             @default(0)
+  createdAt               DateTime                        @default(now())
 }
 
 // 원고 생성에 사용할 관리자 입력 사실과 업종별 금지 표현.
@@ -236,6 +237,22 @@ model CampaignPreparedDraft {
   @@unique([batchId, styleId])
   @@index([campaignId, qualityPassed, assignedReceiptId, createdAt])
   @@index([batchId])
+}
+
+// 관리자가 원고를 고친 전후 문장을 보존한다. draftId는 원고 삭제 후에도 감사·문체 개선에
+// 활용할 수 있도록 의도적으로 외래키를 걸지 않은 스냅샷 식별자다.
+model CampaignPreparedDraftRevision {
+  id         String   @id @default(cuid())
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  draftId    String
+  adminId    String
+  beforeText String
+  afterText  String
+  createdAt  DateTime @default(now())
+
+  @@index([campaignId, createdAt])
+  @@index([draftId, createdAt])
 }
 
 // Legacy production pool retained so existing drafts can be migrated without data loss.
