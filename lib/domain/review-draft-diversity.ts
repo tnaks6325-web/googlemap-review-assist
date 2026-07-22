@@ -1,4 +1,4 @@
-export const REVIEW_DRAFT_DIVERSITY_VERSION = "review-diversity-v4";
+export const REVIEW_DRAFT_DIVERSITY_VERSION = "review-diversity-v5";
 export const REVIEW_DRAFT_SIMILARITY_LIMIT = 0.72;
 
 export const REVIEW_DRAFT_TONES = [

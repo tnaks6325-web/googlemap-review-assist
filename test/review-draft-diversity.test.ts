@@ -11,7 +11,7 @@ import {
 
 describe("review draft diversity", () => {
   it("defines a complete 5 by 5 matrix with stable slot ids", () => {
-    expect(REVIEW_DRAFT_DIVERSITY_VERSION).toBe("review-diversity-v4");
+    expect(REVIEW_DRAFT_DIVERSITY_VERSION).toBe("review-diversity-v5");
     expect(REVIEW_DRAFT_STYLE_SLOTS).toHaveLength(25);
     expect(new Set(REVIEW_DRAFT_STYLE_SLOTS.map((slot) => slot.id)).size).toBe(25);
     expect(new Set(REVIEW_DRAFT_STYLE_SLOTS.map((slot) => slot.tone)).size).toBe(5);

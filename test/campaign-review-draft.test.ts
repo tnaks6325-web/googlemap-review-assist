@@ -243,7 +243,7 @@ describe("campaign review draft generator", () => {
     expect(preview).toMatchObject({
       campaignId: campaign.id,
       provider: "template",
-      promptVersion: "review-diversity-v4",
+      promptVersion: "review-diversity-v5",
     });
     expect(preview.items).toHaveLength(25);
     expect(preview.metrics.styleCoverage).toBe(25);
@@ -328,6 +328,24 @@ describe("campaign review draft generator", () => {
     expect(evaluated.map((item) => item.qualityPassed)).toEqual([true, false]);
   });
 
+  it("excludes generated drafts containing unnatural phrases or percent symbols", () => {
+    const slot = REVIEW_DRAFT_STYLE_SLOTS.find((candidate) => candidate.structure === "POINT_FIRST");
+    if (!slot) throw new Error("point-first slot is required");
+
+    const evaluated = evaluateDraftQualitySequentially([
+      {
+        text: "숙련된 솜씨로 메뉴를 준비하는 모습이 보여요. 방문 전에 메뉴 구성을 확인하기 편해요.",
+        slot,
+      },
+      {
+        text: "제주산 돼지고기를 100% 취급한다고 안내되어 있어요. 메뉴 종류도 함께 확인할 수 있어요.",
+        slot,
+      },
+    ], []);
+
+    expect(evaluated.map((item) => item.qualityPassed)).toEqual([false, false]);
+  });
+
   it("requires the punctuation assigned to tilde and repeated-exclamation slots", () => {
     const reviewText = "메뉴 구성과 운영 정보가 보기 쉽게 정리되어 있어 방문 전에 차분히 살펴보기 좋아요";
     const cases = [
@@ -360,7 +378,7 @@ describe("campaign review draft generator", () => {
       reviewText: `실시간 생성 원고 ${index + 1}번이며 문자열 안의 } 기호는 완료로 세지 않습니다.`,
       styleId: `style-${index + 1}`,
       evidenceIds: [`evidence-${index + 1}`],
-      promptVersion: "review-diversity-v4",
+      promptVersion: "review-diversity-v5",
     }));
     const response = geminiSseResponse([
       '{"items":[',
@@ -414,7 +432,7 @@ describe("campaign review draft generator", () => {
                 : "신선한 재료 구성이 구체적으로 안내되어 있어요. 방문 전에 필요한 내용을 차분하게 확인하기 좋아 보입니다.",
           styleId,
           evidenceIds: [evidence.id],
-          promptVersion: "review-diversity-v4",
+          promptVersion: "review-diversity-v5",
         };
       });
       return new Response(
@@ -534,7 +552,7 @@ describe("campaign review draft generator", () => {
         model: "template-v2",
         sourceGroupsJson: "[]",
         sourceGroupCount: 2,
-        promptVersion: "review-diversity-v4",
+        promptVersion: "review-diversity-v5",
         metricsJson: "{}",
         drafts: {
           create: {
@@ -575,7 +593,7 @@ describe("campaign review draft generator", () => {
         model: "template-v2",
         sourceGroupsJson: "[]",
         sourceGroupCount: 2,
-        promptVersion: "review-diversity-v4",
+        promptVersion: "review-diversity-v5",
         metricsJson: "{}",
         drafts: {
           create: [0, 1].map((slot) => ({
@@ -652,7 +670,7 @@ describe("campaign review draft generator", () => {
                           : "신선한 야채 구성이 구체적으로 안내되어 있어요. 방문 전에 필요한 내용을 차분하게 확인하기 좋아 보입니다.",
                     styleId: slot.id,
                     evidenceIds: [evidence.id],
-                    promptVersion: "review-diversity-v4",
+                    promptVersion: "review-diversity-v5",
                   })),
                 }),
               }],
@@ -684,6 +702,8 @@ describe("campaign review draft generator", () => {
     expect(prompt).toContain("명사로 끝내지");
     expect(prompt).toContain("punctuationStyle");
     expect(prompt).toContain("!!!");
+    expect(prompt).toContain("문체 참고용 실제 리뷰");
+    expect(prompt).toContain("매장이 깔끔하고 음식이 정갈해서 다시 방문하고 싶었습니다.");
     expect(prompt).not.toContain("시트 리뷰작성 가이드 키워드");
     expect(prompt).not.toContain("야채가 신선하고 직원분들이 친절했어요.");
     expect(itemSchema.properties.styleId).toEqual({
@@ -942,7 +962,7 @@ describe("campaign review draft generator", () => {
 
     expect(result).toMatchObject({
       slot: 0,
-      promptVersion: "review-diversity-v4",
+      promptVersion: "review-diversity-v5",
       model: "template-v2",
     });
     expect(result.styleId).toContain("v2-01");
@@ -1065,7 +1085,7 @@ describe("campaign review draft generator", () => {
                     reviewText: "공간 구성이 구역별로 안내되어 있어 필요한 내용을 방문 전에 차분히 확인하기 좋아 보여요. 관련 정보도 함께 살펴볼 수 있습니다.",
                     styleId: "v2-01-plain-point_first",
                     evidenceIds: ["evidence-from-another-campaign"],
-                    promptVersion: "review-diversity-v4",
+                    promptVersion: "review-diversity-v5",
                   }),
                 }],
               },
