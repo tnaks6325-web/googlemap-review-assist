@@ -134,6 +134,10 @@ model Campaign {
   blogReferences CampaignBlogReference[]
   draftGuidance  CampaignDraftGuidance?
   draftEvidence  CampaignDraftEvidence[]
+  // Legacy production relations are retained to prevent populated archive tables from being dropped.
+  preparedDraftBatches CampaignPreparedDraftBatch[]
+  preparedDrafts       CampaignPreparedDraft[]
+  reviewDrafts         CampaignReviewDraft[]
   nextReviewDraftSequence Int                   @default(0)
   createdAt      DateTime                @default(now())
 }
@@ -191,6 +195,76 @@ model CampaignDraftEvidence {
 
   @@unique([campaignId, facet, fact, sourceRef])
   @@index([campaignId, status])
+}
+
+// Legacy production batch retained for data preservation only.
+model CampaignPreparedDraftBatch {
+  id               String                  @id @default(cuid())
+  campaignId       String
+  campaign         Campaign                @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  provider         String
+  model            String
+  sourceGroupsJson String
+  sourceGroupCount Int
+  promptVersion    String
+  metricsJson      String
+  drafts           CampaignPreparedDraft[]
+  generatedAt      DateTime                @default(now())
+
+  @@index([campaignId, generatedAt])
+}
+
+// Legacy production draft retained for data preservation only.
+model CampaignPreparedDraft {
+  id                String                     @id @default(cuid())
+  campaignId        String
+  campaign          Campaign                   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  batchId           String
+  batch             CampaignPreparedDraftBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  slot              Int
+  styleId           String
+  toneLabel         String
+  structureLabel    String
+  text              String
+  evidenceIdsJson   String                     @default("[]")
+  maxSimilarity     Float
+  qualityPassed     Boolean
+  assignedReceiptId String?
+  assignedReceipt   Receipt?                   @relation(fields: [assignedReceiptId], references: [id], onDelete: SetNull)
+  assignedAt        DateTime?
+  createdAt         DateTime                   @default(now())
+  legacyDraftId     String?                    @unique
+
+  @@unique([batchId, styleId])
+  @@index([campaignId, qualityPassed, assignedReceiptId, createdAt])
+  @@index([batchId])
+}
+
+// Legacy production review draft retained for data preservation only.
+model CampaignReviewDraft {
+  id                String    @id @default(cuid())
+  campaignId        String
+  campaign          Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  sequence          Int
+  text              String
+  provider          String
+  model             String
+  sourceGroupsJson  String
+  contextHash       String
+  generatedAt       DateTime
+  version           Int       @default(1)
+  styleId           String?
+  evidenceIdsJson   String?
+  similarity        Float?
+  promptVersion     String?
+  assignedReceiptId String?   @unique
+  assignedReceipt   Receipt?  @relation(fields: [assignedReceiptId], references: [id], onDelete: SetNull)
+  assignedAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([campaignId, sequence])
+  @@index([campaignId, assignedReceiptId, sequence])
 }
 
 // 업체가 발급한 1회용 인증 코드(영수증/POS 연동 전 단계의 검증 수단).
@@ -275,6 +349,8 @@ model Receipt {
   dedupeHash                  String    @unique // 동일 영수증 재사용 차단
   status                      String    @default("PENDING") // PENDING | VERIFIED | ASSIGNED | REVIEW_SUBMITTED | COMPLETED | REJECTED | EXPIRED
   feedback                    Feedback?
+  assignedPreparedDrafts CampaignPreparedDraft[]
+  campaignReviewDraft    CampaignReviewDraft?
   createdAt                   DateTime  @default(now())
 
   @@index([reviewerId])
