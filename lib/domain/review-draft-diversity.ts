@@ -254,7 +254,7 @@ export interface DraftQualityIssue {
 
 export function draftEndingStyle(text: string): ReviewDraftEndingStyle {
   const ending = text.trim().replace(/[.!?…。！？”’"']+$/gu, "").trim();
-  if (/(?:습니다|ㅂ니다|입니다|합니다|됩니다|있습니다|없습니다)$/u.test(ending)) {
+  if (/니다$/u.test(ending)) {
     return "FORMAL";
   }
   if (/(?:눈에\s*띄어요|느껴져요|보여요|듯해요)$/u.test(ending)) {

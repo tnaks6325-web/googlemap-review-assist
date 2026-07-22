@@ -24,6 +24,8 @@ describe("review draft diversity", () => {
 
   it("classifies formal and conversational Korean endings", () => {
     expect(draftEndingStyle("차분하게 둘러보기 좋은 공간입니다.")).toBe("FORMAL");
+    expect(draftEndingStyle("외관이 자연스럽게 눈길을 끕니다.")).toBe("FORMAL");
+    expect(draftEndingStyle("필요한 정보를 살펴보기 좋답니다.")).toBe("FORMAL");
     expect(draftEndingStyle("차분한 분위기에서 메뉴를 살펴볼 수 있어요.")).toBe("CONVERSATIONAL");
     expect(draftEndingStyle("차분한 분위기가 자연스럽게 느껴져요.")).toBe("OBSERVATIONAL");
     expect(draftEndingStyle("눈여겨볼 만한 메뉴 구성.")).toBe("NOUN_PHRASE");
