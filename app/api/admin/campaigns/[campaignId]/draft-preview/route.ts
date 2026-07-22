@@ -43,8 +43,8 @@ export async function POST(
   if (!adminId) return err("UNAUTHORIZED", "관리자 로그인이 필요해요", 401);
 
   const ip = clientIp(req);
-  if (!(await rateLimit(`admin:draft-preview:${adminId}:${ip}`, 6, HOUR)).ok) {
-    return err("RATE_LIMITED", "원고 생성 테스트 횟수를 초과했어요. 잠시 후 다시 시도해 주세요", 429);
+  if (!(await rateLimit(`admin:draft-preview:${adminId}:${ip}`, 30, HOUR)).ok) {
+    return err("RATE_LIMITED", "원고 자동 생성 요청이 많습니다. 잠시 후 이어서 시도해 주세요", 429);
   }
 
   const { campaignId } = await params;

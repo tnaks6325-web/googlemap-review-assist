@@ -9,6 +9,7 @@ import {
   nonSpaceLength,
   normalizeCampaignDraftGuidance,
   readGeminiStructuredOutputStream,
+  evaluateDraftQualitySequentially,
   REVIEW_DRAFT_MATRIX_BATCH_TIMEOUT_MS,
   REVIEW_DRAFT_MAX_REGENERATIONS,
 } from "@/lib/domain/campaign-review-draft";
@@ -242,7 +243,7 @@ describe("campaign review draft generator", () => {
     expect(preview).toMatchObject({
       campaignId: campaign.id,
       provider: "template",
-      promptVersion: "review-diversity-v2",
+      promptVersion: "review-diversity-v3",
     });
     expect(preview.items).toHaveLength(25);
     expect(preview.metrics.styleCoverage).toBe(25);
@@ -308,6 +309,25 @@ describe("campaign review draft generator", () => {
     expect(new Set(accumulated.items.map((item) => item.batchId)).size).toBe(2);
   });
 
+  it("keeps the first distinct candidate and excludes only the later repeated candidate", () => {
+    const slot = REVIEW_DRAFT_STYLE_SLOTS.find((candidate) => candidate.structure === "POINT_FIRST");
+    if (!slot) throw new Error("point-first slot is required");
+    const candidates = [
+      {
+        text: "메뉴별 특징과 재료 구성이 구체적으로 안내되어 있어요. 방문 전에 여러 선택지를 차분하게 살펴보기 편해요.",
+        slot,
+      },
+      {
+        text: "메뉴별 특징과 재료 구성이 구체적으로 안내되어 있어요. 방문 전에 여러 선택지를 차분하게 비교하기 좋아요.",
+        slot,
+      },
+    ];
+
+    const evaluated = evaluateDraftQualitySequentially(candidates, []);
+
+    expect(evaluated.map((item) => item.qualityPassed)).toEqual([true, false]);
+  });
+
   it("bounds each five-draft Gemini batch timeout", () => {
     expect(REVIEW_DRAFT_MATRIX_BATCH_TIMEOUT_MS).toBe(45_000);
   });
@@ -318,7 +338,7 @@ describe("campaign review draft generator", () => {
       reviewText: `실시간 생성 원고 ${index + 1}번이며 문자열 안의 } 기호는 완료로 세지 않습니다.`,
       styleId: `style-${index + 1}`,
       evidenceIds: [`evidence-${index + 1}`],
-      promptVersion: "review-diversity-v2",
+      promptVersion: "review-diversity-v3",
     }));
     const response = geminiSseResponse([
       '{"items":[',
@@ -372,7 +392,7 @@ describe("campaign review draft generator", () => {
                 : "신선한 재료 구성이 구체적으로 안내되어 있어요. 방문 전에 필요한 내용을 차분하게 확인하기 좋아 보입니다.",
           styleId,
           evidenceIds: [evidence.id],
-          promptVersion: "review-diversity-v2",
+          promptVersion: "review-diversity-v3",
         };
       });
       return new Response(
@@ -492,7 +512,7 @@ describe("campaign review draft generator", () => {
         model: "template-v2",
         sourceGroupsJson: "[]",
         sourceGroupCount: 2,
-        promptVersion: "review-diversity-v2",
+        promptVersion: "review-diversity-v3",
         metricsJson: "{}",
         drafts: {
           create: {
@@ -533,7 +553,7 @@ describe("campaign review draft generator", () => {
         model: "template-v2",
         sourceGroupsJson: "[]",
         sourceGroupCount: 2,
-        promptVersion: "review-diversity-v2",
+        promptVersion: "review-diversity-v3",
         metricsJson: "{}",
         drafts: {
           create: [0, 1].map((slot) => ({
@@ -610,7 +630,7 @@ describe("campaign review draft generator", () => {
                           : "신선한 야채 구성이 구체적으로 안내되어 있어요. 방문 전에 필요한 내용을 차분하게 확인하기 좋아 보입니다.",
                     styleId: slot.id,
                     evidenceIds: [evidence.id],
-                    promptVersion: "review-diversity-v2",
+                    promptVersion: "review-diversity-v3",
                   })),
                 }),
               }],
@@ -636,6 +656,9 @@ describe("campaign review draft generator", () => {
     expect(requestBody.generationConfig.maxOutputTokens).toBe(16_384);
     expect(prompt).toContain(evidence.id);
     expect(prompt).toContain("신선한 야채 구성이 안내되어 있다");
+    expect(prompt).toContain("endingStyle");
+    expect(prompt).toContain("해요체");
+    expect(prompt).toContain("명사형 종결");
     expect(prompt).not.toContain("시트 리뷰작성 가이드 키워드");
     expect(prompt).not.toContain("야채가 신선하고 직원분들이 친절했어요.");
     expect(itemSchema.properties.styleId).toEqual({
@@ -894,7 +917,7 @@ describe("campaign review draft generator", () => {
 
     expect(result).toMatchObject({
       slot: 0,
-      promptVersion: "review-diversity-v2",
+      promptVersion: "review-diversity-v3",
       model: "template-v2",
     });
     expect(result.styleId).toContain("v2-01");
@@ -1017,7 +1040,7 @@ describe("campaign review draft generator", () => {
                     reviewText: "공간 구성이 구역별로 안내되어 있어 필요한 내용을 방문 전에 차분히 확인하기 좋아 보여요. 관련 정보도 함께 살펴볼 수 있습니다.",
                     styleId: "v2-01-plain-point_first",
                     evidenceIds: ["evidence-from-another-campaign"],
-                    promptVersion: "review-diversity-v2",
+                    promptVersion: "review-diversity-v3",
                   }),
                 }],
               },

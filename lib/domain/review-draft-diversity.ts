@@ -1,4 +1,4 @@
-export const REVIEW_DRAFT_DIVERSITY_VERSION = "review-diversity-v2";
+export const REVIEW_DRAFT_DIVERSITY_VERSION = "review-diversity-v3";
 export const REVIEW_DRAFT_SIMILARITY_LIMIT = 0.72;
 
 export const REVIEW_DRAFT_TONES = [
@@ -19,6 +19,12 @@ export const REVIEW_DRAFT_STRUCTURES = [
 
 export type ReviewDraftTone = (typeof REVIEW_DRAFT_TONES)[number];
 export type ReviewDraftStructure = (typeof REVIEW_DRAFT_STRUCTURES)[number];
+export type ReviewDraftEndingStyle =
+  | "FORMAL"
+  | "CONVERSATIONAL"
+  | "OBSERVATIONAL"
+  | "SOFT_COPULA"
+  | "NOUN_PHRASE";
 
 export interface ReviewDraftStyleSlot {
   index: number;
@@ -27,6 +33,9 @@ export interface ReviewDraftStyleSlot {
   structure: ReviewDraftStructure;
   toneLabel: string;
   structureLabel: string;
+  endingStyle: ReviewDraftEndingStyle;
+  endingLabel: string;
+  endingInstruction: string;
   instruction: string;
   minNonSpace: number;
   maxNonSpace: number;
@@ -42,6 +51,60 @@ const TONE_META: Record<ReviewDraftTone, { label: string; instruction: string }>
   LIVELY: { label: "경쾌형", instruction: "짧고 리듬감 있게 쓰되 감탄부호는 제한한다." },
   SPECIFIC: { label: "구체형", instruction: "승인 근거의 구체적인 특징을 중심으로 쓴다." },
 };
+
+const ENDING_META: Record<
+  ReviewDraftEndingStyle,
+  { label: string; instruction: string }
+> = {
+  FORMAL: {
+    label: "간결한 격식형",
+    instruction: "격식체는 꼭 필요한 한 문장에만 쓰고, ~습니다와 ~입니다를 연달아 반복하지 않는다.",
+  },
+  CONVERSATIONAL: {
+    label: "자연스러운 해요체",
+    instruction: "~해요, ~있어요, ~좋아 보여요처럼 부드러운 해요체를 자연스럽게 섞는다.",
+  },
+  OBSERVATIONAL: {
+    label: "관찰형",
+    instruction: "~눈에 띄어요, ~느껴져요, ~인 듯해요처럼 사실을 관찰하는 말투로 마무리한다.",
+  },
+  SOFT_COPULA: {
+    label: "부드러운 서술형",
+    instruction: "~인 곳이에요, ~한 편이에요, ~가 포인트예요처럼 부드러운 서술형을 사용한다.",
+  },
+  NOUN_PHRASE: {
+    label: "리듬감 있는 명사형",
+    instruction: "마지막을 ~한 구성, ~가 돋보이는 공간 같은 짧은 명사형으로 맺어 리듬을 바꾼다.",
+  },
+};
+
+const ENDING_STYLE_SEQUENCE: ReviewDraftEndingStyle[] = [
+  "FORMAL",
+  "CONVERSATIONAL",
+  "OBSERVATIONAL",
+  "SOFT_COPULA",
+  "NOUN_PHRASE",
+  "CONVERSATIONAL",
+  "OBSERVATIONAL",
+  "SOFT_COPULA",
+  "NOUN_PHRASE",
+  "CONVERSATIONAL",
+  "FORMAL",
+  "OBSERVATIONAL",
+  "SOFT_COPULA",
+  "NOUN_PHRASE",
+  "CONVERSATIONAL",
+  "OBSERVATIONAL",
+  "SOFT_COPULA",
+  "NOUN_PHRASE",
+  "CONVERSATIONAL",
+  "OBSERVATIONAL",
+  "FORMAL",
+  "SOFT_COPULA",
+  "NOUN_PHRASE",
+  "CONVERSATIONAL",
+  "OBSERVATIONAL",
+];
 
 const STRUCTURE_META: Record<
   ReviewDraftStructure,
@@ -108,6 +171,8 @@ export const REVIEW_DRAFT_STYLE_SLOTS: ReviewDraftStyleSlot[] = REVIEW_DRAFT_TON
       const index = toneIndex * REVIEW_DRAFT_STRUCTURES.length + structureIndex;
       const toneMeta = TONE_META[tone];
       const structureMeta = STRUCTURE_META[structure];
+      const endingStyle = ENDING_STYLE_SEQUENCE[index];
+      const endingMeta = ENDING_META[endingStyle];
       return {
         index,
         id: `v2-${String(index + 1).padStart(2, "0")}-${tone.toLowerCase()}-${structure.toLowerCase()}`,
@@ -115,7 +180,10 @@ export const REVIEW_DRAFT_STYLE_SLOTS: ReviewDraftStyleSlot[] = REVIEW_DRAFT_TON
         structure,
         toneLabel: toneMeta.label,
         structureLabel: structureMeta.label,
-        instruction: `${toneMeta.instruction} ${structureMeta.instruction}`,
+        endingStyle,
+        endingLabel: endingMeta.label,
+        endingInstruction: endingMeta.instruction,
+        instruction: `${toneMeta.instruction} ${structureMeta.instruction} ${endingMeta.instruction}`,
         minNonSpace: structureMeta.minNonSpace,
         maxNonSpace: structureMeta.maxNonSpace,
         minSentences: structureMeta.minSentences,
@@ -175,9 +243,30 @@ function hasRepeatedLongPhrase(text: string, existing: string[]) {
 }
 
 export interface DraftQualityIssue {
-  code: "HIGH_SIMILARITY" | "REPEATED_OPENING" | "REPEATED_PHRASE";
+  code:
+    | "HIGH_SIMILARITY"
+    | "REPEATED_OPENING"
+    | "REPEATED_PHRASE"
+    | "OVERUSED_ENDING_STYLE";
   message: string;
   similarity?: number;
+}
+
+export function draftEndingStyle(text: string): ReviewDraftEndingStyle {
+  const ending = text.trim().replace(/[.!?…。！？”’"']+$/gu, "").trim();
+  if (/(?:습니다|ㅂ니다|입니다|합니다|됩니다|있습니다|없습니다)$/u.test(ending)) {
+    return "FORMAL";
+  }
+  if (/(?:눈에\s*띄어요|느껴져요|보여요|듯해요)$/u.test(ending)) {
+    return "OBSERVATIONAL";
+  }
+  if (/(?:곳이에요|편이에요|포인트예요|느낌이에요|구성이에요)$/u.test(ending)) {
+    return "SOFT_COPULA";
+  }
+  if (/(?:해요|어요|아요|예요|이에요|돼요|네요)$/u.test(ending)) {
+    return "CONVERSATIONAL";
+  }
+  return "NOUN_PHRASE";
 }
 
 export function findDraftQualityIssues(text: string, existing: string[]): DraftQualityIssue[] {
@@ -196,6 +285,17 @@ export function findDraftQualityIssues(text: string, existing: string[]): DraftQ
   }
   if (hasRepeatedLongPhrase(text, existing)) {
     issues.push({ code: "REPEATED_PHRASE", message: "기존 원고와 긴 연속 문구가 겹칩니다." });
+  }
+  const endingStyle = draftEndingStyle(text);
+  const endingStyleCount = existing.filter(
+    (draft) => draftEndingStyle(draft) === endingStyle,
+  ).length;
+  const endingStyleLimit = endingStyle === "FORMAL" ? 4 : 7;
+  if (endingStyleCount >= endingStyleLimit) {
+    issues.push({
+      code: "OVERUSED_ENDING_STYLE",
+      message: `${ENDING_META[endingStyle].label} 종결이 이미 ${endingStyleLimit}건 사용되었습니다.`,
+    });
   }
   return issues;
 }

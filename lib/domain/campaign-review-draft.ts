@@ -1043,12 +1043,19 @@ async function generateV2DraftText(
   );
 }
 
-function matrixPrompt(context: DraftContext, selectedSlots: readonly ReviewDraftStyleSlot[]) {
+function matrixPrompt(
+  context: DraftContext,
+  selectedSlots: readonly ReviewDraftStyleSlot[],
+  existingDrafts: readonly string[],
+) {
   const slots = selectedSlots.map((slot) => ({
     slot: slot.index,
     styleId: slot.id,
     tone: slot.toneLabel,
     structure: slot.structureLabel,
+    endingStyle: slot.endingStyle,
+    ending: slot.endingLabel,
+    endingInstruction: slot.endingInstruction,
     instruction: slot.instruction,
     minNonSpace: slot.minNonSpace,
     maxNonSpace: slot.maxNonSpace,
@@ -1062,10 +1069,18 @@ function matrixPrompt(context: DraftContext, selectedSlots: readonly ReviewDraft
     "실제 방문 응답이 없으므로 주문·구매·직원 응대·효과·감정 같은 개인 경험을 만들지 마세요.",
     "상호와 주소, 광고·협찬·제공 표현, 과장된 추천을 쓰지 마세요.",
     "각 슬롯의 어조·구성·길이·문장 수를 지키고 도입과 종결 표현을 반복하지 마세요.",
+    "모든 원고를 '~습니다', '~합니다', '~입니다'로 끝내지 마세요. 격식형으로 지정된 슬롯 외에는 해요체, 관찰형, 부드러운 서술형, 명사형 종결을 따르세요.",
+    "'공간입니다', '곳입니다', '구성입니다'처럼 같은 명사와 '~니다'를 결합한 종결을 반복하지 마세요.",
     `promptVersion은 항상 ${REVIEW_DRAFT_DIVERSITY_VERSION}입니다.`,
     `스타일 슬롯:\n${JSON.stringify(slots)}`,
+    existingDrafts.length
+      ? `이미 저장된 품질 통과 원고입니다. 아래 원고와 도입, 핵심 표현, 문장 흐름, 마지막 어미가 겹치지 않게 작성하세요.\n${existingDrafts
+          .slice(0, 25)
+          .map((draft, index) => `${index + 1}. ${draft}`)
+          .join("\n")}`
+      : "",
     renderEvidenceContext(context),
-  ].join("\n\n");
+  ].filter(Boolean).join("\n\n");
 }
 
 type GeminiGenerateContentResponse = {
@@ -1176,6 +1191,7 @@ export async function readGeminiStructuredOutputStream(
 async function geminiMatrixBatch(
   context: DraftContext,
   slots: readonly ReviewDraftStyleSlot[],
+  existingDrafts: readonly string[],
   model: string,
   apiKey: string,
   onProgress?: (generatedCount: number, targetCount: number) => void,
@@ -1196,7 +1212,10 @@ async function geminiMatrixBatch(
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: matrixPrompt(context, slots) }] }],
+          contents: [{
+            role: "user",
+            parts: [{ text: matrixPrompt(context, slots, existingDrafts) }],
+          }],
           generationConfig: {
             maxOutputTokens: REVIEW_DRAFT_MATRIX_MAX_OUTPUT_TOKENS,
             responseMimeType: "application/json",
@@ -1266,6 +1285,7 @@ async function geminiMatrixDrafts(
   model: string,
   apiKey: string,
   onProgress?: (generatedCount: number, targetCount: number) => void,
+  existingDrafts: readonly string[] = [],
 ) {
   const batches: ReviewDraftStyleSlot[][] = [];
   for (
@@ -1289,6 +1309,7 @@ async function geminiMatrixDrafts(
       results[batchIndex] = await geminiMatrixBatch(
         context,
         batch,
+        existingDrafts,
         model,
         apiKey,
         (generatedCount) => {
@@ -1311,9 +1332,27 @@ async function geminiMatrixDrafts(
   return results.flat();
 }
 
+export function evaluateDraftQualitySequentially(
+  candidates: ReadonlyArray<{ text: string; slot: ReviewDraftStyleSlot }>,
+  existingDrafts: readonly string[],
+) {
+  const acceptedDrafts = [...existingDrafts];
+  return candidates.map(({ text, slot }) => {
+    const maxSimilarity = acceptedDrafts.length
+      ? Math.max(...acceptedDrafts.map((draft) => draftSimilarity(text, draft)))
+      : 0;
+    const qualityPassed =
+      findDraftQualityIssues(text, acceptedDrafts).length === 0 &&
+      validateSlotConstraints(text, slot).length === 0;
+    if (qualityPassed) acceptedDrafts.push(text);
+    return { maxSimilarity, qualityPassed };
+  });
+}
+
 async function generateMatrixPreviewItems(
   context: DraftContext,
   onProgress?: (generatedCount: number, targetCount: number) => void,
+  existingDrafts: readonly string[] = [],
 ) {
   if (context.approvedEvidence.length === 0) {
     throw new CampaignReviewDraftError(
@@ -1329,7 +1368,7 @@ async function generateMatrixPreviewItems(
     provider === "template"
       ? REVIEW_DRAFT_STYLE_SLOTS.map((slot) => templateStructuredDraft(context, slot, 0))
       : provider === "gemini" && apiKey
-        ? await geminiMatrixDrafts(context, model, apiKey, onProgress)
+        ? await geminiMatrixDrafts(context, model, apiKey, onProgress, existingDrafts)
         : null;
   if (!structured) {
     throw new CampaignReviewDraftError(
@@ -1338,16 +1377,16 @@ async function generateMatrixPreviewItems(
       500,
     );
   }
-  const texts = structured.map((item) => item.reviewText);
+  const evaluations = evaluateDraftQualitySequentially(
+    structured.map((item, index) => ({
+      text: item.reviewText,
+      slot: REVIEW_DRAFT_STYLE_SLOTS[index],
+    })),
+    existingDrafts,
+  );
   return structured.map((item, index) => {
     const slot = REVIEW_DRAFT_STYLE_SLOTS[index];
-    const comparisons = texts.filter((_, otherIndex) => otherIndex !== index);
-    const maxSimilarity = comparisons.length
-      ? Math.max(...comparisons.map((draft) => draftSimilarity(item.reviewText, draft)))
-      : 0;
-    const qualityPassed =
-      findDraftQualityIssues(item.reviewText, comparisons).length === 0 &&
-      validateSlotConstraints(item.reviewText, slot).length === 0;
+    const evaluation = evaluations[index];
     const previewItem = {
       slot: slot.index,
       styleId: item.styleId,
@@ -1355,8 +1394,8 @@ async function generateMatrixPreviewItems(
       structureLabel: slot.structureLabel,
       text: item.reviewText,
       evidenceIds: item.evidenceIds,
-      maxSimilarity,
-      qualityPassed,
+      maxSimilarity: evaluation.maxSimilarity,
+      qualityPassed: evaluation.qualityPassed,
     };
     if (provider === "template") onProgress?.(index + 1, structured.length);
     return previewItem;
@@ -1584,13 +1623,21 @@ export async function generateCampaignReviewDraftPreview(
   if (!campaign) {
     throw new CampaignReviewDraftError("CAMPAIGN_NOT_FOUND", "캠페인을 찾을 수 없습니다.", 404);
   }
-  const currentUnassignedCount = await db.campaignPreparedDraft.count({
-    where: {
-      campaignId: campaign.id,
-      qualityPassed: true,
-      assignedReceiptId: null,
-    },
-  });
+  const [currentUnassignedCount, existingPassedDraftRows] = await Promise.all([
+    db.campaignPreparedDraft.count({
+      where: {
+        campaignId: campaign.id,
+        qualityPassed: true,
+        assignedReceiptId: null,
+      },
+    }),
+    db.campaignPreparedDraft.findMany({
+      where: { campaignId: campaign.id, qualityPassed: true },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      select: { text: true },
+    }),
+  ]);
   if (currentUnassignedCount >= CAMPAIGN_PREPARED_DRAFT_TARGET) {
     throw new CampaignReviewDraftError(
       "PREPARED_DRAFT_TARGET_REACHED",
@@ -1607,7 +1654,11 @@ export async function generateCampaignReviewDraftPreview(
     business: campaign.business,
   });
   assertDraftContextReady(context);
-  const items = await generateMatrixPreviewItems(context, onProgress);
+  const items = await generateMatrixPreviewItems(
+    context,
+    onProgress,
+    existingPassedDraftRows.map((row) => row.text),
+  );
   const diversity = analyzeDraftDiversity(items.map((item) => item.text));
   const evidenceUsed = new Set(items.flatMap((item) => item.evidenceIds));
   const provider = envValue("REVIEW_DRAFT_PROVIDER") || "gemini";

@@ -12,7 +12,7 @@ interface PreparedDraftMetrics {
   batchCount: number;
 }
 
-interface PreparedDraftHistory {
+export interface PreparedDraftHistory {
   campaignId: string;
   hasMore: boolean;
   metrics: PreparedDraftMetrics;
@@ -86,9 +86,13 @@ export async function consumeDraftGenerationStream(
 export function DraftGenerationProgress({
   current,
   target,
+  attempted,
+  attemptTarget,
 }: {
   current: number;
   target: number;
+  attempted?: number;
+  attemptTarget?: number;
 }) {
   const safeTarget = Math.max(1, target);
   const safeCurrent = Math.min(Math.max(0, current), safeTarget);
@@ -107,11 +111,70 @@ export function DraftGenerationProgress({
         className="absolute inset-y-0 left-0 bg-brand/20 transition-[width] duration-300 ease-out"
         style={{ width: `${percent}%` }}
       />
-      <span className="relative z-10 tabular-nums">
-        원고생성 {safeCurrent}/{safeTarget}
+      <span className="relative z-10 flex flex-col items-center tabular-nums leading-tight">
+        <span>원고생성 {safeCurrent}/{safeTarget}</span>
+        {attempted !== undefined ? (
+          <span className="text-[9px] font-semibold opacity-75">
+            작성 {Math.max(0, attempted)}/{Math.max(1, attemptTarget ?? safeTarget)}
+          </span>
+        ) : null}
       </span>
     </span>
   );
+}
+
+export const CAMPAIGN_DRAFT_AUTOFILL_MAX_ROUNDS = 12;
+export const CAMPAIGN_DRAFT_AUTOFILL_MAX_STAGNANT_ROUNDS = 3;
+
+export async function runCampaignDraftAutofill({
+  initialUnassignedCount,
+  generateRound,
+  loadHistory,
+  onHistory,
+  maxRounds = CAMPAIGN_DRAFT_AUTOFILL_MAX_ROUNDS,
+  maxStagnantRounds = CAMPAIGN_DRAFT_AUTOFILL_MAX_STAGNANT_ROUNDS,
+}: {
+  initialUnassignedCount: number;
+  generateRound: (round: number) => Promise<void>;
+  loadHistory: () => Promise<PreparedDraftHistory>;
+  onHistory?: (history: PreparedDraftHistory) => void;
+  maxRounds?: number;
+  maxStagnantRounds?: number;
+}) {
+  let unassignedCount = Math.max(0, initialUnassignedCount);
+  let stagnantRounds = 0;
+  let latestHistory: PreparedDraftHistory | null = null;
+
+  for (let round = 1; unassignedCount < 25 && round <= maxRounds; round += 1) {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        await generateRound(round);
+        lastError = undefined;
+        break;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    if (lastError) throw lastError;
+
+    latestHistory = await loadHistory();
+    onHistory?.(latestHistory);
+    const nextCount = latestHistory.metrics.unassignedCount;
+    stagnantRounds = nextCount > unassignedCount ? 0 : stagnantRounds + 1;
+    unassignedCount = nextCount;
+    if (stagnantRounds >= maxStagnantRounds) {
+      throw new Error(
+        "새 품질 통과 원고가 추가되지 않아 자동 생성을 중단했습니다. 사실 카드와 원고 품질 조건을 확인해 주세요.",
+      );
+    }
+  }
+
+  if (!latestHistory) latestHistory = await loadHistory();
+  if (latestHistory.metrics.unassignedCount < 25) {
+    throw new Error("미배정 원고 25건을 채우지 못했습니다. 잠시 후 이어서 생성해 주세요.");
+  }
+  return latestHistory;
 }
 
 const FILTERS: Array<{ status: DraftStatus; label: string; metric: keyof PreparedDraftMetrics }> = [
@@ -142,6 +205,7 @@ export function AdminCampaignDraftPreview({
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [generationProgress, setGenerationProgress] = useState<number | null>(null);
+  const [generationTarget, setGenerationTarget] = useState(25);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -158,19 +222,27 @@ export function AdminCampaignDraftPreview({
     };
   }, [open]);
 
+  const fetchHistory = async () => {
+    const response = await fetch(`/api/admin/campaigns/${campaignId}/draft-preview`);
+    const data = (await response.json().catch(() => null)) as
+      | (PreparedDraftHistory & ErrorResult)
+      | null;
+    if (!response.ok || !data?.metrics || !Array.isArray(data.items)) {
+      throw new Error(data?.error?.message || "저장된 원고를 불러오지 못했습니다.");
+    }
+    return data;
+  };
+
+  const applyHistory = (data: PreparedDraftHistory) => {
+    setHistory(data);
+    setMetrics(data.metrics);
+  };
+
   const loadHistory = async () => {
     setBusy("loading");
     setError(null);
     try {
-      const response = await fetch(`/api/admin/campaigns/${campaignId}/draft-preview`);
-      const data = (await response.json().catch(() => null)) as
-        | (PreparedDraftHistory & ErrorResult)
-        | null;
-      if (!response.ok || !data?.metrics || !Array.isArray(data.items)) {
-        throw new Error(data?.error?.message || "저장된 원고를 불러오지 못했습니다.");
-      }
-      setHistory(data);
-      setMetrics(data.metrics);
+      applyHistory(await fetchHistory());
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "저장된 원고를 불러오지 못했습니다.");
     } finally {
@@ -188,19 +260,28 @@ export function AdminCampaignDraftPreview({
     setGenerationProgress(0);
     setError(null);
     try {
-      const response = await fetch(`/api/admin/campaigns/${campaignId}/draft-preview`, {
-        method: "POST",
+      await runCampaignDraftAutofill({
+        initialUnassignedCount: metrics.unassignedCount,
+        generateRound: async () => {
+          setGenerationProgress(0);
+          const response = await fetch(`/api/admin/campaigns/${campaignId}/draft-preview`, {
+            method: "POST",
+          });
+          await consumeDraftGenerationStream(response, (generatedCount, targetCount) => {
+            setGenerationProgress(generatedCount);
+            setGenerationTarget(targetCount);
+          });
+        },
+        loadHistory: fetchHistory,
+        onHistory: applyHistory,
       });
-      await consumeDraftGenerationStream(response, (generatedCount) => {
-        setGenerationProgress(generatedCount);
-      });
-      await loadHistory();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "원고를 사전 생성하지 못했습니다.");
       setOpen(true);
       setBusy(null);
     } finally {
       setGenerationProgress(null);
+      setBusy(null);
     }
   };
 
@@ -216,10 +297,15 @@ export function AdminCampaignDraftPreview({
         onClick={generate}
         disabled={busy !== null || metrics.unassignedCount >= 25}
         title={`${businessName} 원고 생성`}
-        className="relative h-9 min-w-[92px] overflow-hidden whitespace-nowrap rounded-[9px] border border-brand/20 bg-brand-tint px-3 text-xs font-bold text-brand transition hover:border-brand/40 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-70"
+        className="relative h-10 min-w-[112px] overflow-hidden whitespace-nowrap rounded-[9px] border border-brand/20 bg-brand-tint px-3 text-xs font-bold text-brand transition hover:border-brand/40 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-70"
       >
         {busy === "generating" && generationProgress !== null
-          ? <DraftGenerationProgress current={generationProgress} target={25} />
+          ? <DraftGenerationProgress
+              current={metrics.unassignedCount}
+              target={25}
+              attempted={generationProgress}
+              attemptTarget={generationTarget}
+            />
           : `원고생성 ${Math.min(metrics.unassignedCount, 25)}/25`}
       </button>
       <button

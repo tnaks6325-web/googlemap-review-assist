@@ -3,6 +3,7 @@ import {
   REVIEW_DRAFT_DIVERSITY_VERSION,
   REVIEW_DRAFT_STYLE_SLOTS,
   analyzeDraftDiversity,
+  draftEndingStyle,
   draftSimilarity,
   findDraftQualityIssues,
   styleSlotForSequence,
@@ -10,11 +11,35 @@ import {
 
 describe("review draft diversity", () => {
   it("defines a complete 5 by 5 matrix with stable slot ids", () => {
-    expect(REVIEW_DRAFT_DIVERSITY_VERSION).toBe("review-diversity-v2");
+    expect(REVIEW_DRAFT_DIVERSITY_VERSION).toBe("review-diversity-v3");
     expect(REVIEW_DRAFT_STYLE_SLOTS).toHaveLength(25);
     expect(new Set(REVIEW_DRAFT_STYLE_SLOTS.map((slot) => slot.id)).size).toBe(25);
     expect(new Set(REVIEW_DRAFT_STYLE_SLOTS.map((slot) => slot.tone)).size).toBe(5);
     expect(new Set(REVIEW_DRAFT_STYLE_SLOTS.map((slot) => slot.structure)).size).toBe(5);
+    expect(new Set(REVIEW_DRAFT_STYLE_SLOTS.map((slot) => slot.endingStyle)).size).toBeGreaterThanOrEqual(4);
+    expect(
+      REVIEW_DRAFT_STYLE_SLOTS.filter((slot) => slot.endingStyle === "FORMAL").length,
+    ).toBeLessThanOrEqual(3);
+  });
+
+  it("classifies formal and conversational Korean endings", () => {
+    expect(draftEndingStyle("차분하게 둘러보기 좋은 공간입니다.")).toBe("FORMAL");
+    expect(draftEndingStyle("차분한 분위기에서 메뉴를 살펴볼 수 있어요.")).toBe("CONVERSATIONAL");
+    expect(draftEndingStyle("차분한 분위기가 자연스럽게 느껴져요.")).toBe("OBSERVATIONAL");
+    expect(draftEndingStyle("눈여겨볼 만한 메뉴 구성.")).toBe("NOUN_PHRASE");
+  });
+
+  it("rejects an overused formal ending style across accepted drafts", () => {
+    const existing = [
+      "운영 시간이 넉넉하게 안내되어 있습니다.",
+      "메뉴 구성이 한눈에 들어오는 곳입니다.",
+      "대중교통으로 찾아가기 편리한 편입니다.",
+      "차분한 분위기가 돋보이는 공간입니다.",
+    ];
+
+    const issues = findDraftQualityIssues("여러 메뉴를 살펴보기 좋은 구성입니다.", existing);
+
+    expect(issues.some((issue) => issue.code === "OVERUSED_ENDING_STYLE")).toBe(true);
   });
 
   it("cycles through every slot once before starting a new cycle", () => {
