@@ -8,8 +8,22 @@ const componentSource = readFileSync(
   ),
   "utf8",
 );
+const shellSource = readFileSync(
+  new URL("../components/admin/AdminShell.tsx", import.meta.url),
+  "utf8",
+);
+const campaignPageSource = readFileSync(
+  new URL("../app/admin/campaigns/page.tsx", import.meta.url),
+  "utf8",
+);
 
 describe("admin campaign table layout", () => {
+  it("uses the wide admin canvas so the management column stays visible", () => {
+    expect(campaignPageSource).toContain("wideContent");
+    expect(shellSource).toContain('wideContent ? "max-w-[1920px]" : "max-w-[1600px]"');
+    expect(shellSource).toContain('wideContent ? "max-w-[1680px]" : "max-w-[1440px]"');
+  });
+
   it("keeps campaign columns stable when a detail row is expanded", () => {
     expect(componentSource).toContain(
       'className="w-full min-w-[1420px] table-fixed border-separate border-spacing-0"',

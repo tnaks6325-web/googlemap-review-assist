@@ -10,6 +10,7 @@ interface AdminShellProps {
   title: string;
   description: string;
   children: ReactNode;
+  wideContent?: boolean;
 }
 
 const navigation: Array<{ id: AdminSection; href: string; label: string; description: string }> = [
@@ -52,10 +53,21 @@ function NavigationLink({
   );
 }
 
-export function AdminShell({ current, title, description, children }: AdminShellProps) {
+export function AdminShell({
+  current,
+  title,
+  description,
+  children,
+  wideContent = false,
+}: AdminShellProps) {
   return (
     <div className="min-h-dvh bg-canvas">
-      <div className="mx-auto flex min-h-dvh max-w-[1600px]">
+      <div
+        className={cn(
+          "mx-auto flex min-h-dvh",
+          wideContent ? "max-w-[1920px]" : "max-w-[1600px]",
+        )}
+      >
         <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col border-r border-line bg-surface px-4 py-6 lg:flex">
           <Link href="/admin" className="px-3 text-base font-bold text-ink">
             리뷰 캠페인 운영
@@ -89,7 +101,12 @@ export function AdminShell({ current, title, description, children }: AdminShell
             </nav>
           </header>
 
-          <div className="mx-auto max-w-[1440px] px-5 py-7 lg:px-8 lg:py-9">
+          <div
+            className={cn(
+              "mx-auto px-5 py-7 lg:px-8 lg:py-9",
+              wideContent ? "max-w-[1680px]" : "max-w-[1440px]",
+            )}
+          >
             <header className="mb-8 border-b border-line pb-6 lg:mb-9">
               <p className="text-sm font-semibold text-brand">관리자 운영</p>
               <h1 className="mt-2 text-2xl font-bold text-ink lg:text-[28px]">{title}</h1>
