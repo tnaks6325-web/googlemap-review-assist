@@ -343,6 +343,78 @@ describe("reviewer campaign availability", () => {
     ).toBe(1);
   });
 
+  it("releases the active assignment and reserves a different campaign when requested", async () => {
+    const reviewer = await createReviewer();
+    await prisma.campaign.updateMany({ data: { active: false } });
+    await createCampaign(`google-place-replace-first-${uniq()}`);
+    await createCampaign(`google-place-replace-second-${uniq()}`);
+    const now = new Date("2026-07-21T00:00:00.000Z");
+
+    const first = await assignReviewerCampaign(reviewer.id, now);
+    const replacement = await assignReviewerCampaign(
+      reviewer.id,
+      new Date(now.getTime() + 30_000),
+      { replaceAssignmentId: first.assignmentId! },
+    );
+
+    expect(replacement.assignmentId).toBeTruthy();
+    expect(replacement.assignmentId).not.toBe(first.assignmentId);
+    expect(replacement.assignedCampaign?.id).not.toBe(first.assignedCampaign?.id);
+    expect(
+      await prisma.receipt.findUnique({ where: { id: first.assignmentId! } }),
+    ).toMatchObject({ status: "EXPIRED" });
+    expect(
+      await prisma.campaignPreparedDraft.count({
+        where: { assignedReceiptId: first.assignmentId! },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.receipt.count({
+        where: {
+          reviewerId: reviewer.id,
+          source: "CAMPAIGN_ASSIGNMENT",
+          status: "ASSIGNED",
+        },
+      }),
+    ).toBe(1);
+  });
+
+  it("keeps the active assignment when no alternative campaign exists", async () => {
+    const reviewer = await createReviewer();
+    await prisma.campaign.updateMany({ data: { active: false } });
+    await createCampaign(`google-place-no-replacement-${uniq()}`);
+    const now = new Date("2026-07-21T00:00:00.000Z");
+    const assigned = await assignReviewerCampaign(reviewer.id, now);
+
+    await expect(
+      assignReviewerCampaign(
+        reviewer.id,
+        new Date(now.getTime() + 30_000),
+        { replaceAssignmentId: assigned.assignmentId! },
+      ),
+    ).rejects.toMatchObject({ code: "NO_ALTERNATIVE_CAMPAIGN", status: 409 });
+    expect(
+      await prisma.receipt.findUnique({ where: { id: assigned.assignmentId! } }),
+    ).toMatchObject({ status: "ASSIGNED" });
+  });
+
+  it("does not allow a reviewer to replace another reviewer's assignment", async () => {
+    const owner = await createReviewer();
+    const otherReviewer = await createReviewer();
+    await prisma.campaign.updateMany({ data: { active: false } });
+    await createCampaign(`google-place-foreign-replacement-${uniq()}`);
+    const assigned = await assignReviewerCampaign(owner.id);
+
+    await expect(
+      assignReviewerCampaign(otherReviewer.id, new Date(), {
+        replaceAssignmentId: assigned.assignmentId!,
+      }),
+    ).rejects.toMatchObject({ code: "ASSIGNMENT_NOT_FOUND", status: 404 });
+    expect(
+      await prisma.receipt.findUnique({ where: { id: assigned.assignmentId! } }),
+    ).toMatchObject({ reviewerId: owner.id, status: "ASSIGNED" });
+  });
+
   it("releases an unsubmitted assignment after five minutes and does not keep the place cooldown", async () => {
     const reviewer = await createReviewer();
     await prisma.campaign.updateMany({ data: { active: false } });

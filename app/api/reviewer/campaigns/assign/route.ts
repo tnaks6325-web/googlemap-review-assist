@@ -16,9 +16,29 @@ export async function POST(req: Request) {
   const reviewerId = await getReviewerId();
   if (!reviewerId) return err("UNAUTHORIZED", "로그인이 필요해요", 401);
 
+  const body: unknown = await req.json().catch(() => ({}));
+  const rawReplaceAssignmentId =
+    body && typeof body === "object" && "replaceAssignmentId" in body
+      ? body.replaceAssignmentId
+      : undefined;
+  if (
+    rawReplaceAssignmentId !== undefined &&
+    (typeof rawReplaceAssignmentId !== "string" ||
+      !rawReplaceAssignmentId.trim() ||
+      rawReplaceAssignmentId.length > 100)
+  ) {
+    return err("INVALID_ASSIGNMENT", "참여 정보를 확인해 주세요.", 400);
+  }
+  const replaceAssignmentId =
+    typeof rawReplaceAssignmentId === "string"
+      ? rawReplaceAssignmentId.trim()
+      : undefined;
+
   let result;
   try {
-    result = await assignReviewerCampaign(reviewerId);
+    result = await assignReviewerCampaign(reviewerId, new Date(), {
+      replaceAssignmentId,
+    });
   } catch (error) {
     if (error instanceof ReviewerCampaignError) {
       return err(error.code, error.message, error.status);

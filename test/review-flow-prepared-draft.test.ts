@@ -15,5 +15,6 @@ describe("reviewer prepared draft flow", () => {
     expect(source).toContain("PNG, JPG, WEBP");
     expect(source).toContain("border-dashed");
     expect(source).toContain("원고가 클립보드에 자동 복사됐어요.");
+    expect(source).toContain("replaceAssignmentId: assignmentId");
   });
 });
