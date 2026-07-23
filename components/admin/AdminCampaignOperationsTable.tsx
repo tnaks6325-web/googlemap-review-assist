@@ -7,6 +7,7 @@ import { AdminCampaignDraftPreview } from "@/components/admin/AdminCampaignDraft
 import { AdminCampaignDraftGuidance } from "@/components/admin/AdminCampaignDraftGuidance";
 import { AdminCampaignNaverCandidates } from "@/components/admin/AdminCampaignNaverCandidates";
 import { AdminCampaignRewardPoints } from "@/components/admin/AdminCampaignRewardPoints";
+import { AdminCampaignReviewSubmissions } from "@/components/admin/AdminCampaignReviewSubmissions";
 import { Button } from "@/components/ui";
 import {
   adminCampaignAutomationPlan,
@@ -263,7 +264,7 @@ export function AdminCampaignOperationsTable({
 
       <div className="mt-3 overflow-hidden rounded-[14px] border border-line bg-surface shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1260px] table-fixed border-separate border-spacing-0">
+          <table className="w-full min-w-[1420px] table-fixed border-separate border-spacing-0">
             <caption className="sr-only">
               관리자 캠페인 운영 상태 및 자료 연결 현황
             </caption>
@@ -276,7 +277,7 @@ export function AdminCampaignOperationsTable({
               <col className="w-[130px]" />
               <col className="w-[80px]" />
               <col className="w-[110px]" />
-              <col className="w-[246px]" />
+              <col className="w-[400px]" />
             </colgroup>
             <thead>
               <tr className="bg-surface-alt">
@@ -463,6 +464,11 @@ function CampaignRows({
               campaignId={campaign.id}
               businessName={campaign.businessName}
               initialMetrics={campaign.preparedDraftMetrics}
+            />
+            <AdminCampaignReviewSubmissions
+              campaignId={campaign.id}
+              businessName={campaign.businessName}
+              initialCount={campaign.submittedReviewCount}
             />
             <button
               type="button"

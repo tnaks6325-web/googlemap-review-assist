@@ -12,10 +12,11 @@ const componentSource = readFileSync(
 describe("admin campaign table layout", () => {
   it("keeps campaign columns stable when a detail row is expanded", () => {
     expect(componentSource).toContain(
-      'className="w-full min-w-[1260px] table-fixed border-separate border-spacing-0"',
+      'className="w-full min-w-[1420px] table-fixed border-separate border-spacing-0"',
     );
     expect(componentSource).toContain("<colgroup>");
     expect(componentSource).toContain('<col className="w-[104px]" />');
+    expect(componentSource).toContain('<col className="w-[400px]" />');
     expect(componentSource).toContain('<tr className="group h-[92px]">');
   });
 

@@ -530,6 +530,50 @@ describe("reviewer campaign availability", () => {
     expect(wallet?.balance).toBe(DEFAULT_REWARD_POINTS);
   });
 
+  it("allows an admin to manually approve an AI-rejected proof exactly once", async () => {
+    const reviewer = await createReviewer();
+    await createCampaign(`google-place-manual-override-${uniq()}`);
+    const assigned = await assignReviewerCampaign(reviewer.id);
+    await prisma.receipt.update({
+      where: { id: assigned.assignmentId! },
+      data: {
+        status: "REJECTED",
+        reviewProofImageUrl: "/uploads/review-proofs/ai-rejected.png",
+        reviewProofSubmittedAt: new Date(),
+        reviewProofAnalysisStatus: "AUTO_REJECT",
+        reviewReviewedAt: new Date(),
+        reviewReviewedBy: "ai:test",
+      },
+    });
+
+    const first = await completeReviewerCampaignAssignment(
+      assigned.assignmentId!,
+      "admin:manual-review",
+      "육안 검수 결과 정상 리뷰로 확인했습니다.",
+    );
+    const second = await completeReviewerCampaignAssignment(
+      assigned.assignmentId!,
+      "admin:manual-review",
+    );
+
+    expect(first).toMatchObject({ status: "COMPLETED", earned: DEFAULT_REWARD_POINTS });
+    expect(second).toMatchObject({ status: "COMPLETED", earned: 0, alreadyCompleted: true });
+    expect(
+      await prisma.pointTransaction.count({
+        where: { idempotencyKey: `campaign-complete:${assigned.assignmentId}` },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.receipt.findUnique({
+        where: { id: assigned.assignmentId! },
+        select: { reviewReviewedBy: true, reviewReviewNote: true },
+      }),
+    ).toEqual({
+      reviewReviewedBy: "admin:manual-review",
+      reviewReviewNote: "육안 검수 결과 정상 리뷰로 확인했습니다.",
+    });
+  });
+
   it("rejects a proof submitted at the expiry boundary and releases the assignment", async () => {
     const reviewer = await createReviewer();
     await prisma.campaign.updateMany({ data: { active: false } });
