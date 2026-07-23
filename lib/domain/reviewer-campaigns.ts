@@ -1105,8 +1105,15 @@ export async function completeReviewerCampaignAssignment(
       if (receipt.status === REVIEWER_ASSIGNMENT_STATUS_COMPLETED) {
         return completedAssignmentResult(tx, receipt.reviewerId, receipt.id);
       }
-      if (receipt.status !== REVIEWER_ASSIGNMENT_STATUS_REVIEW_SUBMITTED) {
-        throw new ReviewerCampaignError("BAD_ASSIGNMENT_STATE", "검수 대기 중인 참여만 승인할 수 있어요", 409);
+      if (
+        receipt.status !== REVIEWER_ASSIGNMENT_STATUS_REVIEW_SUBMITTED &&
+        receipt.status !== REVIEWER_ASSIGNMENT_STATUS_REJECTED
+      ) {
+        throw new ReviewerCampaignError(
+          "BAD_ASSIGNMENT_STATE",
+          "검수 대기 또는 반려된 참여만 승인할 수 있어요",
+          409,
+        );
       }
 
       return approveCampaignAssignment(
@@ -1147,9 +1154,18 @@ export async function rejectReviewerCampaignProof(
     if (receipt.source !== REVIEWER_ASSIGNMENT_SOURCE) {
       throw new ReviewerCampaignError("INVALID_ASSIGNMENT", "캠페인 참여 기록이 아니에요", 422);
     }
-    if (receipt.status !== REVIEWER_ASSIGNMENT_STATUS_REVIEW_SUBMITTED) {
-      throw new ReviewerCampaignError("BAD_ASSIGNMENT_STATE", "검수 대기 중인 참여만 반려할 수 있어요", 409);
+    if (
+      receipt.status !== REVIEWER_ASSIGNMENT_STATUS_REVIEW_SUBMITTED &&
+      receipt.status !== REVIEWER_ASSIGNMENT_STATUS_REJECTED
+    ) {
+      throw new ReviewerCampaignError(
+        "BAD_ASSIGNMENT_STATE",
+        "검수 대기 또는 반려된 참여만 반려할 수 있어요",
+        409,
+      );
     }
+
+    const alreadyRejected = receipt.status === REVIEWER_ASSIGNMENT_STATUS_REJECTED;
 
     const updated = await tx.receipt.update({
       where: { id: receipt.id },
@@ -1157,18 +1173,24 @@ export async function rejectReviewerCampaignProof(
         status: REVIEWER_ASSIGNMENT_STATUS_REJECTED,
         reviewReviewedAt: new Date(),
         reviewReviewedBy: actor,
-        reviewReviewNote: note?.trim() || "캡처본 확인이 필요합니다.",
+        reviewReviewNote:
+          note?.trim() ||
+          (alreadyRejected
+            ? "관리자 육안 검수 결과 반려를 확정했습니다."
+            : "캡처본 확인이 필요합니다."),
       },
     });
-    await tx.reviewerNotification.create({
-      data: {
-        reviewerId: receipt.reviewerId,
-        type: "REVIEW_PROOF_REJECTED",
-        title: "리뷰 검수가 반려됐어요",
-        body: updated.reviewReviewNote ?? "캡처본 확인이 필요합니다.",
-        metadataJson: JSON.stringify({ assignmentId: receipt.id }),
-      },
-    });
+    if (!alreadyRejected) {
+      await tx.reviewerNotification.create({
+        data: {
+          reviewerId: receipt.reviewerId,
+          type: "REVIEW_PROOF_REJECTED",
+          title: "리뷰 검수가 반려됐어요",
+          body: updated.reviewReviewNote ?? "캡처본 확인이 필요합니다.",
+          metadataJson: JSON.stringify({ assignmentId: receipt.id }),
+        },
+      });
+    }
 
     return {
       assignmentId: updated.id,
@@ -1176,6 +1198,7 @@ export async function rejectReviewerCampaignProof(
       earned: 0,
       balance: await reviewerBalance(tx, receipt.reviewerId),
       pendingApproval: false,
+      alreadyRejected,
       hasProofImage: Boolean(updated.reviewProofImageUrl),
     };
   });

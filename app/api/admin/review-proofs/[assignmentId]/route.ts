@@ -8,6 +8,7 @@ import {
 } from "@/lib/domain/reviewer-campaigns";
 import { err, ok } from "@/lib/http";
 import { recordOperationalError } from "@/lib/error-logging";
+import { clientIp, rateLimit } from "@/lib/rate-limit";
 import {
   getPrivateReviewProof,
   privateReviewProofResponse,
@@ -16,6 +17,8 @@ import {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const HOUR = 60 * 60 * 1000;
 
 export async function GET(
   req: Request,
@@ -68,12 +71,19 @@ export async function POST(
   const adminId = await getAdminId();
   if (!adminId) return err("UNAUTHORIZED", "관리자 로그인이 필요해요", 401);
 
+  if (!(await rateLimit(`admin:review-proof:${adminId}:${clientIp(req)}`, 120, HOUR)).ok) {
+    return err("RATE_LIMITED", "잠시 후 다시 시도해 주세요.", 429);
+  }
+
   const { assignmentId } = await params;
   const body = await req.json().catch(() => ({}));
   const action = body?.action;
-  const note = typeof body?.note === "string" ? body.note : undefined;
+  const note = typeof body?.note === "string" ? body.note.trim() : undefined;
   if (action !== "approve" && action !== "reject") {
     return err("INVALID_ACTION", "승인 또는 반려 작업을 선택해 주세요");
+  }
+  if (note && note.length > 500) {
+    return err("INVALID_NOTE", "검수 메모는 500자 이내로 입력해 주세요.", 400);
   }
 
   try {

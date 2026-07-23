@@ -19,6 +19,7 @@ import {
   expireStaleCampaignAssignments,
   fetchCampaignParticipationStats,
 } from "@/lib/domain/campaign-participation-stats";
+import { countAdminCampaignReviewSubmissions } from "@/lib/domain/admin-campaign-review-submissions";
 
 export interface PublicCampaignCard {
   id: string;
@@ -73,6 +74,7 @@ export interface AdminCampaignRow extends PublicCampaignCard {
   issuedCodeCount: number;
   blogReferenceCount: number;
   reviewReferenceCount: number;
+  submittedReviewCount: number;
   draftSourceGroupCount: number;
   canGenerateReviewDraft: boolean;
   preparedDraftMetrics: {
@@ -345,6 +347,7 @@ export async function listAdminCampaigns(): Promise<AdminCampaignRow[]> {
     excludedPreparedDrafts,
     assignedPreparedDrafts,
     preparedDraftBatches,
+    submittedReviewCounts,
   ] = await Promise.all([
     fetchCampaignParticipationStats(prisma, campaignIds, now),
     prisma.receipt.findMany({
@@ -383,6 +386,7 @@ export async function listAdminCampaigns(): Promise<AdminCampaignRow[]> {
       where: { campaignId: { in: campaignIds } },
       _count: { _all: true },
     }),
+    countAdminCampaignReviewSubmissions(campaignIds),
   ]);
   const preparedMetricsByCampaignId = new Map<
     string,
@@ -491,6 +495,7 @@ export async function listAdminCampaigns(): Promise<AdminCampaignRow[]> {
       issuedCodeCount: campaign._count.codes,
       blogReferenceCount: campaign._count.blogReferences,
       reviewReferenceCount: draftSummary.reviewReferenceCount,
+      submittedReviewCount: submittedReviewCounts.get(campaign.id) ?? 0,
       draftSourceGroupCount: draftSummary.sourceGroupCount,
       canGenerateReviewDraft: draftSummary.canGenerateReviewDraft,
       preparedDraftMetrics: preparedMetricsByCampaignId.get(campaign.id) ?? {
