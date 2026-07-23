@@ -746,14 +746,73 @@ async function approveCampaignAssignment(
   };
 }
 
-export async function assignReviewerCampaign(reviewerId: string, now = new Date()) {
+interface AssignReviewerCampaignOptions {
+  replaceAssignmentId?: string | null;
+}
+
+export async function assignReviewerCampaign(
+  reviewerId: string,
+  now = new Date(),
+  options: AssignReviewerCampaignOptions = {},
+) {
   const maxAttempts = 4;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
       return await prisma.$transaction(
         async (tx) => {
           const availability = await getReviewerCampaignAvailability(reviewerId, tx, now);
-          if (availability.activeAssignment) {
+          const replaceAssignmentId = options.replaceAssignmentId?.trim() || null;
+          const replacementReceipt = replaceAssignmentId
+            ? await tx.receipt.findUnique({
+                where: { id: replaceAssignmentId },
+                select: {
+                  id: true,
+                  reviewerId: true,
+                  source: true,
+                  status: true,
+                },
+              })
+            : null;
+
+          if (
+            replaceAssignmentId &&
+            (!replacementReceipt ||
+              replacementReceipt.reviewerId !== reviewerId ||
+              replacementReceipt.source !== REVIEWER_ASSIGNMENT_SOURCE)
+          ) {
+            throw new ReviewerCampaignError(
+              "ASSIGNMENT_NOT_FOUND",
+              "참여 정보를 찾을 수 없어요.",
+              404,
+            );
+          }
+
+          const replacingActiveAssignment = Boolean(
+            replacementReceipt?.status === REVIEWER_ASSIGNMENT_STATUS_ASSIGNED &&
+              (!availability.activeAssignment ||
+                availability.activeAssignment.assignmentId === replacementReceipt.id),
+          );
+
+          if (replacingActiveAssignment && availability.campaigns.length === 0) {
+            throw new ReviewerCampaignError(
+              "NO_ALTERNATIVE_CAMPAIGN",
+              "지금은 새로 배정할 다른 캠페인이 없어요.",
+              409,
+            );
+          }
+
+          if (replacingActiveAssignment && replacementReceipt) {
+            await tx.receipt.update({
+              where: { id: replacementReceipt.id },
+              data: { status: REVIEWER_ASSIGNMENT_STATUS_EXPIRED },
+            });
+            await tx.campaignPreparedDraft.updateMany({
+              where: { assignedReceiptId: replacementReceipt.id },
+              data: { assignedReceiptId: null, assignedAt: null },
+            });
+          }
+
+          if (availability.activeAssignment && !replacingActiveAssignment) {
             const draft =
               availability.activeAssignment.draft ??
               (await generateCampaignReviewDraftForAssignment(

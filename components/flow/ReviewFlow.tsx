@@ -232,6 +232,28 @@ export function ReviewFlow({
     if (!restoreActiveAssignment(data)) setStep("summary");
   };
 
+  const applyAssignedCampaign = (data: AssignResponse) => {
+    applyAvailability(data);
+    setAssignmentId(data.assignmentId);
+    setAssignmentExpiresAt(data.assignmentExpiresAt);
+    setRemainingSeconds(data.remainingSeconds);
+    setAssignedCampaign(data.assignedCampaign);
+    setClipboardStatus("idle");
+    setDraft(data.draft?.text ?? "");
+    setDraftMeta(data.draft);
+    setCompletion(null);
+    setScreenshot(null);
+    setReviewGuideOpen(false);
+    setReviewGuideAcknowledged(false);
+    setRevealedPlace(null);
+    if (!data.assignedCampaign || !data.draft) {
+      setError("지금 참여 가능한 캠페인이 없어요");
+      setStep("summary");
+      return;
+    }
+    setStep("draft");
+  };
+
   useEffect(() => {
     if (!initialReviewerSignedIn) return;
     let cancelled = false;
@@ -266,24 +288,7 @@ export function ReviewFlow({
   const assignCampaign = () =>
     run(async () => {
       const data = await postJson<AssignResponse>("/api/reviewer/campaigns/assign", {});
-      applyAvailability(data);
-      setAssignmentId(data.assignmentId);
-      setAssignmentExpiresAt(data.assignmentExpiresAt);
-      setRemainingSeconds(data.remainingSeconds);
-      setAssignedCampaign(data.assignedCampaign);
-      setClipboardStatus("idle");
-      setDraft(data.draft?.text ?? "");
-      setDraftMeta(data.draft);
-      setCompletion(null);
-      setScreenshot(null);
-      setReviewGuideOpen(false);
-      setReviewGuideAcknowledged(false);
-      setRevealedPlace(null);
-      if (!data.assignedCampaign || !data.draft) {
-        setError("지금 참여 가능한 캠페인이 없어요");
-        return;
-      }
-      setStep("draft");
+      applyAssignedCampaign(data);
     });
 
   const openReviewRegistration = () =>
@@ -335,19 +340,11 @@ export function ReviewFlow({
 
   const refreshForNextCampaign = () =>
     run(async () => {
-      setAssignedCampaign(null);
-      setAssignmentId(null);
-      setAssignmentExpiresAt(null);
-      setRemainingSeconds(0);
-      setDraft("");
-      setDraftMeta(null);
-      setClipboardStatus("idle");
-      setScreenshot(null);
-      setCompletion(null);
-      setReviewGuideOpen(false);
-      setReviewGuideAcknowledged(false);
-      setRevealedPlace(null);
-      await loadAvailability();
+      const data = await postJson<AssignResponse>(
+        "/api/reviewer/campaigns/assign",
+        { replaceAssignmentId: assignmentId },
+      );
+      applyAssignedCampaign(data);
     });
 
   const headerTitle = (() => {
