@@ -53,6 +53,7 @@ export default async function AdminCampaignsPage() {
       current="campaigns"
       title="캠페인 운영"
       description="캠페인 현황과 원고 준비 상태를 표에서 비교하고 바로 조치합니다."
+      wideContent
     >
       <section
         aria-label="캠페인 운영 요약"
