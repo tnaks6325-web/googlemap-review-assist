@@ -137,6 +137,8 @@ model Campaign {
   preparedDrafts          CampaignPreparedDraft[]
   preparedDraftRevisions  CampaignPreparedDraftRevision[]
   reviewDrafts            CampaignReviewDraft[]
+  sheetCampaignSource     SheetCampaignSource?
+  automationRuns          CampaignAutomationRun[]
   nextReviewDraftSequence Int                             @default(0)
   createdAt               DateTime                        @default(now())
 }
@@ -400,6 +402,67 @@ model OperationalJob {
   updatedAt   DateTime  @updatedAt
 
   @@index([status, runAt])
+}
+
+// 신규 캠페인 일일 자동화 실행. runKey로 같은 KST 날짜의 중복 trigger를 합친다.
+model AutomationRun {
+  id          String                  @id @default(cuid())
+  runKey      String                  @unique
+  status      String                  @default("QUEUED") // QUEUED | RUNNING | COMPLETED | DEGRADED | FAILED
+  startedAt   DateTime?
+  completedAt DateTime?
+  lastError   String?
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+  campaigns   CampaignAutomationRun[]
+
+  @@index([status, createdAt])
+}
+
+// 시트의 영구 원본 식별자와 마지막 반영 내용을 보존한다. 행 번호는 운영 안내용이며 식별자에 쓰지 않는다.
+model SheetCampaignSource {
+  id            String                   @id @default(cuid())
+  sourceKey     String                   @unique
+  spreadsheetId String
+  sheetName     String
+  receiptId     String?
+  rowNumber     Int
+  sourceStatus  String                   @default("READY") // READY | INVALID
+  contentHash   String
+  contentJson   String
+  campaignId    String?                  @unique
+  campaign      Campaign?                @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  automationRuns CampaignAutomationRun[]
+  createdAt     DateTime                 @default(now())
+  updatedAt     DateTime                 @updatedAt
+
+  @@index([spreadsheetId, sheetName])
+  @@index([sourceStatus])
+}
+
+// 한 일일 실행 안에서 특정 캠페인의 단계별 진행·재시도 상태를 기록한다.
+model CampaignAutomationRun {
+  id              String               @id @default(cuid())
+  automationRunId String
+  automationRun   AutomationRun        @relation(fields: [automationRunId], references: [id], onDelete: Cascade)
+  campaignId      String
+  campaign        Campaign             @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  sourceId        String?
+  source          SheetCampaignSource? @relation(fields: [sourceId], references: [id], onDelete: SetNull)
+  stage           String               @default("DISCOVERED")
+  status          String               @default("QUEUED") // QUEUED | PROCESSING | RETRY | READY | NEEDS_REVIEW | FAILED
+  attempts        Int                  @default(0)
+  maxAttempts     Int                  @default(3)
+  nextRetryAt     DateTime?
+  lockedAt        DateTime?
+  lastError       String?
+  completedAt     DateTime?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@unique([automationRunId, campaignId])
+  @@index([status, nextRetryAt])
+  @@index([sourceId])
 }
 
 model OperationalError {

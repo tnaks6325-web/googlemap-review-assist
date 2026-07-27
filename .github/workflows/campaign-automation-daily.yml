@@ -1,0 +1,28 @@
+name: Daily campaign automation discovery
+
+on:
+  schedule:
+    # 17:05 Asia/Seoul (UTC+9). Five minutes past the hour avoids the busiest Actions window.
+    - cron: "5 8 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: campaign-automation-discovery
+  cancel-in-progress: false
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Enqueue daily campaign automation
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          test -n "$CRON_SECRET"
+          curl --fail-with-body --silent --show-error \
+            --retry 2 --retry-all-errors --connect-timeout 10 --max-time 55 \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "https://googlemap-review-assist.vercel.app/api/internal/campaign-automation/daily"

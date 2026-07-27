@@ -3,11 +3,16 @@ import {
   AdminCampaignOperationsTable,
   type AdminCampaignOperationsRow,
 } from "@/components/admin/AdminCampaignOperationsTable";
+import {
+  AdminCampaignAutomationStatus,
+  type AdminCampaignAutomationStatusRow,
+} from "@/components/admin/AdminCampaignAutomationStatus";
 import { GoogleSheetConnectionStatus } from "@/components/admin/GoogleSheetConnectionStatus";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { SheetImportDryRun } from "@/components/admin/SheetImportDryRun";
 import { operationalCampaignStatus } from "@/lib/admin-campaign-table";
 import { getAdminId } from "@/lib/auth/session";
+import { listAdminCampaignAutomationStatuses } from "@/lib/domain/campaign-automation-admin";
 import { listAdminCampaigns } from "@/lib/domain/operator-campaigns";
 import { readGoogleSpreadsheetTitle } from "@/lib/google-sheets";
 
@@ -21,9 +26,10 @@ export default async function AdminCampaignsPage() {
   const adminId = await getAdminId();
   if (!adminId) redirect("/admin/login");
 
-  const [campaigns, spreadsheetTitle] = await Promise.all([
+  const [campaigns, spreadsheetTitle, automationStatuses] = await Promise.all([
     listAdminCampaigns(),
     readGoogleSpreadsheetTitle(SPREADSHEET_ID).catch(() => null),
+    listAdminCampaignAutomationStatuses(),
   ]);
   const activeCount = campaigns.filter((campaign) => campaign.active).length;
   const assignedCount = campaigns.reduce(
@@ -47,6 +53,11 @@ export default async function AdminCampaignsPage() {
       createdAt: campaign.createdAt.toISOString(),
     }),
   );
+  const automationStatusRows: AdminCampaignAutomationStatusRow[] = automationStatuses.map((status) => ({
+    ...status,
+    nextRetryAt: status.nextRetryAt?.toISOString() ?? null,
+    updatedAt: status.updatedAt.toISOString(),
+  }));
 
   return (
     <AdminShell
@@ -104,6 +115,8 @@ export default async function AdminCampaignsPage() {
           </div>
         </div>
       </section>
+
+      <AdminCampaignAutomationStatus rows={automationStatusRows} />
 
       <AdminCampaignOperationsTable campaigns={tableCampaigns} />
     </AdminShell>

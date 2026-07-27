@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>신규 캠페인 일일 자동화 — 운영 와이어프레임</title>
+  <style>
+    :root {
+      --canvas: #f2f4f6;
+      --surface: #ffffff;
+      --surface-alt: #f9fafb;
+      --line: #e5e8eb;
+      --line-strong: #d1d6db;
+      --ink: #191f28;
+      --sub: #4e5968;
+      --weak: #6b7684;
+      --brand: #3182f6;
+      --brand-tint: #e8f3ff;
+      --success: #00a86b;
+      --success-tint: #e8faf2;
+      --warning: #b76e00;
+      --warning-tint: #fff7e5;
+      --danger: #e5484d;
+      --danger-tint: #fff0f0;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--canvas);
+      color: var(--ink);
+      font-family: Pretendard, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.45;
+    }
+    button { font: inherit; }
+    .page { max-width: 1320px; margin: 0 auto; padding: 28px 20px 64px; }
+    .topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; }
+    .brand-mark { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; color: #fff; background: var(--brand); font-weight: 900; }
+    .pill, .status, .tag { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 0 10px; border-radius: 999px; font-size: 12px; font-weight: 800; white-space: nowrap; }
+    .pill { color: var(--brand); background: var(--brand-tint); }
+    .status.ready { color: var(--success); background: var(--success-tint); }
+    .status.running { color: var(--brand); background: var(--brand-tint); }
+    .status.review { color: var(--warning); background: var(--warning-tint); }
+    .status.failed { color: var(--danger); background: var(--danger-tint); }
+    .tag { min-height: 24px; padding: 0 8px; color: var(--sub); background: var(--surface-alt); border: 1px solid var(--line); font-size: 11px; }
+    .hero, .card { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 1px 2px rgba(25, 31, 40, .04); }
+    .hero { padding: 24px; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(310px, .85fr); gap: 24px; }
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: 28px; letter-spacing: -.5px; }
+    h2 { font-size: 18px; letter-spacing: -.2px; }
+    h3 { font-size: 14px; }
+    .lead { margin-top: 10px; max-width: 700px; color: var(--sub); font-size: 15px; }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+    .button { min-height: 40px; border: 0; border-radius: 10px; padding: 0 13px; cursor: pointer; color: #fff; background: var(--brand); font-size: 13px; font-weight: 800; }
+    .button.secondary { color: var(--brand); background: var(--brand-tint); }
+    .button.ghost { color: var(--sub); background: #fff; border: 1px solid var(--line); }
+    .button:focus-visible, .campaign:focus-visible { outline: 3px solid rgba(49, 130, 246, .35); outline-offset: 2px; }
+    .schedule-card { padding: 18px; background: var(--surface-alt); border: 1px solid var(--line); border-radius: 14px; }
+    .schedule-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+    .schedule-time { font-size: 24px; font-weight: 900; letter-spacing: -.5px; }
+    .small { color: var(--weak); font-size: 12px; }
+    .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 18px; }
+    .metric { padding: 15px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+    .metric .value { margin-top: 5px; font-size: 22px; font-weight: 900; }
+    .metric .label { color: var(--weak); font-size: 12px; }
+    .section-head { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin: 28px 0 12px; }
+    .section-head p { margin-top: 4px; color: var(--weak); font-size: 13px; }
+    .pipeline { padding: 20px; overflow-x: auto; }
+    .pipeline-track { min-width: 1000px; display: grid; grid-template-columns: repeat(8, minmax(112px, 1fr)); align-items: center; }
+    .stage { position: relative; min-height: 124px; padding: 13px 12px; border: 1px solid var(--line); background: var(--surface-alt); }
+    .stage:first-child { border-radius: 12px 0 0 12px; }
+    .stage:last-child { border-radius: 0 12px 12px 0; }
+    .stage + .stage::before { position: absolute; top: 50%; left: -8px; z-index: 2; width: 14px; height: 14px; content: ""; background: var(--canvas); border-right: 1px solid var(--line-strong); border-top: 1px solid var(--line-strong); transform: translateY(-50%) rotate(45deg); }
+    .stage-index { display: grid; width: 25px; height: 25px; place-items: center; border-radius: 50%; color: var(--brand); background: var(--brand-tint); font-size: 11px; font-weight: 900; }
+    .stage-name { display: block; margin-top: 10px; font-size: 13px; font-weight: 900; }
+    .stage-desc { display: block; margin-top: 4px; color: var(--weak); font-size: 11px; line-height: 1.45; }
+    .stage.gate { background: #fbfdff; border-color: #b8d9ff; }
+    .stage.gate .stage-index { color: #fff; background: var(--brand); }
+    .stage.is-done { background: var(--success-tint); border-color: #b8ead7; }
+    .stage.is-done .stage-index { color: #fff; background: var(--success); }
+    .stage.is-active { background: var(--brand-tint); border-color: #9ccaff; }
+    .stage.is-active .stage-index { color: #fff; background: var(--brand); }
+    .stage.is-blocked { background: var(--warning-tint); border-color: #f0d6a4; }
+    .stage.is-blocked .stage-index { color: #fff; background: var(--warning); }
+    .workspace { display: grid; grid-template-columns: minmax(0, 1.18fr) minmax(340px, .82fr); gap: 16px; }
+    .card { padding: 18px; }
+    .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 14px; }
+    .filter-row { display: flex; flex-wrap: wrap; gap: 7px; }
+    .filter { padding: 7px 10px; border: 1px solid var(--line); border-radius: 9px; color: var(--sub); background: var(--surface-alt); font-size: 12px; }
+    .campaign-list { display: grid; gap: 8px; margin-top: 14px; }
+    .campaign { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 14px; border: 1px solid var(--line); border-radius: 12px; color: inherit; background: #fff; text-align: left; cursor: pointer; }
+    .campaign[aria-selected="true"] { border-color: var(--brand); background: #fbfdff; box-shadow: inset 3px 0 0 var(--brand); }
+    .campaign-name { font-size: 14px; font-weight: 900; }
+    .campaign-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+    .campaign-side { display: grid; gap: 7px; justify-items: end; }
+    .detail-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+    .detail-sub { margin-top: 5px; color: var(--weak); font-size: 12px; }
+    .progress { height: 8px; margin: 18px 0 7px; overflow: hidden; border-radius: 999px; background: var(--line); }
+    .progress-bar { width: 0; height: 100%; border-radius: inherit; background: var(--brand); transition: width .25s ease, background .25s ease; }
+    .progress-label { display: flex; justify-content: space-between; color: var(--weak); font-size: 12px; }
+    .step-list { display: grid; gap: 0; margin: 18px 0; }
+    .step-row { display: grid; grid-template-columns: 25px 1fr auto; gap: 10px; align-items: center; min-height: 48px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+    .step-row:last-child { border-bottom: 0; }
+    .step-dot { width: 22px; height: 22px; display: grid; place-items: center; border: 1px solid var(--line-strong); border-radius: 50%; color: var(--weak); background: #fff; font-size: 11px; font-weight: 900; }
+    .step-row.done .step-dot { color: #fff; border-color: var(--success); background: var(--success); }
+    .step-row.active .step-dot { color: #fff; border-color: var(--brand); background: var(--brand); }
+    .step-row.blocked .step-dot { color: #fff; border-color: var(--warning); background: var(--warning); }
+    .step-name { font-size: 13px; font-weight: 800; }
+    .step-note { margin-top: 2px; color: var(--weak); font-size: 11px; }
+    .evidence { margin-top: 16px; padding: 13px; border-radius: 12px; background: var(--surface-alt); }
+    .evidence strong { display: block; font-size: 13px; }
+    .evidence p { margin-top: 4px; color: var(--sub); font-size: 12px; }
+    .notice { margin-top: 16px; padding: 13px; border-left: 3px solid var(--warning); border-radius: 0 10px 10px 0; color: #805009; background: var(--warning-tint); font-size: 12px; line-height: 1.55; }
+    .notice.danger { border-color: var(--danger); color: #a63a3f; background: var(--danger-tint); }
+    .empty { margin-top: 16px; padding: 18px; color: var(--weak); background: var(--surface-alt); border-radius: 12px; font-size: 13px; }
+    .legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; color: var(--weak); font-size: 12px; }
+    .legend span { display: inline-flex; align-items: center; gap: 5px; }
+    .legend i { width: 9px; height: 9px; display: inline-block; border-radius: 50%; background: var(--line-strong); }
+    .legend .blue { background: var(--brand); } .legend .green { background: var(--success); } .legend .amber { background: var(--warning); }
+    .audit { margin-top: 16px; padding-top: 15px; border-top: 1px solid var(--line); }
+    .audit-row { display: grid; grid-template-columns: 62px 1fr; gap: 10px; padding: 7px 0; color: var(--sub); font-size: 12px; }
+    .audit-time { color: var(--weak); font-variant-numeric: tabular-nums; }
+    @media (max-width: 960px) {
+      .hero, .workspace { grid-template-columns: 1fr; }
+      .metrics { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 560px) {
+      .page { padding: 18px 14px 48px; }
+      .topbar { align-items: flex-start; }
+      .topbar .pill { display: none; }
+      h1 { font-size: 24px; }
+      .hero, .card, .pipeline { padding: 16px; }
+      .metrics { gap: 8px; }
+      .metric { padding: 12px; }
+      .campaign { grid-template-columns: 1fr; }
+      .campaign-side { display: flex; align-items: center; justify-items: start; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">R</span><span>Review Campaign Ops</span></div>
+      <span class="pill">신규 캠페인 일일 자동화 · Wireframe</span>
+    </header>
+
+    <section class="hero" aria-labelledby="page-title">
+      <div>
+        <h1 id="page-title">17:00에 시트를 확인하고, 준비된 캠페인만 자동 공개합니다.</h1>
+        <p class="lead">신규 행 발견부터 네이버 연결, 참고자료·사실 카드 분석, 가이드라인 키워드를 반영한 미배정 원고 25개 충전까지의 자동화 운영 화면입니다.</p>
+        <div class="hero-actions">
+          <button class="button" type="button" id="run-button">오늘 실행 계획 보기</button>
+          <button class="button secondary" type="button" id="select-ready">준비 완료 캠페인 보기</button>
+          <button class="button ghost" type="button" id="select-review">수동 확인 건 보기</button>
+        </div>
+      </div>
+      <aside class="schedule-card" aria-label="오늘 예약 실행 상태">
+        <span class="small">오늘의 자동화 실행</span>
+        <div class="schedule-row"><div><strong class="schedule-time">17:00 KST</strong><p class="small">NEW_CAMPAIGN_DAILY:2026-07-27</p></div><span class="status running">● 실행 중</span></div>
+        <div class="schedule-row"><div><strong>실행 규칙</strong><p class="small">중복 호출은 하나의 run으로 합쳐집니다.</p></div><span class="tag">멱등 실행</span></div>
+      </aside>
+    </section>
+
+    <section class="metrics" aria-label="자동화 요약">
+      <div class="metric"><p class="label">시트 신규 행</p><p class="value">4<span class="small">건</span></p></div>
+      <div class="metric"><p class="label">자동 준비 완료</p><p class="value" id="ready-count">1<span class="small">건</span></p></div>
+      <div class="metric"><p class="label">처리 중</p><p class="value" id="running-count">2<span class="small">건</span></p></div>
+      <div class="metric"><p class="label">수동 확인 필요</p><p class="value" id="review-count">1<span class="small">건</span></p></div>
+    </section>
+
+    <div class="section-head"><div><h2>자동화 파이프라인</h2><p>긴 작업은 큐에 분리하고, 각 캠페인은 독립적으로 실패·재시도합니다.</p></div><span class="tag">동시성 제한 · 단계별 저장 · 재시도</span></div>
+    <section class="card pipeline" aria-label="신규 캠페인 자동화 순서">
+      <div class="pipeline-track" id="pipeline-track">
+        <div class="stage"><span class="stage-index">1</span><strong class="stage-name">시트 발견</strong><span class="stage-desc">접수ID·행 해시로 신규/변경 판별</span></div>
+        <div class="stage"><span class="stage-index">2</span><strong class="stage-name">캠페인 반영</strong><span class="stage-desc">비활성 상태로 upsert</span></div>
+        <div class="stage"><span class="stage-index">3</span><strong class="stage-name">Google Place</strong><span class="stage-desc">장소 확정 후 다음 단계</span></div>
+        <div class="stage"><span class="stage-index">4</span><strong class="stage-name">네이버 연결</strong><span class="stage-desc">고신뢰도 매칭만 저장</span></div>
+        <div class="stage"><span class="stage-index">5</span><strong class="stage-name">참고자료</strong><span class="stage-desc">블로그 자료 수집·중복 제거</span></div>
+        <div class="stage"><span class="stage-index">6</span><strong class="stage-name">사실 카드</strong><span class="stage-desc">사실 6개 · 분류 3종 이상</span></div>
+        <div class="stage"><span class="stage-index">7</span><strong class="stage-name">원고 25개</strong><span class="stage-desc">가이드 키워드·품질 검증</span></div>
+        <div class="stage gate"><span class="stage-index">8</span><strong class="stage-name">최종 게이트</strong><span class="stage-desc">준비 완료 시에만 공개</span></div>
+      </div>
+      <div class="legend"><span><i class="green"></i>완료</span><span><i class="blue"></i>진행 중</span><span><i class="amber"></i>수동 확인</span><span><i></i>대기</span></div>
+    </section>
+
+    <div class="section-head"><div><h2>오늘의 캠페인</h2><p>행을 선택하면 해당 캠페인의 단계와 다음 조치를 확인할 수 있습니다.</p></div><span class="small">표시 데이터는 와이어프레임 예시입니다.</span></div>
+    <section class="workspace" aria-label="캠페인 자동화 운영 화면">
+      <div class="card">
+        <h2>자동화 대상 4건</h2>
+        <div class="toolbar"><div class="filter-row"><span class="filter">전체 4</span><span class="filter">진행 중 2</span><span class="filter">수동 확인 1</span></div><span class="small">마지막 갱신 17:14</span></div>
+        <div class="campaign-list" id="campaign-list"></div>
+      </div>
+
+      <aside class="card" aria-live="polite">
+        <div id="detail"></div>
+      </aside>
+    </section>
+  </main>
+
+  <script>
+    const campaignData = [
+      {
+        id: "mango", name: "망원동 커피하우스", source: "접수ID CMP-20260727-001", status: "running", statusLabel: "원고 생성 중", stage: 6,
+        progress: 78, drafts: "18 / 25", keywords: ["망원동카페", "디카페인", "조용한카페"],
+        steps: ["시트 신규 행 확인", "캠페인 비활성 생성", "Google Place 확정", "네이버 Place 연결", "참고자료 7건 수집", "사실 카드 8개 분석", "미배정 원고 18개 생성", "최종 공개 게이트"],
+        stepStates: ["done", "done", "done", "done", "done", "done", "active", "pending"],
+        note: "남은 7개 원고를 생성 중입니다. 각 원고에는 배정된 가이드라인 키워드가 포함되어야 저장됩니다.", audit: [["17:14", "원고 생성 3라운드 완료 · 품질 통과 18개"], ["17:09", "사실 카드 기준 충족 · 8개 / 4개 분류"], ["17:05", "네이버 Place 고신뢰도 연결 완료"]]
+      },
+      {
+        id: "seongsu", name: "성수 숯불구이", source: "접수ID CMP-20260727-002", status: "review", statusLabel: "수동 확인 필요", stage: 3,
+        progress: 42, drafts: "0 / 25", keywords: ["성수맛집", "숯불구이"],
+        steps: ["시트 신규 행 확인", "캠페인 비활성 생성", "Google Place 확정", "네이버 Place 후보 검토", "참고자료 수집", "사실 카드 분석", "미배정 원고 25개", "최종 공개 게이트"],
+        stepStates: ["done", "done", "done", "blocked", "pending", "pending", "pending", "pending"],
+        note: "네이버 후보의 주소가 Google Place와 일치하지 않습니다. 자동 연결을 중단했으며, 검토 후 이 단계부터 재시도합니다.", audit: [["17:12", "낮은 신뢰도 후보 감지 · NEEDS_REVIEW:NAVER_PLACE"], ["17:04", "Google Place 확정"], ["17:01", "신규 접수ID 감지"]]
+      },
+      {
+        id: "yeouido", name: "여의도 샐러드랩", source: "접수ID CMP-20260727-003", status: "ready", statusLabel: "공개 준비 완료", stage: 7,
+        progress: 100, drafts: "25 / 25", keywords: ["여의도점심", "건강식", "샐러드"],
+        steps: ["시트 신규 행 확인", "캠페인 비활성 생성", "Google Place 확정", "네이버 Place 연결", "참고자료 5건 수집", "사실 카드 9개 분석", "미배정 원고 25개 생성", "최종 공개 게이트"],
+        stepStates: ["done", "done", "done", "done", "done", "done", "done", "done"],
+        note: "필수 조건을 모두 충족했습니다. 리뷰어 목록에 공개되었고, 미배정 품질 통과 원고 25개가 준비되어 있습니다.", audit: [["17:11", "최종 게이트 통과 · active=true"], ["17:10", "가이드라인 키워드 3개가 25개 원고 묶음에 반영됨"], ["17:08", "원고 풀 25개 충전 완료"]]
+      },
+      {
+        id: "gangnam", name: "강남 네일아틀리에", source: "접수ID CMP-20260727-004", status: "running", statusLabel: "참고자료 수집 중", stage: 4,
+        progress: 54, drafts: "0 / 25", keywords: ["강남네일", "시럽네일"],
+        steps: ["시트 신규 행 확인", "캠페인 비활성 생성", "Google Place 확정", "네이버 Place 연결", "참고자료 3건 수집", "사실 카드 분석", "미배정 원고 25개", "최종 공개 게이트"],
+        stepStates: ["done", "done", "done", "done", "active", "pending", "pending", "pending"],
+        note: "참고자료를 수집하고 있습니다. 자료가 최소 1건 확보되면 사실 카드 분석 작업이 자동으로 이어집니다.", audit: [["17:13", "참고자료 검색 job 시작"], ["17:07", "네이버 Place 고신뢰도 연결 완료"], ["17:03", "Google Place 확정"]]
+      }
+    ];
+
+    let selectedId = "mango";
+    const list = document.getElementById("campaign-list");
+    const detail = document.getElementById("detail");
+    const pipeline = [...document.querySelectorAll(".stage")];
+
+    function statusClass(status) { return status === "ready" ? "ready" : status === "review" ? "review" : "running"; }
+    function stateIcon(state) { return state === "done" ? "✓" : state === "active" ? "…" : state === "blocked" ? "!" : ""; }
+    function stageClass(state) { return state === "done" ? "is-done" : state === "active" ? "is-active" : state === "blocked" ? "is-blocked" : ""; }
+
+    function render() {
+      const selected = campaignData.find((item) => item.id === selectedId) || campaignData[0];
+      list.innerHTML = campaignData.map((item) => `
+        <button type="button" class="campaign" data-id="${item.id}" aria-selected="${item.id === selected.id}">
+          <span><span class="campaign-name">${item.name}</span><span class="campaign-meta"><span class="tag">${item.source}</span><span class="tag">가이드 ${item.keywords.length}개</span></span></span>
+          <span class="campaign-side"><span class="status ${statusClass(item.status)}">${item.status === "ready" ? "✓" : item.status === "review" ? "!" : "●"} ${item.statusLabel}</span><span class="small">원고 ${item.drafts}</span></span>
+        </button>`).join("");
+
+      detail.innerHTML = `
+        <div class="detail-title"><div><h2>${selected.name}</h2><p class="detail-sub">${selected.source} · 신규 캠페인은 활성화 전까지 비공개</p></div><span class="status ${statusClass(selected.status)}">${selected.statusLabel}</span></div>
+        <div class="progress"><div class="progress-bar" style="width:${selected.progress}%;${selected.status === "review" ? "background:var(--warning)" : selected.status === "ready" ? "background:var(--success)" : ""}"></div></div>
+        <div class="progress-label"><span>자동화 진행률</span><strong>${selected.progress}%</strong></div>
+        <div class="step-list">${selected.steps.map((step, index) => `<div class="step-row ${selected.stepStates[index]}"><span class="step-dot">${stateIcon(selected.stepStates[index])}</span><span><span class="step-name">${step}</span><span class="step-note">${index === 6 ? `품질 통과 미배정 원고 ${selected.drafts}` : index === 7 ? "모든 조건 통과 시 active=true" : "저장 후 다음 작업 자동 실행"}</span></span><span class="small">${selected.stepStates[index] === "done" ? "완료" : selected.stepStates[index] === "active" ? "진행" : selected.stepStates[index] === "blocked" ? "확인" : "대기"}</span></div>`).join("")}</div>
+        <div class="evidence"><strong>가이드라인 키워드</strong><p>${selected.keywords.map((keyword) => `<span class="tag">${keyword}</span>`).join(" ")}</p></div>
+        <div class="notice ${selected.status === "review" ? "" : "danger"}"><strong>${selected.status === "review" ? "자동화 안전장치" : "다음 자동 처리"}</strong><br>${selected.note}</div>
+        <div class="audit"><h3>최근 이벤트</h3>${selected.audit.map(([time, text]) => `<div class="audit-row"><span class="audit-time">${time}</span><span>${text}</span></div>`).join("")}</div>`;
+
+      pipeline.forEach((node, index) => { node.className = `stage ${index === 7 ? "gate" : ""} ${stageClass(selected.stepStates[index])}`; });
+      document.querySelectorAll(".campaign").forEach((button) => button.addEventListener("click", () => { selectedId = button.dataset.id; render(); }));
+    }
+
+    document.getElementById("select-ready").addEventListener("click", () => { selectedId = "yeouido"; render(); });
+    document.getElementById("select-review").addEventListener("click", () => { selectedId = "seongsu"; render(); });
+    document.getElementById("run-button").addEventListener("click", () => { selectedId = "mango"; render(); document.querySelector(".pipeline").scrollIntoView({ behavior: "smooth", block: "center" }); });
+    render();
+  </script>
+</body>
+</html>
