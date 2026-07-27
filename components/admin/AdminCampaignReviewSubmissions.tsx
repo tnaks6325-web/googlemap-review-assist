@@ -6,6 +6,7 @@ import { formatAdminDateTime } from "@/lib/admin-date-format";
 
 type DecisionStatus = "PENDING" | "PASSED" | "FAILED";
 type ViewMode = "THUMBNAIL" | "TABLE";
+type PlaceNameCheck = "PASS" | "FAIL" | "UNKNOWN";
 
 interface SubmissionItem {
   id: string;
@@ -17,6 +18,7 @@ interface SubmissionItem {
   analysisStatus: string | null;
   analysisReason: string | null;
   similarity: number | null;
+  placeNameCheck: PlaceNameCheck;
   reviewedAt: string | null;
   reviewedBy: string | null;
   reviewNote: string | null;
@@ -62,26 +64,44 @@ function StatusBadge({ status }: { status: DecisionStatus }) {
 function AnalysisText({ item }: { item: SubmissionItem }) {
   const similarity =
     item.similarity === null ? null : `${(item.similarity * 100).toFixed(1)}%`;
-  const isAutoApprovedSimilarity = item.similarity !== null && item.similarity >= 0.8;
+  const placeNameMatched = item.placeNameCheck === "PASS";
+  const isAutoApprovedSimilarity = item.similarity !== null && item.similarity >= 0.8 && placeNameMatched;
   return (
-    <p className="mt-1 text-[11px] leading-5 text-ink-weak">
-      {item.analysisStatus
-        ? ANALYSIS_LABELS[item.analysisStatus] ?? item.analysisStatus
-        : "AI 분석 결과 없음"}
-      {similarity ? ` · 유사도 ${similarity}` : ""}
-      {isAutoApprovedSimilarity ? (
-        <span
-          className="ml-1 inline-flex align-text-bottom text-emerald-600"
-          title="유사도 80% 이상: 자동 승인 대상"
-          aria-label="유사도 80% 이상: 자동 승인 대상"
-        >
-          <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 fill-current">
+    <div className="mt-1 text-[11px] leading-5 text-ink-weak">
+      <p>
+        {item.analysisStatus
+          ? ANALYSIS_LABELS[item.analysisStatus] ?? item.analysisStatus
+          : "AI 분석 결과 없음"}
+        {similarity ? ` · 유사도 ${similarity}` : ""}
+        {isAutoApprovedSimilarity ? (
+          <span
+            className="ml-1 inline-flex align-text-bottom text-emerald-600"
+            title="유사도 80% 이상: 자동 승인 대상"
+            aria-label="유사도 80% 이상: 자동 승인 대상"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 fill-current">
+              <path d="M8 1.25a6.75 6.75 0 1 0 0 13.5 6.75 6.75 0 0 0 0-13.5Zm3.18 4.85-3.7 4.2a.75.75 0 0 1-1.09.03L4.52 8.5a.75.75 0 1 1 1.06-1.06l1.3 1.3 3.18-3.61a.75.75 0 1 1 1.12.99Z" />
+            </svg>
+          </span>
+        ) : null}
+        {item.analysisReason ? ` · ${item.analysisReason}` : ""}
+      </p>
+      <p className={`inline-flex items-center gap-1 font-semibold ${placeNameMatched ? "text-emerald-700" : "text-danger"}`}>
+        매장명 검수 : {placeNameMatched ? "일치" : "확인불가"}
+        {placeNameMatched ? (
+          <svg viewBox="0 0 16 16" aria-label="매장명 일치" className="h-3.5 w-3.5 fill-current">
             <path d="M8 1.25a6.75 6.75 0 1 0 0 13.5 6.75 6.75 0 0 0 0-13.5Zm3.18 4.85-3.7 4.2a.75.75 0 0 1-1.09.03L4.52 8.5a.75.75 0 1 1 1.06-1.06l1.3 1.3 3.18-3.61a.75.75 0 1 1 1.12.99Z" />
           </svg>
-        </span>
-      ) : null}
-      {item.analysisReason ? ` · ${item.analysisReason}` : ""}
-    </p>
+        ) : (
+          <>
+            <svg viewBox="0 0 16 16" aria-label="매장명 확인불가" className="h-3.5 w-3.5 fill-current">
+              <path d="M8 1.25a6.75 6.75 0 1 0 0 13.5 6.75 6.75 0 0 0 0-13.5ZM5.47 4.41 8 6.94l2.53-2.53 1.06 1.06L9.06 8l2.53 2.53-1.06 1.06L8 9.06l-2.53 2.53-1.06-1.06L6.94 8 4.41 5.47l1.06-1.06Z" />
+            </svg>
+            <span>→ 수동검수 필수</span>
+          </>
+        )}
+      </p>
+    </div>
   );
 }
 

@@ -45,6 +45,12 @@ async function createSubmission(
         status === "COMPLETED" ? "AUTO_APPROVE" : status === "REJECTED" ? "AUTO_REJECT" : "MANUAL_REVIEW",
       reviewProofAnalysisReason: status === "REJECTED" ? "LOW_SIMILARITY" : null,
       reviewProofSimilarity: status === "COMPLETED" ? 0.94 : 0.31,
+      reviewProofAnalysisJson:
+        status === "COMPLETED"
+          ? JSON.stringify({ checks: { placeName: "PASS" } })
+          : status === "REJECTED"
+            ? JSON.stringify({ checks: { placeName: "FAIL" } })
+            : null,
       reviewReviewedAt: status === "REVIEW_SUBMITTED" ? null : submittedAt,
       reviewReviewedBy: status === "REVIEW_SUBMITTED" ? null : "ai:test",
     },
@@ -72,6 +78,7 @@ describe("admin campaign review submissions", () => {
     });
     expect(firstPage.data.map((item) => item.id)).toEqual([passed.id, failed.id]);
     expect(firstPage.data.map((item) => item.status)).toEqual(["PASSED", "FAILED"]);
+    expect(firstPage.data.map((item) => item.placeNameCheck)).toEqual(["PASS", "FAIL"]);
     expect(firstPage.data[0].imageUrl).toBe(`/api/admin/review-proofs/${passed.id}`);
     expect(JSON.stringify(firstPage)).not.toContain("private/review-proof");
     expect(firstPage.summary).toEqual({ total: 3, pending: 1, passed: 1, failed: 1 });
@@ -87,6 +94,7 @@ describe("admin campaign review submissions", () => {
       pageSize: 2,
     });
     expect(secondPage.data.map((item) => item.id)).toEqual([pending.id]);
+    expect(secondPage.data[0].placeNameCheck).toBe("UNKNOWN");
   });
 
   it("counts submitted proof files per campaign without an N+1 query surface", async () => {

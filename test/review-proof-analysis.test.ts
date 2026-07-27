@@ -180,7 +180,7 @@ ${draft}
     expect(result).toMatchObject({ status: "AUTO_REJECT", reason: "REVIEW_TOO_OLD" });
   });
 
-  it("auto-approves a matching proof when the place name is not visible in the OCR text", () => {
+  it("requires manual review when the place name is not visible in the OCR text", () => {
     const draft = "고기를 맛있게 먹었고 직원분들이 친절해서 만족스러운 식사였습니다.";
     const extracted = `
 리뷰
@@ -195,7 +195,11 @@ ${draft}
       provider: "test",
     });
 
-    expect(result).toMatchObject({ status: "AUTO_APPROVE", reason: "DRAFT_TEXT_MATCHED" });
+    expect(result).toMatchObject({
+      status: "MANUAL_REVIEW",
+      reason: "PLACE_NAME_NOT_FOUND",
+      checks: { placeName: "FAIL" },
+    });
   });
 
   it("auto-approves an 80%+ matching proof even when rating and recency OCR metadata are unavailable", () => {

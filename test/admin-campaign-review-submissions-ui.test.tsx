@@ -38,4 +38,11 @@ describe("admin campaign review submissions UI", () => {
     expect(modalSource).toContain("수동 승인");
     expect(modalSource).toContain("반려 확정");
   });
+
+  it("shows place-name inspection as a green match or red manual-review requirement", () => {
+    expect(modalSource).toContain("매장명 검수");
+    expect(modalSource).toContain("일치");
+    expect(modalSource).toContain("확인불가");
+    expect(modalSource).toContain("수동검수 필수");
+  });
 });
