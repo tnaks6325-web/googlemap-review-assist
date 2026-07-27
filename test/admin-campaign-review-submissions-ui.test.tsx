@@ -13,6 +13,13 @@ const rejectionSource = readFileSync(
   new URL("../lib/review-rejection.ts", import.meta.url),
   "utf8",
 );
+const reanalysisRouteSource = readFileSync(
+  new URL(
+    "../app/api/admin/campaigns/[campaignId]/review-submissions/reanalyze/route.ts",
+    import.meta.url,
+  ),
+  "utf8",
+);
 
 describe("admin campaign review submissions UI", () => {
   it("adds a per-campaign review submission button and accessible modal", () => {
@@ -58,5 +65,14 @@ describe("admin campaign review submissions UI", () => {
     expect(modalSource).toContain("상세 반려 사유");
     expect(modalSource).toContain("reasonCode");
     expect(modalSource).toContain("customReason");
+  });
+
+  it("offers an authenticated bulk AI reanalysis action for pending submissions", () => {
+    expect(modalSource).toContain("AI 일괄 재검수");
+    expect(modalSource).toContain("autoApproved");
+    expect(modalSource).toContain("stillPending");
+    expect(reanalysisRouteSource).toContain("checkOrigin(req)");
+    expect(reanalysisRouteSource).toContain("getAdminId()");
+    expect(reanalysisRouteSource).toContain("reanalyzeAdminCampaignReviewSubmissions");
   });
 });

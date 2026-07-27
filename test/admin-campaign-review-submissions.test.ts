@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import {
+  reanalyzeAdminCampaignReviewSubmissions,
   countAdminCampaignReviewSubmissions,
   listAdminCampaignReviewSubmissions,
 } from "@/lib/domain/admin-campaign-review-submissions";
@@ -111,5 +112,75 @@ describe("admin campaign review submissions", () => {
 
     expect(counts.get(first.campaign.id)).toBe(2);
     expect(counts.get(second.campaign.id)).toBe(1);
+  });
+
+  it("bulk reanalyzes pending manual reviews and only auto-approves newly matching proofs", async () => {
+    const fixture = await createCampaign("bulk-reanalysis");
+    const matchingReviewer = await prisma.reviewer.create({
+      data: { email: `matching-${unique()}@test.local`, name: "일치 리뷰어" },
+    });
+    const unmatchedReviewer = await prisma.reviewer.create({
+      data: { email: `unmatched-${unique()}@test.local`, name: "확인필요 리뷰어" },
+    });
+    const draftText = "병원에 방문했는데 원장님과 간호사분들이 친절하고 깔끔해서 만족했습니다.";
+
+    await prisma.business.update({
+      where: { id: fixture.business.id },
+      data: { name: "천안바른마취통증의학과" },
+    });
+    const matching = await prisma.receipt.create({
+      data: {
+        businessId: fixture.business.id,
+        campaignId: fixture.campaign.id,
+        reviewerId: matchingReviewer.id,
+        source: "CAMPAIGN_ASSIGNMENT",
+        status: "REVIEW_SUBMITTED",
+        dedupeHash: `matching-${unique()}`,
+        reviewDraftText: draftText,
+        reviewProofImageUrl: `private/matching-${unique()}.png`,
+        reviewProofMimeType: "image/png",
+        reviewProofOriginalName: "matching.png",
+        reviewProofSubmittedAt: new Date("2026-07-24T01:00:00Z"),
+        reviewProofExtractedText: `천안바른마취통증\n${draftText}`,
+        reviewProofSimilarity: 1,
+        reviewProofAnalysisStatus: "MANUAL_REVIEW",
+        reviewProofAnalysisReason: "PLACE_NAME_NOT_FOUND",
+        reviewProofAnalysisProvider: "test-ocr",
+      },
+    });
+    const unmatched = await prisma.receipt.create({
+      data: {
+        businessId: fixture.business.id,
+        campaignId: fixture.campaign.id,
+        reviewerId: unmatchedReviewer.id,
+        source: "CAMPAIGN_ASSIGNMENT",
+        status: "REVIEW_SUBMITTED",
+        dedupeHash: `unmatched-${unique()}`,
+        reviewDraftText: draftText,
+        reviewProofImageUrl: `private/unmatched-${unique()}.png`,
+        reviewProofMimeType: "image/png",
+        reviewProofOriginalName: "unmatched.png",
+        reviewProofSubmittedAt: new Date("2026-07-24T02:00:00Z"),
+        reviewProofExtractedText: `다른 병원\n${draftText}`,
+        reviewProofSimilarity: 1,
+        reviewProofAnalysisStatus: "MANUAL_REVIEW",
+        reviewProofAnalysisReason: "PLACE_NAME_NOT_FOUND",
+        reviewProofAnalysisProvider: "test-ocr",
+      },
+    });
+
+    const result = await reanalyzeAdminCampaignReviewSubmissions(fixture.campaign.id);
+
+    expect(result).toEqual({ total: 2, autoApproved: 1, stillPending: 1, skipped: 0 });
+    expect(await prisma.receipt.findUnique({ where: { id: matching.id } })).toMatchObject({
+      status: "COMPLETED",
+      reviewProofAnalysisStatus: "AUTO_APPROVE",
+      reviewReviewedBy: "ai:stored-ocr-reanalysis",
+    });
+    expect(await prisma.receipt.findUnique({ where: { id: unmatched.id } })).toMatchObject({
+      status: "REVIEW_SUBMITTED",
+      reviewProofAnalysisStatus: "MANUAL_REVIEW",
+      reviewProofAnalysisReason: "PLACE_NAME_NOT_FOUND",
+    });
   });
 });
