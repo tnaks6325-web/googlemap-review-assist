@@ -129,6 +129,7 @@ export function AdminCampaignReviewSubmissions({
   const [items, setItems] = useState<SubmissionItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [reanalyzing, setReanalyzing] = useState(false);
+  const [reanalyzeConfirmOpen, setReanalyzeConfirmOpen] = useState(false);
   const [mutatingId, setMutatingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -155,7 +156,8 @@ export function AdminCampaignReviewSubmissions({
     if (!open) return;
     const handleKeyboard = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        if (rejectionTarget) setRejectionTarget(null);
+        if (reanalyzeConfirmOpen) setReanalyzeConfirmOpen(false);
+        else if (rejectionTarget) setRejectionTarget(null);
         else if (enlarged) setEnlarged(null);
         else setOpen(false);
         return;
@@ -173,7 +175,7 @@ export function AdminCampaignReviewSubmissions({
     };
     document.addEventListener("keydown", handleKeyboard);
     return () => document.removeEventListener("keydown", handleKeyboard);
-  }, [enlarged, items, open, rejectionTarget]);
+  }, [enlarged, items, open, reanalyzeConfirmOpen, rejectionTarget]);
 
   useEffect(() => {
     if (enlarged) enlargedCloseButtonRef.current?.focus();
@@ -278,12 +280,7 @@ export function AdminCampaignReviewSubmissions({
 
   const reanalyzePending = async () => {
     if (readOnly || !result?.summary.pending) return;
-    if (
-      !window.confirm(
-        `확인 필요 ${result.summary.pending}건을 최신 AI 기준으로 다시 검수할까요? 통과한 건은 포인트가 자동 적립됩니다.`,
-      )
-    ) return;
-
+    setReanalyzeConfirmOpen(false);
     setReanalyzing(true);
     setError(null);
     setMessage(null);
@@ -395,7 +392,7 @@ export function AdminCampaignReviewSubmissions({
                   {!readOnly && result?.summary.pending ? (
                     <button
                       type="button"
-                      onClick={() => void reanalyzePending()}
+                      onClick={() => setReanalyzeConfirmOpen(true)}
                       disabled={reanalyzing}
                       className="h-9 rounded-[9px] border border-brand/25 bg-brand-tint px-3 text-xs font-bold text-brand disabled:opacity-45"
                     >
@@ -624,6 +621,41 @@ export function AdminCampaignReviewSubmissions({
                     className="h-10 rounded-[9px] bg-danger px-4 text-sm font-bold text-white disabled:opacity-45"
                   >
                     {mutatingId === rejectionTarget.id ? "처리 중…" : "반려 확정"}
+                  </button>
+                </div>
+              </section>
+            </div>
+          ) : null}
+
+          {reanalyzeConfirmOpen && result?.summary.pending ? (
+            <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/60 p-4">
+              <section
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="review-reanalysis-title"
+                className="w-full max-w-md rounded-[16px] border border-line bg-surface p-5 shadow-2xl"
+              >
+                <p className="text-xs font-bold text-brand">AI 일괄 재검수</p>
+                <h4 id="review-reanalysis-title" className="mt-1 text-lg font-bold text-ink">
+                  확인 필요 {result.summary.pending}건을 다시 검수할까요?
+                </h4>
+                <p className="mt-2 text-sm leading-6 text-ink-sub">
+                  최신 AI 기준으로 재분석하며, 통과한 제출건은 자동 승인되고 포인트가 적립됩니다.
+                </p>
+                <div className="mt-5 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setReanalyzeConfirmOpen(false)}
+                    className="h-10 rounded-[9px] border border-line px-4 text-sm font-bold text-ink-sub"
+                  >
+                    취소
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void reanalyzePending()}
+                    className="h-10 rounded-[9px] bg-brand px-4 text-sm font-bold text-white"
+                  >
+                    재검수 실행
                   </button>
                 </div>
               </section>
