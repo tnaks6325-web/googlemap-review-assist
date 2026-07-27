@@ -7,9 +7,19 @@ import {
 } from "@/lib/domain/reviewer-campaigns";
 import { getPrivateReviewProof } from "@/lib/review-proof-storage";
 import { recordOperationalError } from "@/lib/error-logging";
+import {
+  CAMPAIGN_AUTOMATION_DISCOVERY_JOB,
+  CAMPAIGN_AUTOMATION_SETUP_JOB,
+} from "@/lib/domain/campaign-automation-jobs";
+import { processCampaignAutomationDiscoveryJob } from "@/lib/domain/campaign-automation-discovery-worker";
+import {
+  setupCampaignWithCurrentProviders,
+  type CampaignAutomationSetupResult,
+} from "@/lib/domain/campaign-automation-setup";
 
 const REVIEW_PROOF_ANALYSIS_JOB = "REVIEW_PROOF_ANALYSIS";
 const MAX_JOB_ATTEMPTS = 4;
+const JOB_LEASE_TIMEOUT_MS = 5 * 60_000;
 
 function retryAt(attempts: number) {
   const delayMs = Math.min(15 * 60_000, 30_000 * 2 ** Math.max(0, attempts - 1));
@@ -18,6 +28,24 @@ function retryAt(attempts: number) {
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message.slice(0, 1000) : "Unknown job error";
+}
+
+async function settleCampaignAutomationRun(runId: string) {
+  const states = await prisma.campaignAutomationRun.findMany({
+    where: { automationRunId: runId },
+    select: { status: true },
+  });
+  if (!states.length) return;
+  const waiting = states.some((state) => ["QUEUED", "PROCESSING", "RETRY"].includes(state.status));
+  if (waiting) {
+    await prisma.automationRun.update({ where: { id: runId }, data: { status: "RUNNING", completedAt: null } });
+    return;
+  }
+  const degraded = states.some((state) => state.status !== "READY");
+  await prisma.automationRun.update({
+    where: { id: runId },
+    data: { status: degraded ? "DEGRADED" : "COMPLETED", completedAt: new Date() },
+  });
 }
 
 export async function enqueueReviewProofAnalysis({ assignmentId }: { assignmentId: string }) {
@@ -85,8 +113,84 @@ async function processReviewProofAnalysis(job: {
   return "COMPLETED" as const;
 }
 
+export async function processCampaignAutomationSetupJob(
+  job: { id: string; payloadJson: string },
+  setupCampaign: (campaignId: string) => Promise<CampaignAutomationSetupResult> = setupCampaignWithCurrentProviders,
+) {
+  const payload = JSON.parse(job.payloadJson) as { runId?: string; campaignId?: string };
+  const runId = payload.runId?.trim();
+  const campaignId = payload.campaignId?.trim();
+  if (!runId || !campaignId) throw new Error("Missing campaign automation setup payload");
+
+  const result = await setupCampaign(campaignId);
+  const completedAt = new Date();
+  if (result.status === "NEEDS_REVIEW") {
+    await prisma.campaignAutomationRun.updateMany({
+      where: { automationRunId: runId, campaignId },
+      data: {
+        status: "NEEDS_REVIEW",
+        stage: result.reason,
+        completedAt,
+        lockedAt: null,
+        lastError: null,
+      },
+    });
+    await settleCampaignAutomationRun(runId);
+    return "NEEDS_REVIEW" as const;
+  }
+
+  await prisma.campaignAutomationRun.updateMany({
+    where: { automationRunId: runId, campaignId },
+    data: { status: "READY", stage: "READY", completedAt, lockedAt: null, lastError: null },
+  });
+  await settleCampaignAutomationRun(runId);
+  return "COMPLETED" as const;
+}
+
+export async function recordCampaignAutomationSetupFailure(
+  job: { payloadJson: string; attempts?: number },
+  exhausted: boolean,
+  error: unknown,
+) {
+  let payload: { runId?: string; campaignId?: string };
+  try {
+    payload = JSON.parse(job.payloadJson) as { runId?: string; campaignId?: string };
+  } catch {
+    return;
+  }
+  const runId = payload.runId?.trim();
+  const campaignId = payload.campaignId?.trim();
+  if (!runId || !campaignId) return;
+  const message = errorMessage(error);
+  await prisma.campaignAutomationRun.updateMany({
+    where: { automationRunId: runId, campaignId },
+    data: exhausted
+      ? { status: "FAILED", stage: "FAILED", completedAt: new Date(), lockedAt: null, lastError: message }
+      : {
+          status: "RETRY",
+          nextRetryAt: retryAt(Math.max(1, job.attempts ?? 1)),
+          lockedAt: null,
+          lastError: message,
+        },
+  });
+  await settleCampaignAutomationRun(runId);
+}
+
 export async function processOperationalJobs(limit = 10) {
   const now = new Date();
+  const expiredLeaseAt = new Date(now.getTime() - JOB_LEASE_TIMEOUT_MS);
+  await prisma.operationalJob.updateMany({
+    where: {
+      status: "PROCESSING",
+      OR: [{ lockedAt: { lt: expiredLeaseAt } }, { lockedAt: null }],
+    },
+    data: {
+      status: "RETRY",
+      lockedAt: null,
+      runAt: now,
+      lastError: "Job lease expired before completion",
+    },
+  });
   const jobs = await prisma.operationalJob.findMany({
     where: { status: { in: ["PENDING", "RETRY"] }, runAt: { lte: now } },
     orderBy: { runAt: "asc" },
@@ -107,6 +211,10 @@ export async function processOperationalJobs(limit = 10) {
       const result =
         job.type === REVIEW_PROOF_ANALYSIS_JOB
           ? await processReviewProofAnalysis(claimedJob)
+          : job.type === CAMPAIGN_AUTOMATION_DISCOVERY_JOB
+            ? await processCampaignAutomationDiscoveryJob(claimedJob)
+          : job.type === CAMPAIGN_AUTOMATION_SETUP_JOB
+            ? await processCampaignAutomationSetupJob(claimedJob)
           : ("SKIPPED" as const);
       if (result === "SKIPPED") summary.skipped += 1;
       else if (result === "UNAVAILABLE") summary.unavailable += 1;
@@ -119,6 +227,9 @@ export async function processOperationalJobs(limit = 10) {
       const exhausted = claimedJob.attempts >= claimedJob.maxAttempts;
       if (exhausted) summary.unavailable += 1;
       else summary.retrying += 1;
+      if (job.type === CAMPAIGN_AUTOMATION_SETUP_JOB) {
+        await recordCampaignAutomationSetupFailure(claimedJob, exhausted, error);
+      }
       await prisma.operationalJob.update({
         where: { id: job.id },
         data: exhausted

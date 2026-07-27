@@ -10,7 +10,13 @@ export interface GoogleSheetCampaignSyncResult {
   imported: number;
   updated: number;
   skipped: number;
+  campaignIds: string[];
   errors: Array<{ rowNumber: number; message: string }>;
+}
+
+export interface GoogleSheetCampaignSyncOptions {
+  active?: boolean;
+  autoNaver?: boolean;
 }
 
 const OPERATOR_IMPORT_OWNER_EMAIL = "operator-import@google-review.local";
@@ -110,9 +116,12 @@ async function ensureAutoNaverCandidate(
 }
 
 export async function syncGoogleMapReviewCampaignRows(
-  rows: SheetImportDryRunRow[]
+  rows: SheetImportDryRunRow[],
+  options: GoogleSheetCampaignSyncOptions = {},
 ): Promise<GoogleSheetCampaignSyncResult> {
-  const result: GoogleSheetCampaignSyncResult = { imported: 0, updated: 0, skipped: 0, errors: [] };
+  const result: GoogleSheetCampaignSyncResult = { imported: 0, updated: 0, skipped: 0, campaignIds: [], errors: [] };
+  const active = options.active ?? true;
+  const autoNaver = options.autoNaver ?? true;
   const owner = await ensureOperatorImportOwner();
 
   for (const row of rows) {
@@ -150,10 +159,12 @@ export async function syncGoogleMapReviewCampaignRows(
 
     await saveExternalPlace(business.id, place);
 
-    try {
-      await ensureAutoNaverCandidate(business, place);
-    } catch {
-      // Naver matching must not block campaign import.
+    if (autoNaver) {
+      try {
+        await ensureAutoNaverCandidate(business, place);
+      } catch {
+        // Naver matching must not block campaign import.
+      }
     }
 
     const name = campaignNameForRow(row);
@@ -166,7 +177,7 @@ export async function syncGoogleMapReviewCampaignRows(
       ? await prisma.campaign.update({
           where: { id: existingCampaign.id },
           data: {
-            active: true,
+            active,
             totalQuota: row.totalQuota,
             dailyQuota: row.dailyQuota,
             startDate: row.startDate,
@@ -178,7 +189,7 @@ export async function syncGoogleMapReviewCampaignRows(
             businessId: business.id,
             slug: await generateUniqueSlug(),
             name,
-            active: true,
+            active,
             totalQuota: row.totalQuota,
             dailyQuota: row.dailyQuota,
             startDate: row.startDate,
@@ -199,6 +210,8 @@ export async function syncGoogleMapReviewCampaignRows(
         reviewExamplesJson: JSON.stringify(row.examplePhrases),
       },
     });
+
+    result.campaignIds.push(campaign.id);
 
     if (existingCampaign) result.updated += 1;
     else result.imported += 1;
