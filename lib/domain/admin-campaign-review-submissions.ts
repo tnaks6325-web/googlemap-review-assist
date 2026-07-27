@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 const CAMPAIGN_ASSIGNMENT_SOURCE = "CAMPAIGN_ASSIGNMENT";
 
 export type AdminCampaignReviewDecisionStatus = "PENDING" | "PASSED" | "FAILED";
+export type AdminCampaignReviewPlaceNameCheck = "PASS" | "FAIL" | "UNKNOWN";
 
 export interface AdminCampaignReviewSubmissionItem {
   id: string;
@@ -14,6 +15,7 @@ export interface AdminCampaignReviewSubmissionItem {
   analysisStatus: string | null;
   analysisReason: string | null;
   similarity: number | null;
+  placeNameCheck: AdminCampaignReviewPlaceNameCheck;
   reviewedAt: string | null;
   reviewedBy: string | null;
   reviewNote: string | null;
@@ -48,6 +50,17 @@ function maskPhone(phone: string | null) {
 
 function reviewerLabel(reviewer: { name: string | null; email: string | null; phone: string | null }) {
   return reviewer.name?.trim() || reviewer.email?.trim() || maskPhone(reviewer.phone) || "리뷰어";
+}
+
+function placeNameCheck(analysisJson: string | null): AdminCampaignReviewPlaceNameCheck {
+  if (!analysisJson) return "UNKNOWN";
+  try {
+    const parsed = JSON.parse(analysisJson) as { checks?: { placeName?: unknown } };
+    const value = parsed.checks?.placeName;
+    return value === "PASS" || value === "FAIL" || value === "UNKNOWN" ? value : "UNKNOWN";
+  } catch {
+    return "UNKNOWN";
+  }
 }
 
 const submittedProofWhere = {
@@ -109,6 +122,7 @@ export async function listAdminCampaignReviewSubmissions(
         reviewProofAnalysisStatus: true,
         reviewProofAnalysisReason: true,
         reviewProofSimilarity: true,
+        reviewProofAnalysisJson: true,
         reviewReviewedAt: true,
         reviewReviewedBy: true,
         reviewReviewNote: true,
@@ -149,6 +163,7 @@ export async function listAdminCampaignReviewSubmissions(
       analysisStatus: receipt.reviewProofAnalysisStatus,
       analysisReason: receipt.reviewProofAnalysisReason,
       similarity: receipt.reviewProofSimilarity,
+      placeNameCheck: placeNameCheck(receipt.reviewProofAnalysisJson),
       reviewedAt: receipt.reviewReviewedAt?.toISOString() ?? null,
       reviewedBy: receipt.reviewReviewedBy,
       reviewNote: receipt.reviewReviewNote,

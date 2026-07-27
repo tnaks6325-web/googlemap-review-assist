@@ -286,6 +286,9 @@ export function decideReviewProofAnalysis(input: {
   } else if (checks?.recency === "FAIL") {
     status = "AUTO_REJECT";
     reason = "REVIEW_TOO_OLD";
+  } else if (status === "AUTO_APPROVE" && checks && checks.placeName !== "PASS") {
+    status = "MANUAL_REVIEW";
+    reason = "PLACE_NAME_NOT_FOUND";
   }
 
   return {
