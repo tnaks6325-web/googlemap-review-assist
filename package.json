@@ -12,7 +12,8 @@
     "db:push:pg": "prisma db push --schema=prisma/schema.postgres.prisma",
     "db:seed": "tsx prisma/seed.ts",
     "db:seed:sandbox": "tsx prisma/seed-sandbox.ts",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "postinstall": "patch-package"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -34,10 +35,16 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.11",
+    "patch-package": "8.0.1",
     "prisma": "^6.19.3",
     "tailwindcss": "^4",
     "tsx": "^4.22.4",
     "typescript": "^5",
     "vitest": "^4.1.9"
+  },
+  "overrides": {
+    "brace-expansion": "5.0.8",
+    "postcss": "8.5.23",
+    "sharp": "0.35.3"
   }
 }
