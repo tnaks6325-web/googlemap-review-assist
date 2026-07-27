@@ -26,7 +26,7 @@ export interface ReviewProofAnalysisInput {
   maxReviewAgeDays?: number;
 }
 
-const DEFAULT_AUTO_APPROVE_THRESHOLD = 0.72;
+const DEFAULT_AUTO_APPROVE_THRESHOLD = 0.8;
 const DEFAULT_AUTO_REJECT_THRESHOLD = 0.18;
 const DEFAULT_MAX_REVIEW_AGE_DAYS = 7;
 const READ_MORE_PATTERN = /더\s*보기|more/iu;
@@ -286,12 +286,6 @@ export function decideReviewProofAnalysis(input: {
   } else if (checks?.recency === "FAIL") {
     status = "AUTO_REJECT";
     reason = "REVIEW_TOO_OLD";
-  } else if (status === "AUTO_APPROVE" && checks?.placeName === "FAIL") {
-    status = "MANUAL_REVIEW";
-    reason = "PLACE_NAME_NOT_FOUND";
-  } else if (status === "AUTO_APPROVE" && (checks?.rating === "UNKNOWN" || checks?.recency === "UNKNOWN")) {
-    status = "MANUAL_REVIEW";
-    reason = "REVIEW_METADATA_UNCERTAIN";
   }
 
   return {

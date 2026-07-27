@@ -24,6 +24,13 @@ describe("admin campaign review submissions UI", () => {
     expect(modalSource).toContain("이미지 확대 보기");
   });
 
+  it("lets admins browse enlarged proofs with arrow keys and see the reviewer metadata", () => {
+    expect(modalSource).toContain('event.key === "ArrowLeft"');
+    expect(modalSource).toContain('event.key === "ArrowRight"');
+    expect(modalSource).toContain("제출 리뷰어");
+    expect(modalSource).toContain("AI 유사도");
+  });
+
   it("shows inspection states and manual decisions for non-passed files", () => {
     expect(modalSource).toContain("검수 통과");
     expect(modalSource).toContain("확인 필요");
