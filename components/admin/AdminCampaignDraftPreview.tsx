@@ -315,6 +315,7 @@ type PendingDraftReview =
 export function AdminCampaignDraftPreview({
   campaignId,
   businessName,
+  readOnly = false,
   initialMetrics = {
     totalCount: 0,
     unassignedCount: 0,
@@ -325,6 +326,7 @@ export function AdminCampaignDraftPreview({
 }: {
   campaignId: string;
   businessName: string;
+  readOnly?: boolean;
   initialMetrics?: PreparedDraftMetrics;
 }) {
   const [busy, setBusy] = useState<"loading" | "generating" | null>(null);
@@ -518,7 +520,7 @@ export function AdminCampaignDraftPreview({
 
   return (
     <>
-      <button
+      {!readOnly ? <button
         type="button"
         onClick={generate}
         disabled={busy !== null || mutatingDraftId !== null || metrics.unassignedCount >= 25}
@@ -533,7 +535,7 @@ export function AdminCampaignDraftPreview({
               attemptTarget={generationTarget}
             />
           : `원고생성 ${Math.min(metrics.unassignedCount, 25)}/25`}
-      </button>
+      </button> : null}
       <button
         type="button"
         onClick={openHistory}
@@ -606,7 +608,7 @@ export function AdminCampaignDraftPreview({
                   {item.label} {metrics[item.metric]}건
                 </button>
               ))}
-              {filter === "QUALITY_EXCLUDED" ? (
+              {!readOnly && filter === "QUALITY_EXCLUDED" ? (
                 <button
                   type="button"
                   onClick={() => void removeAllQualityExcludedDrafts()}
@@ -701,7 +703,7 @@ export function AdminCampaignDraftPreview({
                     <p className="mt-2 text-[11px] text-ink-weak">
                       근거 {item.evidenceIds.length}개 · {statusLabel(item.status)} · {formatGeneratedAt(item.generatedAt)}
                     </p>
-                    {item.status === "ASSIGNED" ? (
+                    {readOnly ? <p className="mt-3 text-[11px] font-semibold text-ink-weak">자동화 진행 중 · 열람 전용</p> : item.status === "ASSIGNED" ? (
                       <p className="mt-3 text-[11px] font-semibold text-ink-weak">
                         배정 완료 원고는 수정하거나 삭제할 수 없습니다.
                       </p>

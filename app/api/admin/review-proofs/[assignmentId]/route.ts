@@ -1,5 +1,6 @@
 import { checkOrigin } from "@/lib/auth/origin";
 import { getAdminId } from "@/lib/auth/session";
+import { campaignOperationsMutationLockResponse } from "@/lib/admin-campaign-operations-lock";
 import { prisma } from "@/lib/db";
 import {
   completeReviewerCampaignAssignment,
@@ -72,6 +73,8 @@ export async function POST(
   const adminId = await getAdminId();
   if (!adminId) return err("UNAUTHORIZED", "관리자 로그인이 필요해요", 401);
 
+  const lockResponse = await campaignOperationsMutationLockResponse();
+  if (lockResponse) return lockResponse;
   if (!(await rateLimit(`admin:review-proof:${adminId}:${clientIp(req)}`, 120, HOUR)).ok) {
     return err("RATE_LIMITED", "잠시 후 다시 시도해 주세요.", 429);
   }

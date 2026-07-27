@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { campaignOperationsMutationLockResponse } from "@/lib/admin-campaign-operations-lock";
 import { checkOrigin } from "@/lib/auth/origin";
 import { getAdminId } from "@/lib/auth/session";
 import { parseCampaignRewardPoints } from "@/lib/domain/campaign-reward-points";
@@ -21,6 +22,9 @@ export async function PATCH(
   if (!adminId) {
     return err("UNAUTHORIZED", "관리자 로그인이 필요합니다.", 401);
   }
+
+  const lockResponse = await campaignOperationsMutationLockResponse();
+  if (lockResponse) return lockResponse;
 
   const ip = clientIp(req);
   if (!(await rateLimit(`admin:campaign-update:${adminId}:${ip}`, 120, HOUR)).ok) {

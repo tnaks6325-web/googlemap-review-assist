@@ -1,5 +1,6 @@
 import { getAdminId } from "@/lib/auth/session";
 import { checkOrigin } from "@/lib/auth/origin";
+import { campaignOperationsMutationLockResponse } from "@/lib/admin-campaign-operations-lock";
 import { prisma } from "@/lib/db";
 import {
   naverPlaceSnapshotFromPlaceId,
@@ -41,6 +42,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ campaign
 
   const adminId = await getAdminId();
   if (!adminId) return err("UNAUTHORIZED", "관리자 로그인이 필요해요", 401);
+
+  const lockResponse = await campaignOperationsMutationLockResponse();
+  if (lockResponse) return lockResponse;
 
   const ip = clientIp(req);
   if (!(await rateLimit(`admin:naver-place:${adminId}:${ip}`, 60, HOUR)).ok) {
