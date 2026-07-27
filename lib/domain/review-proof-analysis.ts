@@ -59,14 +59,30 @@ function compact(text: string) {
   return normalizeReviewText(text).replace(/\s+/g, "");
 }
 
+function withoutTrailingEnglishParenthetical(placeName: string) {
+  const match = placeName.match(/^(.*?)\s*[\(（]([^()（）]*)[\)）]\s*$/u);
+  if (!match) return null;
+
+  const baseName = match[1].trim();
+  const parenthetical = match[2];
+  if (!/\p{Script=Hangul}/u.test(baseName) || !/[a-z]/iu.test(parenthetical)) return null;
+  return baseName;
+}
+
 function placeNameAliases(placeName: string) {
   const aliases = new Set<string>();
+  const addAlias = (value: string | null) => {
+    if (!value) return;
+    const alias = compact(value);
+    if (alias.length >= 2) aliases.add(alias);
+  };
+
   for (const part of placeName.split(/[|/·]/)) {
-    const value = compact(part);
-    if (value.length >= 2) aliases.add(value);
+    addAlias(part);
+    addAlias(withoutTrailingEnglishParenthetical(part));
   }
-  const full = compact(placeName);
-  if (full.length >= 2) aliases.add(full);
+  addAlias(placeName);
+  addAlias(withoutTrailingEnglishParenthetical(placeName));
   return Array.from(aliases);
 }
 

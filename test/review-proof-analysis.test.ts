@@ -251,6 +251,27 @@ ${draft}
     });
   });
 
+  it("ignores a trailing English parenthetical label when matching a Korean place name", () => {
+    const draft = "남친이랑 데이트 코스로 갔는데 분위기 좋고 탕수육도 바삭했어요.";
+    const extracted = `
+리뷰
+차이들 안녕인사동점
+${draft}
+`;
+
+    const result = decideReviewProofAnalysis({
+      draftText: draft,
+      extractedText: extracted,
+      expectedPlaceName: "차이들 안녕인사동점 (CHAIDLE - Korean Chinese Food)",
+      provider: "test",
+    });
+
+    expect(result).toMatchObject({
+      status: "AUTO_APPROVE",
+      checks: { placeName: "PASS" },
+    });
+  });
+
   it("auto-approves an 80%+ matching proof even when rating and recency OCR metadata are unavailable", () => {
     const draft = "생성 원고와 동일한 리뷰 문구입니다.";
     const extracted = `
