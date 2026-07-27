@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/db";
+import { decideReviewProofAnalysis } from "@/lib/domain/review-proof-analysis";
+import { submitReviewerCampaignProof } from "@/lib/domain/reviewer-campaigns";
 
 const CAMPAIGN_ASSIGNMENT_SOURCE = "CAMPAIGN_ASSIGNMENT";
 
@@ -176,4 +178,119 @@ export async function listAdminCampaignReviewSubmissions(
       totalPages: totalItems ? Math.ceil(totalItems / pageSize) : 0,
     },
   };
+}
+
+function storedExtractedText(receipt: {
+  reviewProofExtractedText: string | null;
+  reviewProofAnalysisJson: string | null;
+}) {
+  if (receipt.reviewProofExtractedText?.trim()) return receipt.reviewProofExtractedText;
+  if (!receipt.reviewProofAnalysisJson) return "";
+  try {
+    const parsed = JSON.parse(receipt.reviewProofAnalysisJson) as { extractedText?: unknown };
+    return typeof parsed.extractedText === "string" ? parsed.extractedText : "";
+  } catch {
+    return "";
+  }
+}
+
+export async function reanalyzeAdminCampaignReviewSubmissions(campaignId: string) {
+  const cleanCampaignId = campaignId.trim();
+  if (!cleanCampaignId) {
+    throw new AdminCampaignReviewSubmissionError(
+      "INVALID_CAMPAIGN",
+      "캠페인 정보를 확인해 주세요.",
+    );
+  }
+
+  const campaign = await prisma.campaign.findUnique({
+    where: { id: cleanCampaignId },
+    select: { id: true, business: { select: { name: true } } },
+  });
+  if (!campaign) {
+    throw new AdminCampaignReviewSubmissionError(
+      "CAMPAIGN_NOT_FOUND",
+      "캠페인을 찾을 수 없습니다.",
+      404,
+    );
+  }
+
+  const receipts = await prisma.receipt.findMany({
+    where: {
+      campaignId: cleanCampaignId,
+      source: CAMPAIGN_ASSIGNMENT_SOURCE,
+      status: "REVIEW_SUBMITTED",
+      reviewProofAnalysisStatus: "MANUAL_REVIEW",
+      reviewProofImageUrl: { not: null },
+    },
+    orderBy: { reviewProofSubmittedAt: "asc" },
+    select: {
+      id: true,
+      reviewerId: true,
+      createdAt: true,
+      reviewDraftText: true,
+      reviewProofImageUrl: true,
+      reviewProofMimeType: true,
+      reviewProofOriginalName: true,
+      reviewProofSubmittedAt: true,
+      reviewProofExtractedText: true,
+      reviewProofAnalysisJson: true,
+    },
+  });
+
+  const summary = { total: receipts.length, autoApproved: 0, stillPending: 0, skipped: 0 };
+  for (const receipt of receipts) {
+    const draftText = receipt.reviewDraftText?.trim() ?? "";
+    const extractedText = storedExtractedText(receipt);
+    if (
+      draftText.length < 10 ||
+      !extractedText.trim() ||
+      !receipt.reviewProofImageUrl ||
+      !receipt.reviewProofMimeType ||
+      !receipt.reviewProofOriginalName
+    ) {
+      summary.skipped += 1;
+      continue;
+    }
+
+    const analysis = decideReviewProofAnalysis({
+      draftText,
+      extractedText,
+      expectedPlaceName: campaign.business.name,
+      provider: "stored-ocr-reanalysis",
+    });
+
+    if (analysis.status !== "AUTO_APPROVE") {
+      summary.stillPending += 1;
+      if (analysis.status === "MANUAL_REVIEW") {
+        await prisma.receipt.updateMany({
+          where: {
+            id: receipt.id,
+            status: "REVIEW_SUBMITTED",
+            reviewProofAnalysisStatus: "MANUAL_REVIEW",
+          },
+          data: {
+            reviewProofSimilarity: analysis.similarity,
+            reviewProofAnalysisReason: analysis.reason,
+            reviewProofAnalysisProvider: analysis.provider,
+            reviewProofAnalysisJson: JSON.stringify(analysis).slice(0, 4000),
+          },
+        });
+      }
+      continue;
+    }
+
+    await submitReviewerCampaignProof(receipt.reviewerId, receipt.id, {
+      screenshotUrl: receipt.reviewProofImageUrl,
+      screenshotMimeType: receipt.reviewProofMimeType,
+      screenshotOriginalName: receipt.reviewProofOriginalName,
+      draftText,
+      analysis,
+      reprocess: true,
+      submittedAt: receipt.reviewProofSubmittedAt ?? receipt.createdAt,
+    });
+    summary.autoApproved += 1;
+  }
+
+  return summary;
 }

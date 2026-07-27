@@ -128,6 +128,7 @@ export function AdminCampaignReviewSubmissions({
   const [result, setResult] = useState<SubmissionsResponse | null>(null);
   const [items, setItems] = useState<SubmissionItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [reanalyzing, setReanalyzing] = useState(false);
   const [mutatingId, setMutatingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -275,6 +276,44 @@ export function AdminCampaignReviewSubmissions({
     void persistDecision(rejectionTarget, "reject", { reasonCode, customReason });
   };
 
+  const reanalyzePending = async () => {
+    if (readOnly || !result?.summary.pending) return;
+    if (
+      !window.confirm(
+        `확인 필요 ${result.summary.pending}건을 최신 AI 기준으로 다시 검수할까요? 통과한 건은 포인트가 자동 적립됩니다.`,
+      )
+    ) return;
+
+    setReanalyzing(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const response = await fetch(
+        `/api/admin/campaigns/${encodeURIComponent(campaignId)}/review-submissions/reanalyze`,
+        { method: "POST" },
+      );
+      const data = (await response.json().catch(() => null)) as {
+        total?: number;
+        autoApproved?: number;
+        stillPending?: number;
+        skipped?: number;
+        error?: { message?: string };
+      } | null;
+      if (!response.ok) {
+        throw new Error(data?.error?.message || "AI 일괄 재검수를 완료하지 못했습니다.");
+      }
+      setMessage(
+        `AI 재검수 ${data?.total ?? 0}건 완료 · 자동 승인 ${data?.autoApproved ?? 0}건 · 확인 필요 유지 ${data?.stillPending ?? 0}건 · 건너뜀 ${data?.skipped ?? 0}건`,
+      );
+      await load(1);
+      router.refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "AI 일괄 재검수를 완료하지 못했습니다.");
+    } finally {
+      setReanalyzing(false);
+    }
+  };
+
   return (
     <>
       <button
@@ -352,7 +391,19 @@ export function AdminCampaignReviewSubmissions({
                     </button>
                   ))}
                 </div>
-                <p className="text-xs text-ink-weak">불러온 이미지 {items.length}건</p>
+                <div className="flex items-center gap-3">
+                  {!readOnly && result?.summary.pending ? (
+                    <button
+                      type="button"
+                      onClick={() => void reanalyzePending()}
+                      disabled={reanalyzing}
+                      className="h-9 rounded-[9px] border border-brand/25 bg-brand-tint px-3 text-xs font-bold text-brand disabled:opacity-45"
+                    >
+                      {reanalyzing ? "AI 재검수 중…" : `AI 일괄 재검수 ${result.summary.pending}건`}
+                    </button>
+                  ) : null}
+                  <p className="text-xs text-ink-weak">불러온 이미지 {items.length}건</p>
+                </div>
               </div>
 
               <div aria-live="polite">
