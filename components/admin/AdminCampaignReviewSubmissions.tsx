@@ -55,6 +55,23 @@ const ANALYSIS_LABELS: Record<string, string> = {
   UNAVAILABLE: "AI 이미지 인식 불가",
 };
 
+const ANALYSIS_REASON_LABELS: Record<string, string> = {
+  DRAFT_TEXT_MATCHED: "원고 내용 일치",
+  DRAFT_TEXT_MISMATCHED: "원고 내용 불일치",
+  SIMILARITY_REVIEW_REQUIRED: "원고 유사도 추가 확인 필요",
+  PLACE_NAME_NOT_FOUND: "매장명 확인 불가",
+  RATING_NOT_FIVE_STAR: "별점 5점 확인 불가",
+  REVIEW_TOO_OLD: "최근 작성 리뷰가 아님",
+  REVIEW_METADATA_UNCERTAIN: "리뷰 정보 확인 필요",
+  OCR_TEXT_UNAVAILABLE: "리뷰 텍스트 인식 불가",
+  OCR_FAILED: "이미지 문자 인식 실패",
+};
+
+function analysisReasonLabel(reason: string | null) {
+  if (!reason) return null;
+  return ANALYSIS_REASON_LABELS[reason] ?? "추가 확인 필요";
+}
+
 function StatusBadge({ status }: { status: DecisionStatus }) {
   return (
     <span
@@ -70,11 +87,12 @@ function AnalysisText({ item }: { item: SubmissionItem }) {
     item.similarity === null ? null : `${(item.similarity * 100).toFixed(1)}%`;
   const placeNameMatched = item.placeNameCheck === "PASS";
   const isAutoApprovedSimilarity = item.similarity !== null && item.similarity >= 0.8 && placeNameMatched;
+  const reasonLabel = analysisReasonLabel(item.analysisReason);
   return (
     <div className="mt-1 text-[11px] leading-5 text-ink-weak">
       <p>
         {item.analysisStatus
-          ? ANALYSIS_LABELS[item.analysisStatus] ?? item.analysisStatus
+          ? ANALYSIS_LABELS[item.analysisStatus] ?? "AI 분석 결과 확인 필요"
           : "AI 분석 결과 없음"}
         {similarity ? ` · 유사도 ${similarity}` : ""}
         {isAutoApprovedSimilarity ? (
@@ -88,7 +106,7 @@ function AnalysisText({ item }: { item: SubmissionItem }) {
             </svg>
           </span>
         ) : null}
-        {item.analysisReason ? ` · ${item.analysisReason}` : ""}
+        {reasonLabel ? ` · ${reasonLabel}` : ""}
       </p>
       <p className={`inline-flex items-center gap-1 font-semibold ${placeNameMatched ? "text-emerald-700" : "text-danger"}`}>
         매장명 검수 : {placeNameMatched ? "일치" : "확인불가"}
@@ -113,18 +131,20 @@ export function AdminCampaignReviewSubmissions({
   campaignId,
   businessName,
   initialCount,
+  initialPassedCount,
   readOnly = false,
 }: {
   campaignId: string;
   businessName: string;
   initialCount: number;
+  initialPassedCount: number;
   readOnly?: boolean;
 }) {
   const router = useRouter();
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const enlargedCloseButtonRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
-  const [view, setView] = useState<ViewMode>("THUMBNAIL");
+  const [view, setView] = useState<ViewMode>("TABLE");
   const [result, setResult] = useState<SubmissionsResponse | null>(null);
   const [items, setItems] = useState<SubmissionItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -139,6 +159,7 @@ export function AdminCampaignReviewSubmissions({
   const [customReason, setCustomReason] = useState("");
   const [rejectionError, setRejectionError] = useState<string | null>(null);
   const displayCount = result?.summary.total ?? initialCount;
+  const displayPassedCount = result?.summary.passed ?? initialPassedCount;
 
   useEffect(() => {
     if (!open) return;
@@ -203,7 +224,7 @@ export function AdminCampaignReviewSubmissions({
 
   const openSubmissions = () => {
     setOpen(true);
-    setView("THUMBNAIL");
+    setView("TABLE");
     setItems([]);
     setResult(null);
     setMessage(null);
@@ -317,10 +338,12 @@ export function AdminCampaignReviewSubmissions({
         type="button"
         onClick={openSubmissions}
         disabled={initialCount === 0}
-        title={`${businessName} 제출 리뷰 이미지 ${initialCount}건`}
-        className="h-9 whitespace-nowrap rounded-[9px] border border-brand/20 bg-brand-tint px-3 text-xs font-bold text-brand transition hover:border-brand/40 hover:bg-blue-100 disabled:cursor-not-allowed disabled:border-line disabled:bg-surface-alt disabled:text-ink-weak"
+        title={`${businessName} 리뷰 검수 ${displayPassedCount}/${displayCount} · 리뷰 제출함 열기`}
+        aria-label={`${businessName} 리뷰 검수 ${displayPassedCount}/${displayCount}, 리뷰 제출함 열기`}
+        className="group inline-flex h-9 min-w-20 items-center justify-center gap-1.5 whitespace-nowrap rounded-[9px] border border-brand/25 bg-brand-tint px-3 text-sm font-black tabular-nums text-brand transition hover:border-brand/50 hover:bg-blue-100 hover:shadow-sm disabled:cursor-not-allowed disabled:border-line disabled:bg-surface-alt disabled:text-ink-weak"
       >
-        리뷰제출함 {displayCount}건
+        {displayPassedCount}/{displayCount}
+        <span aria-hidden="true" className="text-xs transition group-hover:translate-x-0.5">›</span>
       </button>
 
       {open ? (
@@ -373,7 +396,7 @@ export function AdminCampaignReviewSubmissions({
 
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-b border-line pb-3">
                 <div className="flex gap-2" role="tablist" aria-label="리뷰 제출함 보기 방식">
-                  {(["THUMBNAIL", "TABLE"] as const).map((mode) => (
+                  {(["TABLE", "THUMBNAIL"] as const).map((mode) => (
                     <button
                       key={mode}
                       type="button"
