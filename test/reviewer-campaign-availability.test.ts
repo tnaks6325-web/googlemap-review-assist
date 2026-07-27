@@ -8,6 +8,7 @@ import {
   completeReviewerCampaignAssignment,
   getReviewerCampaignAvailability,
   getReviewerCampaignPlaceReveal,
+  rejectReviewerCampaignProof,
   toConcealedReviewerAssignment,
 } from "@/lib/domain/reviewer-campaigns";
 
@@ -571,6 +572,103 @@ describe("reviewer campaign availability", () => {
     ).toEqual({
       reviewReviewedBy: "admin:manual-review",
       reviewReviewNote: "육안 검수 결과 정상 리뷰로 확인했습니다.",
+    });
+  });
+
+  it("stores the selected rejection reason and notifies the reviewer", async () => {
+    const reviewer = await createReviewer();
+    await createCampaign(`google-place-reject-reason-${uniq()}`);
+    const assigned = await assignReviewerCampaign(reviewer.id);
+    await prisma.receipt.update({
+      where: { id: assigned.assignmentId! },
+      data: {
+        status: "REVIEW_SUBMITTED",
+        reviewProofImageUrl: "/uploads/review-proofs/wrong-store.png",
+        reviewProofSubmittedAt: new Date(),
+      },
+    });
+
+    await rejectReviewerCampaignProof(
+      assigned.assignmentId!,
+      "admin:manual-review",
+      "타매장 리뷰가 제출되었음",
+    );
+
+    await expect(
+      prisma.receipt.findUnique({
+        where: { id: assigned.assignmentId! },
+        select: { status: true, reviewReviewNote: true },
+      }),
+    ).resolves.toEqual({
+      status: "REJECTED",
+      reviewReviewNote: "타매장 리뷰가 제출되었음",
+    });
+    await expect(
+      prisma.reviewerNotification.findFirst({
+        where: { reviewerId: reviewer.id, type: "REVIEW_PROOF_REJECTED" },
+        orderBy: { createdAt: "desc" },
+        select: { body: true },
+      }),
+    ).resolves.toEqual({ body: "타매장 리뷰가 제출되었음" });
+  });
+
+  it("lets the assigned reviewer replace a rejected proof and returns it to review", async () => {
+    const reviewer = await createReviewer();
+    await createCampaign(`google-place-resubmission-${uniq()}`);
+    const assigned = await assignReviewerCampaign(reviewer.id);
+    const draftText = "테스트 매장을 방문했고 친절한 안내와 깔끔한 공간이 인상적이었습니다.";
+    await prisma.receipt.update({
+      where: { id: assigned.assignmentId! },
+      data: {
+        status: "REJECTED",
+        reviewDraftText: draftText,
+        reviewDraftVersion: 1,
+        reviewProofImageUrl: "/uploads/review-proofs/rejected-old.png",
+        reviewProofSubmittedAt: new Date("2026-07-24T01:00:00.000Z"),
+        reviewReviewedAt: new Date("2026-07-24T02:00:00.000Z"),
+        reviewReviewedBy: "admin:manual-review",
+        reviewReviewNote: "타매장 리뷰가 제출되었음",
+      },
+    });
+
+    const submitted = await submitReviewerCampaignProof(reviewer.id, assigned.assignmentId!, {
+      screenshotUrl: "/uploads/review-proofs/replacement.png",
+      screenshotMimeType: "image/png",
+      screenshotOriginalName: "replacement.png",
+      draftText,
+      resubmissionNote: "올바른 매장 리뷰 캡처로 교체했습니다.",
+      analysis: {
+        status: "MANUAL_REVIEW",
+        provider: "test-ai",
+        extractedText: draftText,
+        similarity: 0.92,
+        reason: "REVIEW_METADATA_UNCERTAIN",
+        confidence: 0.9,
+      },
+    });
+
+    expect(submitted).toMatchObject({
+      assignmentId: assigned.assignmentId,
+      status: "REVIEW_SUBMITTED",
+      pendingApproval: true,
+    });
+    await expect(
+      prisma.receipt.findUnique({
+        where: { id: assigned.assignmentId! },
+        select: {
+          status: true,
+          reviewProofImageUrl: true,
+          reviewReviewedAt: true,
+          reviewReviewedBy: true,
+          reviewReviewNote: true,
+        },
+      }),
+    ).resolves.toEqual({
+      status: "REVIEW_SUBMITTED",
+      reviewProofImageUrl: "/uploads/review-proofs/replacement.png",
+      reviewReviewedAt: null,
+      reviewReviewedBy: null,
+      reviewReviewNote: "보완 제출: 올바른 매장 리뷰 캡처로 교체했습니다.",
     });
   });
 

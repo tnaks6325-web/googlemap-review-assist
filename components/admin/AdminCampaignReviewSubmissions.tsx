@@ -3,6 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatAdminDateTime } from "@/lib/admin-date-format";
+import {
+  REVIEW_REJECTION_REASON_OPTIONS,
+  type ReviewRejectionReasonCode,
+} from "@/lib/review-rejection";
 
 type DecisionStatus = "PENDING" | "PASSED" | "FAILED";
 type ViewMode = "THUMBNAIL" | "TABLE";
@@ -126,6 +130,10 @@ export function AdminCampaignReviewSubmissions({
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [enlarged, setEnlarged] = useState<SubmissionItem | null>(null);
+  const [rejectionTarget, setRejectionTarget] = useState<SubmissionItem | null>(null);
+  const [reasonCode, setReasonCode] = useState<ReviewRejectionReasonCode>("OTHER_STORE");
+  const [customReason, setCustomReason] = useState("");
+  const [rejectionError, setRejectionError] = useState<string | null>(null);
   const displayCount = result?.summary.total ?? initialCount;
 
   useEffect(() => {
@@ -144,7 +152,8 @@ export function AdminCampaignReviewSubmissions({
     if (!open) return;
     const handleKeyboard = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        if (enlarged) setEnlarged(null);
+        if (rejectionTarget) setRejectionTarget(null);
+        else if (enlarged) setEnlarged(null);
         else setOpen(false);
         return;
       }
@@ -161,7 +170,7 @@ export function AdminCampaignReviewSubmissions({
     };
     document.addEventListener("keydown", handleKeyboard);
     return () => document.removeEventListener("keydown", handleKeyboard);
-  }, [enlarged, items, open]);
+  }, [enlarged, items, open, rejectionTarget]);
 
   useEffect(() => {
     if (enlarged) enlargedCloseButtonRef.current?.focus();
@@ -194,18 +203,19 @@ export function AdminCampaignReviewSubmissions({
     setResult(null);
     setMessage(null);
     setEnlarged(null);
+    setRejectionTarget(null);
+    setRejectionError(null);
     void load(1);
   };
 
-  const decide = async (item: SubmissionItem, action: "approve" | "reject") => {
-    const prompt =
-      action === "approve"
-        ? "이 리뷰 캡처를 육안 검수 통과로 승인하고 포인트를 적립할까요?"
-        : "이 리뷰 캡처를 검수 미통과로 확정할까요?";
-    if (!window.confirm(prompt)) return;
-
+  const persistDecision = async (
+    item: SubmissionItem,
+    action: "approve" | "reject",
+    rejection?: { reasonCode: ReviewRejectionReasonCode; customReason: string },
+  ) => {
     setMutatingId(item.id);
     setError(null);
+    setRejectionError(null);
     setMessage(null);
     try {
       const response = await fetch(`/api/admin/review-proofs/${encodeURIComponent(item.id)}`, {
@@ -213,10 +223,9 @@ export function AdminCampaignReviewSubmissions({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           action,
-          note:
-            action === "approve"
-              ? "관리자 육안 검수 결과 정상 리뷰로 확인했습니다."
-              : "관리자 육안 검수 결과 검수 미통과로 확정했습니다.",
+          ...(action === "approve"
+            ? { note: "관리자 육안 검수 결과 정상 리뷰로 확인했습니다." }
+            : rejection),
         }),
       });
       const data = (await response.json().catch(() => null)) as {
@@ -231,12 +240,36 @@ export function AdminCampaignReviewSubmissions({
           : "검수 미통과로 확정했습니다.",
       );
       await load(1);
+      setRejectionTarget(null);
       router.refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "검수 결과를 저장하지 못했습니다.");
+      const message = cause instanceof Error ? cause.message : "검수 결과를 저장하지 못했습니다.";
+      if (action === "reject") setRejectionError(message);
+      else setError(message);
     } finally {
       setMutatingId(null);
     }
+  };
+
+  const decide = (item: SubmissionItem, action: "approve" | "reject") => {
+    if (action === "reject") {
+      setReasonCode("OTHER_STORE");
+      setCustomReason("");
+      setRejectionError(null);
+      setRejectionTarget(item);
+      return;
+    }
+    if (!window.confirm("이 리뷰 캡처를 육안 검수 통과로 승인하고 포인트를 적립할까요?")) return;
+    void persistDecision(item, "approve");
+  };
+
+  const confirmRejection = () => {
+    if (!rejectionTarget) return;
+    if (reasonCode === "CUSTOM" && !customReason.trim()) {
+      setRejectionError("상세 반려 사유를 입력해 주세요.");
+      return;
+    }
+    void persistDecision(rejectionTarget, "reject", { reasonCode, customReason });
   };
 
   return (
@@ -443,6 +476,104 @@ export function AdminCampaignReviewSubmissions({
                 </div>
               );
             })()
+          ) : null}
+
+          {rejectionTarget ? (
+            <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/60 p-4">
+              <section
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="review-rejection-title"
+                className="w-full max-w-md rounded-[16px] border border-line bg-surface p-5 shadow-2xl"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-bold text-danger">검수 미통과</p>
+                    <h4 id="review-rejection-title" className="mt-1 text-lg font-bold text-ink">
+                      반려 사유 선택
+                    </h4>
+                    <p className="mt-1 text-xs text-ink-weak">
+                      선택한 사유는 {rejectionTarget.reviewerLabel} 리뷰어에게 표시됩니다.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setRejectionTarget(null)}
+                    aria-label="반려 사유 선택 닫기"
+                    className="inline-flex size-8 items-center justify-center rounded-[8px] border border-line text-lg text-ink-weak"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <fieldset className="mt-5 space-y-2">
+                  <legend className="sr-only">반려 사유</legend>
+                  {REVIEW_REJECTION_REASON_OPTIONS.map((option) => (
+                    <label
+                      key={option.code}
+                      className={`flex cursor-pointer items-center gap-3 rounded-[10px] border px-4 py-3 text-sm font-semibold ${
+                        reasonCode === option.code
+                          ? "border-brand bg-brand-tint text-brand"
+                          : "border-line text-ink-sub"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name={`rejection-reason-${rejectionTarget.id}`}
+                        value={option.code}
+                        checked={reasonCode === option.code}
+                        onChange={() => {
+                          setReasonCode(option.code);
+                          setRejectionError(null);
+                        }}
+                        className="size-4 accent-brand"
+                      />
+                      {option.label}
+                    </label>
+                  ))}
+                </fieldset>
+
+                <label className="mt-4 block text-sm font-bold text-ink" htmlFor="custom-rejection-reason">
+                  상세 반려 사유
+                </label>
+                <textarea
+                  id="custom-rejection-reason"
+                  value={customReason}
+                  onChange={(event) => {
+                    setCustomReason(event.target.value);
+                    setRejectionError(null);
+                  }}
+                  maxLength={500}
+                  disabled={reasonCode !== "CUSTOM"}
+                  placeholder="리뷰어가 이해하기 쉽도록 보완할 내용을 입력해 주세요."
+                  className="mt-2 min-h-24 w-full resize-y rounded-[10px] border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand disabled:bg-surface-alt disabled:text-ink-weak"
+                />
+                {rejectionError ? (
+                  <p className="mt-2 text-xs font-semibold text-danger" role="alert">
+                    {rejectionError}
+                  </p>
+                ) : null}
+
+                <div className="mt-5 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRejectionTarget(null)}
+                    disabled={mutatingId === rejectionTarget.id}
+                    className="h-10 rounded-[9px] border border-line px-4 text-sm font-bold text-ink-sub"
+                  >
+                    취소
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmRejection}
+                    disabled={mutatingId === rejectionTarget.id}
+                    className="h-10 rounded-[9px] bg-danger px-4 text-sm font-bold text-white disabled:opacity-45"
+                  >
+                    {mutatingId === rejectionTarget.id ? "처리 중…" : "반려 확정"}
+                  </button>
+                </div>
+              </section>
+            </div>
           ) : null}
         </div>
       ) : null}

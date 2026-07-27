@@ -202,6 +202,55 @@ ${draft}
     });
   });
 
+  it.each([
+    "천안바른마취통증의학",
+    "천안바른마취통증",
+  ])("accepts a sufficiently long OCR-truncated place name: %s", (visiblePlaceName) => {
+    const draft = "병원에 방문했는데 원장님과 간호사분들이 친절하고 깔끔해서 만족했습니다.";
+    const extracted = `
+리뷰
+${visiblePlaceName}...
+${draft}
+`;
+
+    const result = decideReviewProofAnalysis({
+      draftText: draft,
+      extractedText: extracted,
+      expectedPlaceName: "천안바른마취통증의학과",
+      provider: "test",
+    });
+
+    expect(result).toMatchObject({
+      status: "AUTO_APPROVE",
+      checks: { placeName: "PASS" },
+    });
+  });
+
+  it.each([
+    "천안바른",
+    "천안바른정형외과",
+  ])("does not accept an ambiguous or divergent place-name prefix: %s", (visiblePlaceName) => {
+    const draft = "병원에 방문했는데 원장님과 간호사분들이 친절하고 깔끔해서 만족했습니다.";
+    const extracted = `
+리뷰
+${visiblePlaceName}
+${draft}
+`;
+
+    const result = decideReviewProofAnalysis({
+      draftText: draft,
+      extractedText: extracted,
+      expectedPlaceName: "천안바른마취통증의학과",
+      provider: "test",
+    });
+
+    expect(result).toMatchObject({
+      status: "MANUAL_REVIEW",
+      reason: "PLACE_NAME_NOT_FOUND",
+      checks: { placeName: "FAIL" },
+    });
+  });
+
   it("auto-approves an 80%+ matching proof even when rating and recency OCR metadata are unavailable", () => {
     const draft = "생성 원고와 동일한 리뷰 문구입니다.";
     const extracted = `

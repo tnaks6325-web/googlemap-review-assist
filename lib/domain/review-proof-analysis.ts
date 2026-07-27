@@ -29,6 +29,9 @@ export interface ReviewProofAnalysisInput {
 const DEFAULT_AUTO_APPROVE_THRESHOLD = 0.8;
 const DEFAULT_AUTO_REJECT_THRESHOLD = 0.18;
 const DEFAULT_MAX_REVIEW_AGE_DAYS = 7;
+const MIN_TRUNCATED_PLACE_NAME_LENGTH = 8;
+const MAX_TRUNCATED_PLACE_NAME_CHARS = 3;
+const MIN_TRUNCATED_PLACE_NAME_RATIO = 0.7;
 const READ_MORE_PATTERN = /더\s*보기|more/iu;
 const VISIBLE_TEXT_BEFORE_READ_MORE_CHARS = 600;
 const DRAFT_PREFIX_COMPACT_LENGTHS = [40, 70, 100, 130];
@@ -65,6 +68,24 @@ function placeNameAliases(placeName: string) {
   const full = compact(placeName);
   if (full.length >= 2) aliases.add(full);
   return Array.from(aliases);
+}
+
+function matchesPlaceNameAlias(candidate: string, alias: string) {
+  if (candidate.includes(alias)) return true;
+
+  const minimumPrefixLength = Math.max(
+    MIN_TRUNCATED_PLACE_NAME_LENGTH,
+    alias.length - MAX_TRUNCATED_PLACE_NAME_CHARS,
+    Math.ceil(alias.length * MIN_TRUNCATED_PLACE_NAME_RATIO),
+  );
+
+  if (minimumPrefixLength >= alias.length) return false;
+
+  for (let length = alias.length - 1; length >= minimumPrefixLength; length -= 1) {
+    if (candidate.includes(alias.slice(0, length))) return true;
+  }
+
+  return false;
 }
 
 function ngrams(text: string, n = 2) {
@@ -182,7 +203,7 @@ function checkPlaceName(expectedPlaceName: string | undefined, candidateText: st
   const expected = expectedPlaceName?.trim();
   if (!expected) return "UNKNOWN" satisfies ReviewProofCheckStatus;
   const candidate = compact(candidateText);
-  return placeNameAliases(expected).some((alias) => candidate.includes(alias))
+  return placeNameAliases(expected).some((alias) => matchesPlaceNameAlias(candidate, alias))
     ? ("PASS" satisfies ReviewProofCheckStatus)
     : ("FAIL" satisfies ReviewProofCheckStatus);
 }

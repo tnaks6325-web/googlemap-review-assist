@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { RandomCampaignEntryButton } from "@/components/campaign/RandomCampaignEntryButton";
+import { RejectedReviewResubmission } from "@/components/campaign/RejectedReviewResubmission";
 import { Card } from "@/components/ui";
 import type {
   ReviewerHomeAccount,
@@ -121,11 +122,13 @@ function ParticipationCard({ item }: { item: ReviewerHomeParticipationItem }) {
         </span>
       </div>
 
-      {item.status === "REJECTED" && item.reviewNote && (
-        <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs leading-5 text-danger">
-          {item.reviewNote}
-        </p>
-      )}
+      {item.status === "REJECTED" ? (
+        <RejectedReviewResubmission
+          assignmentId={item.id}
+          rejectionReason={item.reviewNote}
+          hasProofImage={item.hasProofImage}
+        />
+      ) : null}
 
       <div className="mt-4 flex items-center justify-between border-t border-line pt-4 text-sm">
         <span className="text-ink-weak">{status.pointLabel}</span>

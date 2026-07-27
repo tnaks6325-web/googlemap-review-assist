@@ -30,6 +30,14 @@ export async function POST(req: Request) {
   try {
     const form = await req.formData();
     const assignmentId = String(form.get("assignmentId") ?? "");
+    const rawResubmissionNote = form.get("resubmissionNote");
+    if (rawResubmissionNote !== null && typeof rawResubmissionNote !== "string") {
+      return err("INVALID_RESUBMISSION_NOTE", "보완 내용을 확인해 주세요.", 400);
+    }
+    const resubmissionNote = rawResubmissionNote?.trim() ?? "";
+    if (resubmissionNote.length > 500) {
+      return err("INVALID_RESUBMISSION_NOTE", "보완 내용은 500자 이내로 입력해 주세요.", 400);
+    }
     const screenshot = form.get("screenshot");
     if (!(screenshot instanceof File)) {
       return err("MISSING_SCREENSHOT", "구글맵 리뷰 캡처본을 첨부해 주세요.", 400);
@@ -73,6 +81,7 @@ export async function POST(req: Request) {
       screenshotOriginalName: screenshot.name || "review-proof",
       draftText: expectedDraftText,
       analysis,
+      resubmissionNote,
     });
     uploadedProofUrl = null;
     if (analysis.status === "UNAVAILABLE") {
