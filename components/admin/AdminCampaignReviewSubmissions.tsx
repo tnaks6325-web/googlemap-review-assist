@@ -62,12 +62,24 @@ function StatusBadge({ status }: { status: DecisionStatus }) {
 function AnalysisText({ item }: { item: SubmissionItem }) {
   const similarity =
     item.similarity === null ? null : `${(item.similarity * 100).toFixed(1)}%`;
+  const isAutoApprovedSimilarity = item.similarity !== null && item.similarity >= 0.8;
   return (
     <p className="mt-1 text-[11px] leading-5 text-ink-weak">
       {item.analysisStatus
         ? ANALYSIS_LABELS[item.analysisStatus] ?? item.analysisStatus
         : "AI 분석 결과 없음"}
       {similarity ? ` · 유사도 ${similarity}` : ""}
+      {isAutoApprovedSimilarity ? (
+        <span
+          className="ml-1 inline-flex align-text-bottom text-emerald-600"
+          title="유사도 80% 이상: 자동 승인 대상"
+          aria-label="유사도 80% 이상: 자동 승인 대상"
+        >
+          <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 fill-current">
+            <path d="M8 1.25a6.75 6.75 0 1 0 0 13.5 6.75 6.75 0 0 0 0-13.5Zm3.18 4.85-3.7 4.2a.75.75 0 0 1-1.09.03L4.52 8.5a.75.75 0 1 1 1.06-1.06l1.3 1.3 3.18-3.61a.75.75 0 1 1 1.12.99Z" />
+          </svg>
+        </span>
+      ) : null}
       {item.analysisReason ? ` · ${item.analysisReason}` : ""}
     </p>
   );
@@ -110,14 +122,26 @@ export function AdminCampaignReviewSubmissions({
 
   useEffect(() => {
     if (!open) return;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      if (enlarged) setEnlarged(null);
-      else setOpen(false);
+    const handleKeyboard = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        if (enlarged) setEnlarged(null);
+        else setOpen(false);
+        return;
+      }
+      if (!enlarged) return;
+
+      const enlargedIndex = items.findIndex((item) => item.id === enlarged.id);
+      if (event.key === "ArrowLeft" && enlargedIndex > 0) {
+        event.preventDefault();
+        setEnlarged(items[enlargedIndex - 1]);
+      } else if (event.key === "ArrowRight" && enlargedIndex >= 0 && enlargedIndex < items.length - 1) {
+        event.preventDefault();
+        setEnlarged(items[enlargedIndex + 1]);
+      }
     };
-    document.addEventListener("keydown", closeOnEscape);
-    return () => document.removeEventListener("keydown", closeOnEscape);
-  }, [enlarged, open]);
+    document.addEventListener("keydown", handleKeyboard);
+    return () => document.removeEventListener("keydown", handleKeyboard);
+  }, [enlarged, items, open]);
 
   useEffect(() => {
     if (enlarged) enlargedCloseButtonRef.current?.focus();
@@ -340,31 +364,65 @@ export function AdminCampaignReviewSubmissions({
           </section>
 
           {enlarged ? (
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-label="이미지 확대 보기"
-              className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/85 p-4"
-              onMouseDown={(event) => {
-                if (event.currentTarget === event.target) setEnlarged(null);
-              }}
-            >
-              <button
-                ref={enlargedCloseButtonRef}
-                type="button"
-                onClick={() => setEnlarged(null)}
-                aria-label="확대 이미지 닫기"
-                className="absolute right-5 top-5 inline-flex size-10 items-center justify-center rounded-full bg-white text-2xl text-ink shadow-lg"
-              >
-                ×
-              </button>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={enlarged.imageUrl}
-                alt={`${enlarged.reviewerLabel} 제출 리뷰 캡처 확대`}
-                className="max-h-[90vh] max-w-[94vw] rounded-[12px] bg-white object-contain shadow-2xl"
-              />
-            </div>
+            (() => {
+              const enlargedIndex = items.findIndex((item) => item.id === enlarged.id);
+              const previous = enlargedIndex > 0 ? items[enlargedIndex - 1] : null;
+              const next = enlargedIndex >= 0 && enlargedIndex < items.length - 1 ? items[enlargedIndex + 1] : null;
+              const similarity = enlarged.similarity === null ? "-" : `${(enlarged.similarity * 100).toFixed(1)}%`;
+
+              return (
+                <div
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="이미지 확대 보기"
+                  className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/85 p-4"
+                  onMouseDown={(event) => {
+                    if (event.currentTarget === event.target) setEnlarged(null);
+                  }}
+                >
+                  <div className="absolute left-1/2 top-5 flex -translate-x-1/2 items-center gap-3 rounded-full bg-white/95 px-4 py-2 text-xs shadow-lg">
+                    <span className="font-semibold text-ink">제출 리뷰어 · {enlarged.reviewerLabel}</span>
+                    <span className="border-l border-line pl-3 text-ink-sub">AI 유사도 · {similarity}</span>
+                    {enlargedIndex >= 0 ? <span className="text-ink-weak">{enlargedIndex + 1} / {items.length}</span> : null}
+                  </div>
+                  <button
+                    ref={enlargedCloseButtonRef}
+                    type="button"
+                    onClick={() => setEnlarged(null)}
+                    aria-label="확대 이미지 닫기"
+                    className="absolute right-5 top-5 inline-flex size-10 items-center justify-center rounded-full bg-white text-2xl text-ink shadow-lg"
+                  >
+                    ×
+                  </button>
+                  {previous ? (
+                    <button
+                      type="button"
+                      onClick={() => setEnlarged(previous)}
+                      aria-label="이전 제출 이미지 보기"
+                      className="absolute left-5 top-1/2 inline-flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/95 text-2xl text-ink shadow-lg hover:bg-white"
+                    >
+                      ‹
+                    </button>
+                  ) : null}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={enlarged.imageUrl}
+                    alt={`${enlarged.reviewerLabel} 제출 리뷰 캡처 확대`}
+                    className="max-h-[84vh] max-w-[94vw] rounded-[12px] bg-white object-contain shadow-2xl"
+                  />
+                  {next ? (
+                    <button
+                      type="button"
+                      onClick={() => setEnlarged(next)}
+                      aria-label="다음 제출 이미지 보기"
+                      className="absolute right-5 top-1/2 inline-flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/95 text-2xl text-ink shadow-lg hover:bg-white"
+                    >
+                      ›
+                    </button>
+                  ) : null}
+                </div>
+              );
+            })()
           ) : null}
         </div>
       ) : null}
