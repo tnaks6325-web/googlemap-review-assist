@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { checkOrigin } from "@/lib/auth/origin";
 import { getAdminId } from "@/lib/auth/session";
+import { campaignOperationsMutationLockResponse } from "@/lib/admin-campaign-operations-lock";
 import {
   isCampaignReviewDraftIndustry,
   normalizeCampaignDraftGuidance,
@@ -32,6 +33,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ campaign
 
   const adminId = await getAdminId();
   if (!adminId) return err("UNAUTHORIZED", "관리자 로그인이 필요합니다", 401);
+
+  const lockResponse = await campaignOperationsMutationLockResponse();
+  if (lockResponse) return lockResponse;
 
   const ip = clientIp(req);
   if (!(await rateLimit(`admin:draft-guidance:${adminId}:${ip}`, 60, HOUR)).ok) {

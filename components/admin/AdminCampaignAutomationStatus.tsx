@@ -52,7 +52,13 @@ function dateTime(value: string) {
   }).format(new Date(value));
 }
 
-export function AdminCampaignAutomationStatus({ rows }: { rows: AdminCampaignAutomationStatusRow[] }) {
+export function AdminCampaignAutomationStatus({
+  rows,
+  readOnly = false,
+}: {
+  rows: AdminCampaignAutomationStatusRow[];
+  readOnly?: boolean;
+}) {
   const router = useRouter();
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -60,6 +66,7 @@ export function AdminCampaignAutomationStatus({ rows }: { rows: AdminCampaignAut
   if (!rows.length) return null;
 
   const retry = async (campaignId: string) => {
+    if (readOnly) return;
     setRetryingId(campaignId);
     setMessage(null);
     try {
@@ -102,7 +109,7 @@ export function AdminCampaignAutomationStatus({ rows }: { rows: AdminCampaignAut
           </thead>
           <tbody>
             {rows.map((row) => {
-              const retryable = ["NEEDS_REVIEW", "FAILED"].includes(row.status);
+              const retryable = !readOnly && ["NEEDS_REVIEW", "FAILED"].includes(row.status);
               return (
                 <tr key={row.campaignId} className="border-b border-line last:border-b-0">
                   <td className="px-3 py-3"><p className="font-bold text-ink">{row.businessName}</p><p className="mt-0.5 text-ink-weak">{row.campaignName}</p></td>

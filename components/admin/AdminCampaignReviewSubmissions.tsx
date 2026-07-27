@@ -113,10 +113,12 @@ export function AdminCampaignReviewSubmissions({
   campaignId,
   businessName,
   initialCount,
+  readOnly = false,
 }: {
   campaignId: string;
   businessName: string;
   initialCount: number;
+  readOnly?: boolean;
 }) {
   const router = useRouter();
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -213,6 +215,7 @@ export function AdminCampaignReviewSubmissions({
     action: "approve" | "reject",
     rejection?: { reasonCode: ReviewRejectionReasonCode; customReason: string },
   ) => {
+    if (readOnly) return;
     setMutatingId(item.id);
     setError(null);
     setRejectionError(null);
@@ -373,7 +376,7 @@ export function AdminCampaignReviewSubmissions({
                       item={item}
                       busy={mutatingId === item.id}
                       onEnlarge={() => setEnlarged(item)}
-                      onDecide={(action) => void decide(item, action)}
+                      onDecide={readOnly ? undefined : (action) => void decide(item, action)}
                     />
                   ))}
                 </div>
@@ -384,7 +387,7 @@ export function AdminCampaignReviewSubmissions({
                   items={items}
                   mutatingId={mutatingId}
                   onEnlarge={setEnlarged}
-                  onDecide={(item, action) => void decide(item, action)}
+                  onDecide={readOnly ? undefined : (item, action) => void decide(item, action)}
                 />
               ) : null}
 
@@ -615,7 +618,7 @@ function SubmissionCard({
   item: SubmissionItem;
   busy: boolean;
   onEnlarge: () => void;
-  onDecide: (action: "approve" | "reject") => void;
+  onDecide?: (action: "approve" | "reject") => void;
 }) {
   return (
     <article className="overflow-hidden rounded-[13px] border border-line bg-surface">
@@ -643,8 +646,10 @@ function SubmissionCard({
         </div>
         <AnalysisText item={item} />
         {item.reviewNote ? <p className="mt-2 text-[11px] text-ink-weak">검수 메모 · {item.reviewNote}</p> : null}
-        {item.status !== "PASSED" ? (
+        {item.status !== "PASSED" && onDecide ? (
           <DecisionButtons busy={busy} onDecide={onDecide} />
+        ) : item.status !== "PASSED" ? (
+          <p className="mt-3 text-right text-[11px] font-semibold text-ink-weak">자동화 진행 중 · 열람 전용</p>
         ) : (
           <p className="mt-3 text-right text-[11px] font-semibold text-emerald-700">포인트 지급 완료</p>
         )}
@@ -662,7 +667,7 @@ function SubmissionTable({
   items: SubmissionItem[];
   mutatingId: string | null;
   onEnlarge: (item: SubmissionItem) => void;
-  onDecide: (item: SubmissionItem, action: "approve" | "reject") => void;
+  onDecide?: (item: SubmissionItem, action: "approve" | "reject") => void;
 }) {
   return (
     <div className="mt-4 overflow-x-auto rounded-[12px] border border-line">
@@ -701,11 +706,13 @@ function SubmissionTable({
               <td className="max-w-72 px-3 py-3"><AnalysisText item={item} /></td>
               <td className="px-3 py-3"><StatusBadge status={item.status} /></td>
               <td className="px-3 py-3 text-right">
-                {item.status !== "PASSED" ? (
+                {item.status !== "PASSED" && onDecide ? (
                   <DecisionButtons
                     busy={mutatingId === item.id}
                     onDecide={(action) => onDecide(item, action)}
                   />
+                ) : item.status !== "PASSED" ? (
+                  <span className="text-xs font-semibold text-ink-weak">열람 전용</span>
                 ) : (
                   <span className="text-xs font-semibold text-emerald-700">처리 완료</span>
                 )}

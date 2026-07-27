@@ -89,8 +89,10 @@ async function requestBlogReferenceCollection(campaignId: string) {
 
 export function AdminCampaignOperationsTable({
   campaigns,
+  automationLocked = false,
 }: {
   campaigns: AdminCampaignOperationsRow[];
+  automationLocked?: boolean;
 }) {
   const router = useRouter();
   const autoLinkStarted = useRef(false);
@@ -134,6 +136,7 @@ export function AdminCampaignOperationsTable({
   }, []);
 
   useEffect(() => {
+    if (automationLocked) return;
     if (autoLinkStarted.current) return;
     autoLinkStarted.current = true;
 
@@ -149,9 +152,10 @@ export function AdminCampaignOperationsTable({
     return () => {
       cancelled = true;
     };
-  }, [campaigns, router, runNaverAutoLink]);
+  }, [automationLocked, campaigns, router, runNaverAutoLink]);
 
   const runAllAutomation = async () => {
+    if (automationLocked) return;
     const plan = adminCampaignAutomationPlan(campaigns);
     automationRunning.current = true;
     setAutomationLoading(true);
@@ -219,7 +223,7 @@ export function AdminCampaignOperationsTable({
             type="button"
             variant="secondary"
             loading={automationLoading}
-            disabled={automationLoading || campaigns.length === 0}
+            disabled={automationLocked || automationLoading || campaigns.length === 0}
             onClick={runAllAutomation}
             className="h-10 shrink-0 whitespace-nowrap px-3 text-xs"
           >
@@ -308,6 +312,7 @@ export function AdminCampaignOperationsTable({
                     expanded={expanded}
                     sourcePercent={sourcePercent}
                     status={campaignStatus}
+                    automationLocked={automationLocked}
                     onToggle={() =>
                       setExpandedCampaignId(expanded ? null : campaign.id)
                     }
@@ -350,12 +355,14 @@ function CampaignRows({
   expanded,
   sourcePercent,
   status,
+  automationLocked,
   onToggle,
 }: {
   campaign: AdminCampaignOperationsRow;
   expanded: boolean;
   sourcePercent: number;
   status: ReturnType<typeof operationalCampaignStatus>;
+  automationLocked: boolean;
   onToggle: () => void;
 }) {
   const googleMapsUrl = safeGoogleMapsUrl(campaign.googleMapsUrl);
@@ -364,7 +371,7 @@ function CampaignRows({
     <>
       <tr className="group h-[92px]">
         <td className="border-t border-line px-4 py-4 group-first:border-t-0">
-          {googleMapsUrl ? (
+          {googleMapsUrl && !automationLocked ? (
             <a
               href={googleMapsUrl}
               target="_blank"
@@ -464,11 +471,13 @@ function CampaignRows({
               campaignId={campaign.id}
               businessName={campaign.businessName}
               initialMetrics={campaign.preparedDraftMetrics}
+              readOnly={automationLocked}
             />
             <AdminCampaignReviewSubmissions
               campaignId={campaign.id}
               businessName={campaign.businessName}
               initialCount={campaign.submittedReviewCount}
+              readOnly={automationLocked}
             />
             <button
               type="button"
@@ -485,7 +494,7 @@ function CampaignRows({
       {expanded ? (
         <tr id={`campaign-detail-${campaign.id}`}>
           <td colSpan={9} className="border-t border-line bg-[#f8fbff] p-4">
-            <AdminCampaignRewardPoints
+            {automationLocked ? <p className="rounded-[10px] border border-brand/20 bg-brand-tint px-4 py-3 text-sm font-semibold text-ink-sub">자동화 진행 중에는 상세 정보만 확인할 수 있습니다. 원고보관함·리뷰제출함의 상세 열람은 계속 가능합니다.</p> : <><AdminCampaignRewardPoints
               campaignId={campaign.id}
               initialRewardPoints={campaign.rewardPoints}
             />
@@ -506,6 +515,7 @@ function CampaignRows({
                 initialGuidance={campaign.draftGuidance}
               />
             </div>
+            </>}
           </td>
         </tr>
       ) : null}

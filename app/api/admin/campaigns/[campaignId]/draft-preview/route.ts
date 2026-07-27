@@ -1,5 +1,6 @@
 import { checkOrigin } from "@/lib/auth/origin";
 import { getAdminId } from "@/lib/auth/session";
+import { campaignOperationsMutationLockResponse } from "@/lib/admin-campaign-operations-lock";
 import {
   CampaignReviewDraftError,
   generateCampaignReviewDraftPreview,
@@ -41,6 +42,9 @@ export async function POST(
 
   const adminId = await getAdminId();
   if (!adminId) return err("UNAUTHORIZED", "관리자 로그인이 필요해요", 401);
+
+  const lockResponse = await campaignOperationsMutationLockResponse();
+  if (lockResponse) return lockResponse;
 
   const ip = clientIp(req);
   if (!(await rateLimit(`admin:draft-preview:${adminId}:${ip}`, 30, HOUR)).ok) {
