@@ -4,6 +4,7 @@ import {
   reanalyzeAdminCampaignReviewSubmissions,
   countAdminCampaignReviewSubmissions,
   listAdminCampaignReviewSubmissions,
+  summarizeAdminCampaignReviewSubmissions,
 } from "@/lib/domain/admin-campaign-review-submissions";
 
 let sequence = 0;
@@ -112,6 +113,23 @@ describe("admin campaign review submissions", () => {
 
     expect(counts.get(first.campaign.id)).toBe(2);
     expect(counts.get(second.campaign.id)).toBe(1);
+  });
+
+  it("summarizes passed reviews over submitted proof files per campaign", async () => {
+    const first = await createCampaign("summary-first");
+    const second = await createCampaign("summary-second");
+    await createSubmission(first, "REVIEW_SUBMITTED", new Date());
+    await createSubmission(first, "COMPLETED", new Date());
+    await createSubmission(first, "REJECTED", new Date());
+    await createSubmission(second, "COMPLETED", new Date());
+
+    const summaries = await summarizeAdminCampaignReviewSubmissions([
+      first.campaign.id,
+      second.campaign.id,
+    ]);
+
+    expect(summaries.get(first.campaign.id)).toEqual({ total: 3, passed: 1 });
+    expect(summaries.get(second.campaign.id)).toEqual({ total: 1, passed: 1 });
   });
 
   it("bulk reanalyzes pending manual reviews and only auto-approves newly matching proofs", async () => {

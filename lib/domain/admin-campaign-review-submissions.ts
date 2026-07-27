@@ -54,6 +54,11 @@ function reviewerLabel(reviewer: { name: string | null; email: string | null; ph
   return reviewer.name?.trim() || reviewer.email?.trim() || maskPhone(reviewer.phone) || "리뷰어";
 }
 
+export interface AdminCampaignReviewSubmissionSummary {
+  total: number;
+  passed: number;
+}
+
 function placeNameCheck(analysisJson: string | null): AdminCampaignReviewPlaceNameCheck {
   if (!analysisJson) return "UNKNOWN";
   try {
@@ -71,16 +76,28 @@ const submittedProofWhere = {
 } as const;
 
 export async function countAdminCampaignReviewSubmissions(campaignIds: string[]) {
+  const summaries = await summarizeAdminCampaignReviewSubmissions(campaignIds);
   const counts = new Map<string, number>();
-  if (!campaignIds.length) return counts;
+  for (const [campaignId, summary] of summaries) counts.set(campaignId, summary.total);
+  return counts;
+}
+
+export async function summarizeAdminCampaignReviewSubmissions(campaignIds: string[]) {
+  const summaries = new Map<string, AdminCampaignReviewSubmissionSummary>();
+  if (!campaignIds.length) return summaries;
 
   const rows = await prisma.receipt.groupBy({
-    by: ["campaignId"],
+    by: ["campaignId", "status"],
     where: { ...submittedProofWhere, campaignId: { in: campaignIds } },
     _count: { _all: true },
   });
-  for (const row of rows) counts.set(row.campaignId, row._count._all);
-  return counts;
+  for (const row of rows) {
+    const summary = summaries.get(row.campaignId) ?? { total: 0, passed: 0 };
+    summary.total += row._count._all;
+    if (row.status === "COMPLETED") summary.passed += row._count._all;
+    summaries.set(row.campaignId, summary);
+  }
+  return summaries;
 }
 
 export async function listAdminCampaignReviewSubmissions(

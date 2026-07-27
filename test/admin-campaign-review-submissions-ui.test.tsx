@@ -22,9 +22,13 @@ const reanalysisRouteSource = readFileSync(
 );
 
 describe("admin campaign review submissions UI", () => {
-  it("adds a per-campaign review submission button and accessible modal", () => {
+  it("adds a clickable passed-over-submitted review inspection column and accessible modal", () => {
     expect(tableSource).toContain("AdminCampaignReviewSubmissions");
-    expect(modalSource).toContain("리뷰제출함");
+    expect(tableSource).toContain("리뷰검수");
+    expect(tableSource).toContain("initialPassedCount={campaign.passedReviewCount}");
+    expect(modalSource).toContain("{displayPassedCount}/{displayCount}");
+    expect(modalSource).not.toContain("리뷰제출함 {displayCount}건");
+    expect(modalSource).toContain("리뷰 제출함");
     expect(modalSource).toContain('role="dialog"');
     expect(modalSource).toContain('aria-modal="true"');
   });
@@ -33,6 +37,16 @@ describe("admin campaign review submissions UI", () => {
     expect(modalSource).toContain("썸네일");
     expect(modalSource).toContain("테이블");
     expect(modalSource).toContain("이미지 확대 보기");
+    expect(modalSource).toContain('useState<ViewMode>("TABLE")');
+    expect(modalSource).toContain('setView("TABLE")');
+    expect(modalSource).toContain('["TABLE", "THUMBNAIL"]');
+  });
+
+  it("replaces machine-readable AI reasons with Korean descriptions", () => {
+    expect(modalSource).toContain('DRAFT_TEXT_MATCHED: "원고 내용 일치"');
+    expect(modalSource).toContain('PLACE_NAME_NOT_FOUND: "매장명 확인 불가"');
+    expect(modalSource).toContain("const reasonLabel = analysisReasonLabel(item.analysisReason)");
+    expect(modalSource).not.toContain('` · ${item.analysisReason}`');
   });
 
   it("lets admins browse enlarged proofs with arrow keys and see the reviewer metadata", () => {
