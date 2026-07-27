@@ -9,6 +9,7 @@ import {
 import { err, ok } from "@/lib/http";
 import { recordOperationalError } from "@/lib/error-logging";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
+import { resolveReviewRejectionReason } from "@/lib/review-rejection";
 import {
   getPrivateReviewProof,
   privateReviewProofResponse,
@@ -78,10 +79,22 @@ export async function POST(
   const { assignmentId } = await params;
   const body = await req.json().catch(() => ({}));
   const action = body?.action;
-  const note = typeof body?.note === "string" ? body.note.trim() : undefined;
   if (action !== "approve" && action !== "reject") {
     return err("INVALID_ACTION", "승인 또는 반려 작업을 선택해 주세요");
   }
+  const rejectionReason =
+    action === "reject"
+      ? resolveReviewRejectionReason(body?.reasonCode, body?.customReason)
+      : null;
+  if (rejectionReason && !rejectionReason.ok) {
+    return err("INVALID_REJECTION_REASON", rejectionReason.message, 400);
+  }
+  const note =
+    action === "reject"
+      ? rejectionReason?.note
+      : typeof body?.note === "string"
+        ? body.note.trim()
+        : undefined;
   if (note && note.length > 500) {
     return err("INVALID_NOTE", "검수 메모는 500자 이내로 입력해 주세요.", 400);
   }

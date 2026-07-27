@@ -9,6 +9,10 @@ const tableSource = readFileSync(
   new URL("../components/admin/AdminCampaignOperationsTable.tsx", import.meta.url),
   "utf8",
 );
+const rejectionSource = readFileSync(
+  new URL("../lib/review-rejection.ts", import.meta.url),
+  "utf8",
+);
 
 describe("admin campaign review submissions UI", () => {
   it("adds a per-campaign review submission button and accessible modal", () => {
@@ -44,5 +48,15 @@ describe("admin campaign review submissions UI", () => {
     expect(modalSource).toContain("일치");
     expect(modalSource).toContain("확인불가");
     expect(modalSource).toContain("수동검수 필수");
+  });
+
+  it("requires an explicit rejection reason before confirming rejection", () => {
+    expect(modalSource).toContain("반려 사유 선택");
+    expect(rejectionSource).toContain("타매장 리뷰가 제출되었음");
+    expect(rejectionSource).toContain("리뷰내용 수정필요");
+    expect(rejectionSource).toContain("직접입력");
+    expect(modalSource).toContain("상세 반려 사유");
+    expect(modalSource).toContain("reasonCode");
+    expect(modalSource).toContain("customReason");
   });
 });
