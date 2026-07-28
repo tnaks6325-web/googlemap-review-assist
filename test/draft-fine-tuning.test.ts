@@ -3,6 +3,7 @@ import {
   DraftFineTuningError,
   assertReleaseCanActivate,
   buildGeminiTrainingJsonlRow,
+  buildFineTuningImprovementPlan,
   calculateFineTuningReadiness,
   mapVertexTuningJobState,
   validateTrainingExampleInput,
@@ -105,6 +106,48 @@ describe("draft fine-tuning readiness", () => {
     });
 
     expect(readiness).toMatchObject({ score: 100, readyForDataset: true, gaps: [] });
+  });
+});
+
+describe("fine-tuning improvement plan", () => {
+  it("turns incomplete coverage into concrete administrator actions", () => {
+    const plan = buildFineTuningImprovementPlan({
+      approvedTrainCount: 72,
+      approvedValidationCount: 8,
+      activeIndustryCount: 5,
+      coveredIndustryCount: 3,
+      coveredStyleCount: 4,
+      targetStyleCount: 8,
+      approvedRevisionCount: 10,
+      bucketConfigured: false,
+      latestEvaluation: null,
+    });
+
+    expect(plan.nextPriority).toBe("검증 자료 12건을 우선 보완하세요.");
+    expect(plan.steps).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "data", status: "NEEDS_ACTION", current: "훈련 72 · 검증 8", target: "훈련 100 · 검증 20" }),
+      expect.objectContaining({ id: "industry", status: "NEEDS_ACTION", current: "3/5" }),
+      expect.objectContaining({ id: "style", status: "NEEDS_ACTION", current: "4/8" }),
+      expect.objectContaining({ id: "revision", status: "NEEDS_ACTION", current: "10/30" }),
+      expect.objectContaining({ id: "infrastructure", status: "BLOCKED" }),
+    ]));
+  });
+
+  it("marks every preparation area complete when the model can be evaluated", () => {
+    const plan = buildFineTuningImprovementPlan({
+      approvedTrainCount: 120,
+      approvedValidationCount: 24,
+      activeIndustryCount: 5,
+      coveredIndustryCount: 5,
+      coveredStyleCount: 8,
+      targetStyleCount: 8,
+      approvedRevisionCount: 40,
+      bucketConfigured: true,
+      latestEvaluation: { comparisonCount: 20, candidateWinRate: 0.65, criticalFailureCount: 0 },
+    });
+
+    expect(plan.nextPriority).toBe("운영 적용 기준을 모두 충족했습니다.");
+    expect(plan.steps.every((step) => step.status === "COMPLETE")).toBe(true);
   });
 });
 

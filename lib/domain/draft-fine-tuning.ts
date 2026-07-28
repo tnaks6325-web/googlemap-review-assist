@@ -170,6 +170,99 @@ interface FineTuningReadinessInput {
   latestEvaluation: FineTuningEvaluationSummary | null;
 }
 
+interface FineTuningImprovementInput extends FineTuningReadinessInput {
+  bucketConfigured: boolean;
+}
+
+export type FineTuningImprovementStatus = "COMPLETE" | "NEEDS_ACTION" | "BLOCKED";
+
+export function buildFineTuningImprovementPlan(input: FineTuningImprovementInput) {
+  const revisionTarget = Math.max(30, Math.ceil(input.approvedTrainCount * 0.3));
+  const evaluationComplete = Boolean(
+    input.latestEvaluation
+    && input.latestEvaluation.comparisonCount >= 20
+    && input.latestEvaluation.candidateWinRate >= 0.6
+    && input.latestEvaluation.criticalFailureCount === 0,
+  );
+  const steps: Array<{
+    id: "data" | "industry" | "style" | "revision" | "infrastructure" | "evaluation";
+    title: string;
+    current: string;
+    target: string;
+    status: FineTuningImprovementStatus;
+    recommendation: string;
+  }> = [
+    {
+      id: "data",
+      title: "자료 수량",
+      current: `훈련 ${input.approvedTrainCount} · 검증 ${input.approvedValidationCount}`,
+      target: `훈련 ${DRAFT_FINE_TUNING_MIN_TRAIN_EXAMPLES} · 검증 ${DRAFT_FINE_TUNING_MIN_VALIDATION_EXAMPLES}`,
+      status: input.approvedTrainCount >= DRAFT_FINE_TUNING_MIN_TRAIN_EXAMPLES
+        && input.approvedValidationCount >= DRAFT_FINE_TUNING_MIN_VALIDATION_EXAMPLES ? "COMPLETE" : "NEEDS_ACTION",
+      recommendation: "실제 매장 정보와 완성 원고가 짝을 이루는 고품질 예시를 추가하세요.",
+    },
+    {
+      id: "industry",
+      title: "업종 다양성",
+      current: `${input.coveredIndustryCount}/${input.activeIndustryCount}`,
+      target: "운영 중인 모든 업종",
+      status: input.coveredIndustryCount >= input.activeIndustryCount ? "COMPLETE" : "NEEDS_ACTION",
+      recommendation: "자료가 없는 업종부터 같은 수량으로 보충해 특정 업종 편향을 줄이세요.",
+    },
+    {
+      id: "style",
+      title: "문체 다양성",
+      current: `${input.coveredStyleCount}/${input.targetStyleCount}`,
+      target: `${input.targetStyleCount}개 문체 유형`,
+      status: input.coveredStyleCount >= input.targetStyleCount ? "COMPLETE" : "NEEDS_ACTION",
+      recommendation: "담백형·차분형·경쾌형처럼 말투와 문장 구조가 겹치지 않게 추가하세요.",
+    },
+    {
+      id: "revision",
+      title: "실제 교정 사례",
+      current: `${input.approvedRevisionCount}/${revisionTarget}`,
+      target: "승인 훈련 자료의 30% 이상",
+      status: input.approvedRevisionCount >= revisionTarget ? "COMPLETE" : "NEEDS_ACTION",
+      recommendation: "관리자가 수정한 원고를 가져와 모델이 실제 교정 기준을 학습하게 하세요.",
+    },
+    {
+      id: "infrastructure",
+      title: "튜닝 저장소",
+      current: input.bucketConfigured ? "연결됨" : "연결 필요",
+      target: "전용 Cloud Storage 버킷",
+      status: input.bucketConfigured ? "COMPLETE" : "BLOCKED",
+      recommendation: "전용 버킷과 버킷 단위 Storage Object Admin 권한을 연결하세요.",
+    },
+    {
+      id: "evaluation",
+      title: "후보 모델 평가",
+      current: input.latestEvaluation ? `${input.latestEvaluation.comparisonCount}건 · 승률 ${Math.round(input.latestEvaluation.candidateWinRate * 100)}% · 치명 오류 ${input.latestEvaluation.criticalFailureCount}` : "평가 전",
+      target: "20건 · 승률 60% 이상 · 치명 오류 0",
+      status: evaluationComplete ? "COMPLETE" : "NEEDS_ACTION",
+      recommendation: "기본 모델과 후보 모델을 블라인드 비교한 뒤 운영 적용을 결정하세요.",
+    },
+  ];
+
+  let nextPriority = "운영 적용 기준을 모두 충족했습니다.";
+  if (input.approvedValidationCount < DRAFT_FINE_TUNING_MIN_VALIDATION_EXAMPLES) {
+    nextPriority = `검증 자료 ${DRAFT_FINE_TUNING_MIN_VALIDATION_EXAMPLES - input.approvedValidationCount}건을 우선 보완하세요.`;
+  } else if (input.approvedTrainCount < DRAFT_FINE_TUNING_MIN_TRAIN_EXAMPLES) {
+    nextPriority = `훈련 자료 ${DRAFT_FINE_TUNING_MIN_TRAIN_EXAMPLES - input.approvedTrainCount}건을 보완하세요.`;
+  } else if (input.coveredIndustryCount < input.activeIndustryCount) {
+    nextPriority = `자료가 없는 업종 ${input.activeIndustryCount - input.coveredIndustryCount}개를 보완하세요.`;
+  } else if (input.coveredStyleCount < input.targetStyleCount) {
+    nextPriority = `겹치지 않는 문체 유형 ${input.targetStyleCount - input.coveredStyleCount}개를 보완하세요.`;
+  } else if (input.approvedRevisionCount < revisionTarget) {
+    nextPriority = `관리자 교정 사례 ${revisionTarget - input.approvedRevisionCount}건을 승인하세요.`;
+  } else if (!input.bucketConfigured) {
+    nextPriority = "Cloud Storage 튜닝 버킷을 연결하세요.";
+  } else if (!evaluationComplete) {
+    nextPriority = "튜닝 후 블라인드 비교 평가를 진행하세요.";
+  }
+
+  return { nextPriority, steps };
+}
+
 function boundedRatio(numerator: number, denominator: number) {
   if (denominator <= 0) return 0;
   return Math.max(0, Math.min(1, numerator / denominator));

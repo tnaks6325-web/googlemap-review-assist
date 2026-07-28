@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import {
   assertReleaseCanActivate,
   buildGeminiTrainingJsonlRow,
+  buildFineTuningImprovementPlan,
   calculateFineTuningReadiness,
   DRAFT_FINE_TUNING_BASE_MODEL,
   DRAFT_FINE_TUNING_REGION,
@@ -46,7 +47,9 @@ export async function getFineTuningDashboard() {
     prisma.campaignDraftGuidance.findMany({ where: { campaign: { active: true }, industry: { not: null } }, select: { industry: true }, distinct: ["industry"] }),
   ]);
   const latestEvaluation = releases[0] ? evaluationSummary(releases[0].evaluationJson) : null;
-  const readiness = calculateFineTuningReadiness({
+  const bucketConfigured = Boolean(process.env.VERTEX_AI_TUNING_BUCKET?.trim());
+  const projectId = process.env.VERTEX_AI_PROJECT_ID?.trim() ?? "";
+  const readinessInput = {
     approvedTrainCount,
     approvedValidationCount,
     activeIndustryCount: Math.max(1, activeIndustries.length),
@@ -55,9 +58,12 @@ export async function getFineTuningDashboard() {
     targetStyleCount: 8,
     approvedRevisionCount,
     latestEvaluation,
-  });
+  };
+  const readiness = calculateFineTuningReadiness(readinessInput);
+  const improvementPlan = buildFineTuningImprovementPlan({ ...readinessInput, bucketConfigured });
   return {
     readiness,
+    improvementPlan,
     counts: {
       pending: pendingCount,
       approvedTrain: approvedTrainCount,
@@ -70,7 +76,12 @@ export async function getFineTuningDashboard() {
     config: {
       baseModel: DRAFT_FINE_TUNING_BASE_MODEL,
       tuningRegion: DRAFT_FINE_TUNING_REGION,
-      bucketConfigured: Boolean(process.env.VERTEX_AI_TUNING_BUCKET?.trim()),
+      bucketConfigured,
+      projectId,
+      recommendedBucketName: projectId ? `${projectId}-review-draft-tuning` : "",
+      storageSetupUrl: projectId
+        ? `https://console.cloud.google.com/storage/create-bucket?project=${encodeURIComponent(projectId)}`
+        : "https://console.cloud.google.com/storage/create-bucket",
     },
   };
 }

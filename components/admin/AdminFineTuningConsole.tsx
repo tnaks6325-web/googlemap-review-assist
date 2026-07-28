@@ -4,8 +4,19 @@ import { FormEvent, useState } from "react";
 
 type Dashboard = {
   readiness: { score: number; readyForDataset: boolean; gaps: string[] };
+  improvementPlan: {
+    nextPriority: string;
+    steps: Array<{
+      id: "data" | "industry" | "style" | "revision" | "infrastructure" | "evaluation";
+      title: string;
+      current: string;
+      target: string;
+      status: "COMPLETE" | "NEEDS_ACTION" | "BLOCKED";
+      recommendation: string;
+    }>;
+  };
   counts: { pending: number; approvedTrain: number; approvedValidation: number };
-  config: { baseModel: string; tuningRegion: string; bucketConfigured: boolean };
+  config: { baseModel: string; tuningRegion: string; bucketConfigured: boolean; projectId: string; recommendedBucketName: string; storageSetupUrl: string };
   examples: Array<{ id: string; sourceType: string; industry: string | null; styleLabel: string | null; inputText: string; outputText: string; split: string; status: string }>;
   datasets: Array<{ id: string; version: number; status: string; trainingExampleCount: number; validationExampleCount: number }>;
   jobs: Array<{ id: string; displayName: string; status: string; errorMessage: string | null; dataset: { version: number } }>;
@@ -60,9 +71,10 @@ export function AdminFineTuningConsole({ initialData }: { initialData: Dashboard
   return <div className="space-y-6">
     <section className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)_300px]">
       <div className="rounded-2xl border border-line bg-surface p-5"><p className="text-sm font-semibold text-ink-weak">학습 완성도</p><div className="mt-3 flex items-end gap-2"><strong className="text-4xl text-ink">{data.readiness.score}</strong><span className="pb-1 text-sm text-ink-weak">/ 100</span></div><div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-brand" style={{ width: `${data.readiness.score}%` }} /></div></div>
-      <div className="rounded-2xl border border-line bg-surface p-5"><p className="text-sm font-semibold text-ink">준비 현황</p><div className="mt-4 grid grid-cols-3 gap-3 text-sm"><Count label="승인 훈련" value={`${data.counts.approvedTrain}/100`} /><Count label="승인 검증" value={`${data.counts.approvedValidation}/20`} /><Count label="승인 대기" value={String(data.counts.pending)} /></div>{data.readiness.gaps.length ? <p className="mt-4 text-sm text-amber-700">다음 보완: {data.readiness.gaps.slice(0, 2).join(" · ")}</p> : <p className="mt-4 text-sm text-emerald-700">데이터셋 생성 기준을 충족했습니다.</p>}</div>
+      <div className="rounded-2xl border border-line bg-surface p-5"><p className="text-sm font-semibold text-ink">준비 현황</p><div className="mt-4 grid grid-cols-3 gap-3 text-sm"><Count label="승인 훈련" value={`${data.counts.approvedTrain}/100`} /><Count label="승인 검증" value={`${data.counts.approvedValidation}/20`} /><Count label="승인 대기" value={String(data.counts.pending)} /></div><p className={`mt-4 text-sm ${data.improvementPlan.steps.every((step) => step.status === "COMPLETE") ? "text-emerald-700" : "text-amber-700"}`}>다음 행동: {data.improvementPlan.nextPriority}</p></div>
       <div className="rounded-2xl border border-line bg-surface p-5 text-sm"><p className="font-semibold text-ink">현재 기반 모델</p><p className="mt-2 font-mono text-xs">{data.config.baseModel}</p><p className="mt-3 text-ink-sub">튜닝 리전 {data.config.tuningRegion}</p><div className="mt-3"><Badge tone={data.config.bucketConfigured ? "green" : "red"}>{data.config.bucketConfigured ? "저장소 연결됨" : "튜닝 버킷 설정 필요"}</Badge></div></div>
     </section>
+    <ImprovementGuide plan={data.improvementPlan} config={data.config} />
     {(notice || error) && <div className={`rounded-xl px-4 py-3 text-sm ${error ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}>{error || notice}</div>}
     <div className="border-b border-line"><div className="flex gap-2 overflow-x-auto">{tabs.map((item) => <button key={item.id} onClick={() => setTab(item.id)} className={`border-b-2 px-4 py-3 text-sm font-semibold ${tab === item.id ? "border-brand text-brand" : "border-transparent text-ink-weak"}`}>{item.label}</button>)}</div></div>
 
@@ -77,6 +89,38 @@ export function AdminFineTuningConsole({ initialData }: { initialData: Dashboard
 
     {tab === "models" && <section className="space-y-4">{data.releases.length ? data.releases.map((release) => <ReleaseCard key={release.id} release={release} busy={Boolean(busy)} action={action} />) : <div className="rounded-2xl border border-line bg-surface p-10 text-center text-sm text-ink-weak">완료된 튜닝 모델이 없습니다.</div>}</section>}
   </div>;
+}
+
+function ImprovementGuide({ plan, config }: { plan: Dashboard["improvementPlan"]; config: Dashboard["config"] }) {
+  const statusMeta = {
+    COMPLETE: { label: "완료", className: "bg-emerald-50 text-emerald-700" },
+    NEEDS_ACTION: { label: "보완 필요", className: "bg-amber-50 text-amber-700" },
+    BLOCKED: { label: "연결 필요", className: "bg-red-50 text-red-700" },
+  } as const;
+  return <section className="overflow-hidden rounded-2xl border border-line bg-surface">
+    <div className="border-b border-line px-5 py-4">
+      <h2 className="font-bold text-ink">학습 완성도 향상 가이드</h2>
+      <p className="mt-1 text-sm text-ink-sub">수량만 늘리지 않고 업종·문체·실제 교정 사례를 균형 있게 쌓아야 원고 품질이 안정됩니다.</p>
+    </div>
+    <div className="grid gap-px bg-line md:grid-cols-2 xl:grid-cols-3">
+      {plan.steps.map((step) => {
+        const meta = statusMeta[step.status];
+        return <article key={step.id} className="bg-surface p-5">
+          <div className="flex items-center justify-between gap-3"><h3 className="text-sm font-bold text-ink">{step.title}</h3><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${meta.className}`}>{meta.label}</span></div>
+          <div className="mt-3 flex items-end justify-between gap-3"><strong className="text-lg text-ink">{step.current}</strong><span className="text-right text-xs text-ink-weak">목표 {step.target}</span></div>
+          <p className="mt-3 text-xs leading-5 text-ink-sub">{step.recommendation}</p>
+          {step.id === "infrastructure" && !config.bucketConfigured ? <div className="mt-4 rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-700">
+            <ol className="list-decimal space-y-1 pl-4">
+              <li><a href={config.storageSetupUrl} target="_blank" rel="noreferrer" className="font-semibold text-brand underline">Cloud Storage 버킷 생성</a></li>
+              <li>버킷 이름: <code className="break-all">{config.recommendedBucketName || "프로젝트ID-review-draft-tuning"}</code></li>
+              <li>앱 서비스 계정에 버킷 단위 <strong>Storage Object Admin</strong> 권한 부여</li>
+              <li>Vercel에 <code>VERTEX_AI_TUNING_BUCKET</code> 등록 후 재배포</li>
+            </ol>
+          </div> : null}
+        </article>;
+      })}
+    </div>
+  </section>;
 }
 
 function Count({ label, value }: { label: string; value: string }) { return <div><span className="block text-ink-weak">{label}</span><strong className="text-lg">{value}</strong></div>; }

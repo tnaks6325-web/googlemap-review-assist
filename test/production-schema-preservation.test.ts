@@ -13,10 +13,10 @@ describe("production schema data preservation", () => {
   });
 
   it("keeps legacy draft relations reachable without changing table names", () => {
-    expect(productionSchema).toContain("preparedDraftBatches CampaignPreparedDraftBatch[]");
-    expect(productionSchema).toContain("preparedDrafts       CampaignPreparedDraft[]");
-    expect(productionSchema).toContain("reviewDrafts         CampaignReviewDraft[]");
-    expect(productionSchema).toContain("assignedPreparedDrafts CampaignPreparedDraft[]");
-    expect(productionSchema).toContain("campaignReviewDraft    CampaignReviewDraft?");
+    expect(productionSchema).toMatch(/preparedDraftBatches\s+CampaignPreparedDraftBatch\[\]/u);
+    expect(productionSchema).toMatch(/preparedDrafts\s+CampaignPreparedDraft\[\]/u);
+    expect(productionSchema).toMatch(/reviewDrafts\s+CampaignReviewDraft\[\]/u);
+    expect(productionSchema).toMatch(/assignedPreparedDrafts\s+CampaignPreparedDraft\[\]/u);
+    expect(productionSchema).toMatch(/campaignReviewDraft\s+CampaignReviewDraft\?/u);
   });
 });
