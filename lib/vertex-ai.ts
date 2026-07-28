@@ -120,7 +120,8 @@ export function buildVertexAiUrl(config: VertexAiConfig, method: VertexAiMethod)
 
 let cachedAccessToken: { token: string; expiresAt: number; clientEmail: string } | null = null;
 
-async function vertexAccessToken(config: VertexAiConfig, env: VertexEnvironment = process.env) {
+export async function getVertexAccessToken(env: VertexEnvironment = process.env) {
+  resolveVertexAiConfig(env);
   const encodedCredentials = cleanEnvironmentValue(env.VERTEX_AI_SERVICE_ACCOUNT_BASE64);
   if (!encodedCredentials) {
     throw new VertexAiConfigurationError(
@@ -209,8 +210,40 @@ export async function requestVertexAi(
   env: VertexEnvironment = process.env,
 ) {
   const config = resolveVertexAiConfig(env);
-  const accessToken = await vertexAccessToken(config, env);
+  const accessToken = await getVertexAccessToken(env);
   return sendVertexAiRequest({ config, method, accessToken, body, timeoutMs });
+}
+
+export function buildVertexTunedEndpointUrl(endpointName: string, method: VertexAiMethod) {
+  const match = endpointName.match(/^projects\/[^/]+\/locations\/([^/]+)\/endpoints\/[^/]+$/u);
+  if (!match) {
+    throw new VertexAiConfigurationError("VERTEX_MODEL_INVALID", "튜닝 모델 엔드포인트 형식이 올바르지 않습니다.");
+  }
+  const location = match[1];
+  const origin = location === "us" || location === "eu"
+    ? `https://aiplatform.${location}.rep.googleapis.com`
+    : `https://${location}-aiplatform.googleapis.com`;
+  return `${origin}/v1/${endpointName}:${method}${method === "streamGenerateContent" ? "?alt=sse" : ""}`;
+}
+
+export async function requestVertexTunedEndpoint(
+  endpointName: string,
+  method: VertexAiMethod,
+  body: unknown,
+  timeoutMs: number,
+  env: VertexEnvironment = process.env,
+) {
+  const accessToken = await getVertexAccessToken(env);
+  return fetch(buildVertexTunedEndpointUrl(endpointName, method), {
+    method: "POST",
+    headers: {
+      ...(method === "streamGenerateContent" ? { accept: "text/event-stream" } : {}),
+      authorization: `Bearer ${accessToken}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
 }
 
 export function isVertexAiConfigured(env: VertexEnvironment = process.env) {

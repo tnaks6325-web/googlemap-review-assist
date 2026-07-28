@@ -1,4 +1,5 @@
-import { isVertexAiConfigured, requestVertexAi } from "@/lib/vertex-ai";
+import { isVertexAiConfigured, requestVertexAi, requestVertexTunedEndpoint } from "@/lib/vertex-ai";
+import { prisma } from "@/lib/db";
 
 export type ReviewDraftProvider = "vertex" | "gemini" | "template";
 
@@ -44,6 +45,12 @@ export async function requestGeminiGeneration({
   timeoutMs: number;
 }) {
   if (provider === "vertex") {
+    const active = await prisma.draftModelRelease.findFirst({
+      where: { status: "ACTIVE" },
+      orderBy: { activatedAt: "desc" },
+      select: { endpointName: true },
+    });
+    if (active) return requestVertexTunedEndpoint(active.endpointName, method, body, timeoutMs);
     return requestVertexAi(method, body, timeoutMs, {
       ...process.env,
       REVIEW_DRAFT_MODEL: model,
