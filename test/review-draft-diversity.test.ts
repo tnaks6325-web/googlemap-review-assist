@@ -76,6 +76,20 @@ describe("review draft diversity", () => {
     expect(styleSlotForSequence(25).id).toBe(styleSlotForSequence(0).id);
   });
 
+  it("does not repeat a tone within four assignments or a structure consecutively", () => {
+    const firstCycle = Array.from({ length: 25 }, (_, sequence) =>
+      styleSlotForSequence(sequence),
+    );
+
+    for (let index = 0; index < firstCycle.length; index += 1) {
+      const recent = firstCycle.slice(Math.max(0, index - 4), index);
+      expect(recent.map((slot) => slot.tone)).not.toContain(firstCycle[index].tone);
+      if (index > 0) {
+        expect(firstCycle[index].structure).not.toBe(firstCycle[index - 1].structure);
+      }
+    }
+  });
+
   it("normalizes spacing and punctuation when comparing Korean drafts", () => {
     const left = "공간이 넓고, 좌석 간격도 여유로워요.";
     const right = "공간이  넓고 좌석 간격도 여유로워요!";

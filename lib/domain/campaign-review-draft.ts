@@ -1,6 +1,11 @@
 import { createHash } from "crypto";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import {
+  requestGeminiGeneration,
+  resolveReviewDraftProvider,
+  type ReviewDraftProvider,
+} from "@/lib/gemini-generation";
 import { retryExternalOperation } from "@/lib/resilience";
 import { assignmentExpiry } from "@/lib/domain/campaign-availability-policy";
 import {
@@ -9,6 +14,7 @@ import {
   analyzeDraftDiversity,
   draftSimilarity,
   findDraftQualityIssues,
+  reviewDraftDistributionRank,
   styleSlotForSequence,
   type ReviewDraftStyleSlot,
 } from "@/lib/domain/review-draft-diversity";
@@ -793,7 +799,12 @@ function templateDraft(context: DraftContext) {
   );
 }
 
-async function geminiDraft(context: DraftContext, model: string, apiKey: string) {
+async function geminiDraft(
+  context: DraftContext,
+  provider: ReviewDraftProvider,
+  model: string,
+  apiKey?: string,
+) {
   const requiredGuideKeyword = requiredGuideKeywordForSequence(context, 0);
   const prompt = [
     "아래 참고자료만 바탕으로 Google 지도 방문 리뷰 원고를 작성하세요.",
@@ -817,21 +828,20 @@ async function geminiDraft(context: DraftContext, model: string, apiKey: string)
   ].join("\n");
 
   const request = async () => {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
-      {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
+    const res = await requestGeminiGeneration({
+      provider,
+      model,
+      apiKey,
+      method: "generateContent",
+      body: {
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         generationConfig: {
           temperature: 0.7,
           maxOutputTokens: 240,
         },
-      }),
-      signal: AbortSignal.timeout(12000),
       },
-    );
+      timeoutMs: 12_000,
+    });
 
     const data = (await res.json().catch(() => ({}))) as {
       candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
@@ -970,16 +980,17 @@ async function geminiStructuredDraft(
   slot: ReviewDraftStyleSlot,
   existingDrafts: string[],
   retryFeedback: string[],
+  provider: ReviewDraftProvider,
   model: string,
-  apiKey: string,
+  apiKey?: string,
 ) {
   const request = async () => {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
+    const response = await requestGeminiGeneration({
+      provider,
+      model,
+      apiKey,
+      method: "generateContent",
+      body: {
           contents: [{ role: "user", parts: [{ text: v2Prompt(context, slot, existingDrafts, retryFeedback) }] }],
           generationConfig: {
             maxOutputTokens: 500,
@@ -1003,10 +1014,9 @@ async function geminiStructuredDraft(
               required: ["reviewText", "styleId", "evidenceIds", "promptVersion"],
             },
           },
-        }),
-        signal: AbortSignal.timeout(20_000),
       },
-    );
+      timeoutMs: 20_000,
+    });
     const data = (await response.json().catch(() => ({}))) as {
       candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
       error?: { message?: string };
@@ -1080,7 +1090,7 @@ async function generateV2DraftText(
     );
   }
   const slot = styleSlotForSequence(sequence);
-  const provider = envValue("REVIEW_DRAFT_PROVIDER") || "gemini";
+  const provider = resolveReviewDraftProvider();
   const model = envValue("REVIEW_DRAFT_MODEL") || DEFAULT_REVIEW_DRAFT_MODEL;
   const apiKey = envValue("GEMINI_API_KEY");
   const retryFeedback: string[] = [];
@@ -1091,12 +1101,13 @@ async function generateV2DraftText(
     try {
       if (provider === "template") {
         structured = templateStructuredDraft(context, slot, attempt);
-      } else if (provider === "gemini" && apiKey) {
+      } else if (provider === "vertex" || (provider === "gemini" && apiKey)) {
         structured = await geminiStructuredDraft(
           context,
           slot,
           existingDrafts,
           retryFeedback,
+          provider,
           model,
           apiKey,
         );
@@ -1336,8 +1347,9 @@ async function geminiMatrixBatch(
   context: DraftContext,
   slots: readonly ReviewDraftStyleSlot[],
   existingDrafts: readonly string[],
+  provider: ReviewDraftProvider,
   model: string,
-  apiKey: string,
+  apiKey?: string,
   onProgress?: (generatedCount: number, targetCount: number) => void,
 ) {
   let reportedCount = 0;
@@ -1347,15 +1359,12 @@ async function geminiMatrixBatch(
     onProgress?.(generatedCount, targetCount);
   };
   const request = async () => {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`,
-      {
-        method: "POST",
-        headers: {
-          accept: "text/event-stream",
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
+    const response = await requestGeminiGeneration({
+      provider,
+      model,
+      apiKey,
+      method: "streamGenerateContent",
+      body: {
           contents: [{
             role: "user",
             parts: [{ text: matrixPrompt(context, slots, existingDrafts) }],
@@ -1397,10 +1406,9 @@ async function geminiMatrixBatch(
               required: ["items"],
             },
           },
-        }),
-        signal: AbortSignal.timeout(REVIEW_DRAFT_MATRIX_BATCH_TIMEOUT_MS),
       },
-    );
+      timeoutMs: REVIEW_DRAFT_MATRIX_BATCH_TIMEOUT_MS,
+    });
     const text = await readGeminiStructuredOutputStream(
       response,
       reportProgress,
@@ -1426,8 +1434,9 @@ async function geminiMatrixBatch(
 
 async function geminiMatrixDrafts(
   context: DraftContext,
+  provider: ReviewDraftProvider,
   model: string,
-  apiKey: string,
+  apiKey?: string,
   onProgress?: (generatedCount: number, targetCount: number) => void,
   existingDrafts: readonly string[] = [],
 ) {
@@ -1454,6 +1463,7 @@ async function geminiMatrixDrafts(
         context,
         batch,
         existingDrafts,
+        provider,
         model,
         apiKey,
         (generatedCount) => {
@@ -1512,14 +1522,14 @@ async function generateMatrixPreviewItems(
       422,
     );
   }
-  const provider = envValue("REVIEW_DRAFT_PROVIDER") || "gemini";
+  const provider = resolveReviewDraftProvider();
   const model = envValue("REVIEW_DRAFT_MODEL") || DEFAULT_REVIEW_DRAFT_MODEL;
   const apiKey = envValue("GEMINI_API_KEY");
   const structured =
     provider === "template"
       ? REVIEW_DRAFT_STYLE_SLOTS.map((slot) => templateStructuredDraft(context, slot, 0))
-      : provider === "gemini" && apiKey
-        ? await geminiMatrixDrafts(context, model, apiKey, onProgress, existingDrafts)
+      : provider === "vertex" || (provider === "gemini" && apiKey)
+        ? await geminiMatrixDrafts(context, provider, model, apiKey, onProgress, existingDrafts)
         : null;
   if (!structured) {
     throw new CampaignReviewDraftError(
@@ -1813,7 +1823,7 @@ export async function generateCampaignReviewDraftPreview(
   );
   const diversity = analyzeDraftDiversity(items.map((item) => item.text));
   const evidenceUsed = new Set(items.flatMap((item) => item.evidenceIds));
-  const provider = envValue("REVIEW_DRAFT_PROVIDER") || "gemini";
+  const provider = resolveReviewDraftProvider();
   const model =
     provider === "template"
       ? "template-v2"
@@ -2157,33 +2167,26 @@ export async function deleteCampaignPreparedDraft(
 }
 
 async function generateDraftText(context: DraftContext) {
-  const provider = envValue("REVIEW_DRAFT_PROVIDER") || "gemini";
+  const provider = resolveReviewDraftProvider();
   const model = envValue("REVIEW_DRAFT_MODEL") || DEFAULT_REVIEW_DRAFT_MODEL;
   const apiKey = envValue("GEMINI_API_KEY");
-  const canUseDevelopmentFallback = process.env.NODE_ENV !== "production";
 
   if (provider === "template") {
     return { text: templateDraft(context), provider: "template", model: "template-v1" };
   }
 
-  if (provider !== "gemini") {
+  if (provider !== "vertex" && provider !== "gemini") {
     throw new CampaignReviewDraftError("UNSUPPORTED_DRAFT_PROVIDER", "지원하지 않는 원고 생성 Provider입니다.", 500);
   }
 
-  if (!apiKey) {
-    if (canUseDevelopmentFallback) {
-      return { text: templateDraft(context), provider: "template", model: "template-v1" };
-    }
+  if (provider === "gemini" && !apiKey) {
     throw new CampaignReviewDraftError("AI_PROVIDER_NOT_CONFIGURED", "원고 생성 AI 키가 설정되지 않았습니다.", 500);
   }
 
   try {
-    return { text: await geminiDraft(context, model, apiKey), provider: "gemini", model };
+    return { text: await geminiDraft(context, provider, model, apiKey), provider, model };
   } catch (e) {
     if (e instanceof CampaignReviewDraftError) throw e;
-    if (canUseDevelopmentFallback) {
-      return { text: templateDraft(context), provider: "template", model: "template-v1" };
-    }
     throw new CampaignReviewDraftError(
       "AI_GENERATION_FAILED",
       e instanceof Error ? e.message : "원고 생성에 실패했습니다.",
@@ -2246,7 +2249,7 @@ async function claimPreparedCampaignDraft(
   db: DbClient,
 ): Promise<{ result: CampaignReviewDraftResult | null; poolExists: boolean }> {
   for (let attempt = 0; attempt < 250; attempt += 1) {
-    const prepared = await db.campaignPreparedDraft.findFirst({
+    const preparedCandidates = await db.campaignPreparedDraft.findMany({
       where: {
         campaignId: receipt.campaignId,
         qualityPassed: true,
@@ -2254,7 +2257,15 @@ async function claimPreparedCampaignDraft(
       },
       orderBy: { createdAt: "asc" },
       include: { batch: true },
+      take: CAMPAIGN_PREPARED_DRAFT_TARGET,
     });
+    const prepared = preparedCandidates.sort((left, right) => {
+      const batchOrder = left.batch.generatedAt.getTime() - right.batch.generatedAt.getTime();
+      if (batchOrder !== 0) return batchOrder;
+      const batchIdOrder = left.batchId.localeCompare(right.batchId);
+      if (batchIdOrder !== 0) return batchIdOrder;
+      return reviewDraftDistributionRank(left.slot) - reviewDraftDistributionRank(right.slot);
+    })[0];
     if (!prepared) {
       const poolExists =
         (await db.campaignPreparedDraftBatch.count({

@@ -596,6 +596,62 @@ describe("campaign review draft generator", () => {
     expect(history.items.find((item) => item.assignmentId === receipt.id)?.text).toBe(result.text);
   });
 
+  it("distributes prepared drafts across different tones for consecutive assignments", async () => {
+    const { reviewer, business, campaign, receipt } = await createAssignment({
+      googlePlace: true,
+      naverPlace: true,
+      googleReview: true,
+    });
+    const secondReviewer = await createReviewer();
+    const secondReceipt = await prisma.receipt.create({
+      data: {
+        businessId: business.id,
+        campaignId: campaign.id,
+        reviewerId: secondReviewer.id,
+        code: `ASSIGN-${uniq()}`,
+        source: "CAMPAIGN_ASSIGNMENT",
+        dedupeHash: `assignment:${uniq()}`,
+        status: "ASSIGNED",
+      },
+    });
+    await prisma.campaignPreparedDraftBatch.create({
+      data: {
+        campaignId: campaign.id,
+        provider: "template",
+        model: "template-v2",
+        sourceGroupsJson: "[]",
+        sourceGroupCount: 2,
+        promptVersion: "review-diversity-v6",
+        metricsJson: "{}",
+        drafts: {
+          create: REVIEW_DRAFT_STYLE_SLOTS.map((slot) => ({
+            campaignId: campaign.id,
+            slot: slot.index,
+            styleId: slot.id,
+            toneLabel: slot.toneLabel,
+            structureLabel: slot.structureLabel,
+            text: `연속 배정 다각화 검증을 위한 ${slot.id} 유형의 충분한 길이 원고입니다. 서로 다른 유형으로 배분되어야 합니다.`,
+            evidenceIdsJson: "[]",
+            maxSimilarity: 0.1,
+            qualityPassed: true,
+          })),
+        },
+      },
+    });
+
+    const first = await generateCampaignReviewDraftForAssignment(reviewer.id, receipt.id);
+    const second = await generateCampaignReviewDraftForAssignment(
+      secondReviewer.id,
+      secondReceipt.id,
+    );
+    const firstSlot = REVIEW_DRAFT_STYLE_SLOTS.find((slot) => slot.id === first.styleId);
+    const secondSlot = REVIEW_DRAFT_STYLE_SLOTS.find((slot) => slot.id === second.styleId);
+
+    expect(firstSlot?.tone).toBe("PLAIN");
+    expect(secondSlot?.tone).toBe("CALM");
+    expect(secondSlot?.structure).not.toBe(firstSlot?.structure);
+  });
+
   it("excludes a legacy prepared draft that is missing its assigned guide keyword", async () => {
     const { reviewer, campaign, receipt } = await createAssignment({
       googlePlace: true,

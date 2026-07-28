@@ -1,5 +1,10 @@
 import type { PrismaClient } from "@prisma/client";
 import { prisma } from "@/lib/db";
+import {
+  requestGeminiGeneration,
+  resolveReviewDraftProvider,
+  type ReviewDraftProvider,
+} from "@/lib/gemini-generation";
 import { retryExternalOperation } from "@/lib/resilience";
 
 export const CAMPAIGN_DRAFT_EVIDENCE_FACETS = [
@@ -252,16 +257,17 @@ function extractionPrompt(sources: Map<string, DraftEvidenceSource>) {
 
 async function extractWithGemini(
   sources: Map<string, DraftEvidenceSource>,
+  provider: ReviewDraftProvider,
   model: string,
-  apiKey: string,
+  apiKey?: string,
 ) {
   const request = async () => {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
+    const response = await requestGeminiGeneration({
+      provider,
+      model,
+      apiKey,
+      method: "generateContent",
+      body: {
           contents: [{ role: "user", parts: [{ text: extractionPrompt(sources) }] }],
           generationConfig: {
             maxOutputTokens: CAMPAIGN_DRAFT_EVIDENCE_MAX_OUTPUT_TOKENS,
@@ -286,10 +292,9 @@ async function extractWithGemini(
               required: ["evidence"],
             },
           },
-        }),
-        signal: AbortSignal.timeout(CAMPAIGN_DRAFT_EVIDENCE_TIMEOUT_MS),
       },
-    );
+      timeoutMs: CAMPAIGN_DRAFT_EVIDENCE_TIMEOUT_MS,
+    });
     const data = (await response.json().catch(() => null)) as {
       candidates?: Array<{
         content?: { parts?: Array<{ text?: string }> };
@@ -367,14 +372,14 @@ export async function extractCampaignDraftEvidence(campaignId: string, db: DbCli
     throw new CampaignDraftEvidenceError("EVIDENCE_SOURCE_EMPTY", "분석할 캠페인 자료가 없습니다.", 422);
   }
 
-  const provider = process.env.REVIEW_DRAFT_PROVIDER?.trim() || "gemini";
+  const provider = resolveReviewDraftProvider();
   const model = process.env.REVIEW_DRAFT_MODEL?.trim() || "gemini-3.5-flash";
   const apiKey = process.env.GEMINI_API_KEY?.trim() || "";
   let extracted;
   if (provider === "template") {
     extracted = templateExtraction(sources);
-  } else if (provider === "gemini" && apiKey) {
-    extracted = await extractWithGemini(sources, model, apiKey);
+  } else if (provider === "vertex" || (provider === "gemini" && apiKey)) {
+    extracted = await extractWithGemini(sources, provider, model, apiKey);
   } else {
     throw new CampaignDraftEvidenceError(
       "AI_PROVIDER_NOT_CONFIGURED",

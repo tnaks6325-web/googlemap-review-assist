@@ -231,9 +231,29 @@ export const REVIEW_DRAFT_STYLE_SLOTS: ReviewDraftStyleSlot[] = REVIEW_DRAFT_TON
     }),
 );
 
+const REVIEW_DRAFT_DISTRIBUTION_SLOT_INDICES = Array.from(
+  { length: REVIEW_DRAFT_STYLE_SLOTS.length },
+  (_, sequence) => {
+    const round = Math.floor(sequence / REVIEW_DRAFT_TONES.length);
+    const position = sequence % REVIEW_DRAFT_TONES.length;
+    const toneIndex = (position * 2) % REVIEW_DRAFT_TONES.length;
+    const structureIndex = (round + position * 3) % REVIEW_DRAFT_STRUCTURES.length;
+    return toneIndex * REVIEW_DRAFT_STRUCTURES.length + structureIndex;
+  },
+);
+
 export function styleSlotForSequence(sequence: number) {
   const normalized = Number.isFinite(sequence) ? Math.max(0, Math.floor(sequence)) : 0;
-  return REVIEW_DRAFT_STYLE_SLOTS[normalized % REVIEW_DRAFT_STYLE_SLOTS.length];
+  const distributionIndex = normalized % REVIEW_DRAFT_DISTRIBUTION_SLOT_INDICES.length;
+  return REVIEW_DRAFT_STYLE_SLOTS[REVIEW_DRAFT_DISTRIBUTION_SLOT_INDICES[distributionIndex]];
+}
+
+export function reviewDraftDistributionRank(slotIndex: number) {
+  const normalized = Number.isFinite(slotIndex) ? Math.max(0, Math.floor(slotIndex)) : 0;
+  const rank = REVIEW_DRAFT_DISTRIBUTION_SLOT_INDICES.indexOf(
+    normalized % REVIEW_DRAFT_STYLE_SLOTS.length,
+  );
+  return rank === -1 ? REVIEW_DRAFT_STYLE_SLOTS.length : rank;
 }
 
 export function normalizeDraftForComparison(text: string) {
