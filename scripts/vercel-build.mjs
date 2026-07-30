@@ -18,13 +18,8 @@ function run(command, args) {
   }
 }
 
-// Production is the only environment that changes the shared database schema.
-if (process.env.VERCEL_ENV === "production") {
-  console.log("Synchronizing the production PostgreSQL schema.");
-  run("npx", ["prisma", "db", "push", `--schema=${schemaPath}`, "--skip-generate"]);
-} else {
-  console.log("Skipping database schema synchronization outside Vercel production.");
-}
+// Production schema changes must be applied through an explicit migration, never an app deploy.
+console.log("Skipping automatic production PostgreSQL schema synchronization.");
 
 run("npx", ["prisma", "generate", `--schema=${schemaPath}`]);
 run("npm", ["run", "build"]);
