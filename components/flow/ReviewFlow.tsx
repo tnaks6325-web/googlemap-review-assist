@@ -25,9 +25,9 @@ interface Props {
   cooldownDays: number;
   initialReviewerSignedIn: boolean;
 }
-type Step = "signIn" | "summary" | "draft" | "complete";
+type Step = "signIn" | "summary" | "placeSearch" | "draft" | "complete";
 
-const FLOW: Step[] = ["signIn", "summary", "draft", "complete"];
+const FLOW: Step[] = ["signIn", "summary", "placeSearch", "draft", "complete"];
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
   const res = await fetch(url, {
@@ -112,6 +112,16 @@ interface ClipboardWriter {
   writeText(text: string): Promise<void>;
 }
 
+export function buildGoogleMapsSearchQuery(
+  businessName: string,
+  address: string | null,
+) {
+  return [businessName, address]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value))
+    .join(" ");
+}
+
 export async function copyReviewDraftToClipboard(
   text: string,
   clipboard: ClipboardWriter | undefined =
@@ -147,11 +157,11 @@ export function ReviewFlow({
   const [remainingSeconds, setRemainingSeconds] = useState(0);
   const [draft, setDraft] = useState("");
   const [draftMeta, setDraftMeta] = useState<DraftResponse | null>(null);
-  const [clipboardStatus, setClipboardStatus] = useState<"idle" | "copied" | "failed">("idle");
+  const [searchClipboardStatus, setSearchClipboardStatus] = useState<"idle" | "copied" | "failed">("idle");
+  const [draftClipboardStatus, setDraftClipboardStatus] = useState<"idle" | "copied" | "failed">("idle");
   const [completion, setCompletion] = useState<CompleteResponse | null>(null);
   const [screenshot, setScreenshot] = useState<File | null>(null);
   const [reviewGuideOpen, setReviewGuideOpen] = useState(false);
-  const [reviewGuideAcknowledged, setReviewGuideAcknowledged] = useState(false);
   const [revealedPlace, setRevealedPlace] = useState<RevealedPlace | null>(null);
 
   useEffect(() => {
@@ -183,15 +193,22 @@ export function ReviewFlow({
   }, [assignmentExpiresAt, step]);
 
   useEffect(() => {
-    if (step !== "draft" || !draft) return;
+    if (step !== "placeSearch" || !assignmentId || revealedPlace) return;
     let cancelled = false;
-    void copyReviewDraftToClipboard(draft).then((copied) => {
-      if (!cancelled) setClipboardStatus(copied ? "copied" : "failed");
-    });
+
+    void postJson<RevealedPlace>("/api/reviewer/campaigns/reveal", { assignmentId })
+      .then((place) => {
+        if (!cancelled) setRevealedPlace(place);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setError(error instanceof Error ? error.message : "장소 정보를 준비하지 못했어요.");
+        }
+      })
     return () => {
       cancelled = true;
     };
-  }, [draft, step]);
+  }, [assignmentId, revealedPlace, step]);
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -219,10 +236,12 @@ export function ReviewFlow({
     setRemainingSeconds(data.activeAssignment.remainingSeconds);
     setAssignedCampaign(data.activeAssignment.assignedCampaign);
     if (!data.activeAssignment.draft) return false;
-    setClipboardStatus("idle");
+    setSearchClipboardStatus("idle");
+    setDraftClipboardStatus("idle");
+    setRevealedPlace(null);
     setDraft(data.activeAssignment.draft.text);
     setDraftMeta(data.activeAssignment.draft);
-    setStep("draft");
+    setStep("placeSearch");
     return true;
   };
 
@@ -238,20 +257,20 @@ export function ReviewFlow({
     setAssignmentExpiresAt(data.assignmentExpiresAt);
     setRemainingSeconds(data.remainingSeconds);
     setAssignedCampaign(data.assignedCampaign);
-    setClipboardStatus("idle");
+    setSearchClipboardStatus("idle");
+    setDraftClipboardStatus("idle");
     setDraft(data.draft?.text ?? "");
     setDraftMeta(data.draft);
     setCompletion(null);
     setScreenshot(null);
     setReviewGuideOpen(false);
-    setReviewGuideAcknowledged(false);
     setRevealedPlace(null);
     if (!data.assignedCampaign || !data.draft) {
       setError("지금 참여 가능한 캠페인이 없어요");
       setStep("summary");
       return;
     }
-    setStep("draft");
+    setStep("placeSearch");
   };
 
   useEffect(() => {
@@ -291,25 +310,46 @@ export function ReviewFlow({
       applyAssignedCampaign(data);
     });
 
-  const openReviewRegistration = () =>
-    run(async () => {
-      if (!assignmentId) {
-        setError("참여 정보를 확인해 주세요.");
-        return;
-      }
-      const copied = await copyReviewDraftToClipboard(draft);
-      setClipboardStatus(copied ? "copied" : "failed");
+  const revealAssignedPlace = async () => {
+    if (!assignmentId) {
+      throw new Error("참여 정보를 확인해 주세요.");
+    }
+    if (revealedPlace) return revealedPlace;
+
+    const place = await postJson<RevealedPlace>(
+      "/api/reviewer/campaigns/reveal",
+      { assignmentId },
+    );
+    setRevealedPlace(place);
+    return place;
+  };
+
+  const copyGoogleMapsSearchQuery = () => {
+    if (!revealedPlace) return;
+    void copyReviewDraftToClipboard(
+      buildGoogleMapsSearchQuery(revealedPlace.businessName, revealedPlace.address),
+    ).then((copied) => {
+      setSearchClipboardStatus(copied ? "copied" : "failed");
       if (!copied) {
-        setError("클립보드 복사를 허용한 뒤 리뷰 등록 버튼을 다시 눌러 주세요.");
-        return;
+        setError("클립보드 복사를 허용한 뒤 검색어 복사 버튼을 다시 눌러 주세요.");
       }
-      const place = await postJson<RevealedPlace>(
-        "/api/reviewer/campaigns/reveal",
-        { assignmentId },
-      );
-      setRevealedPlace(place);
-      setReviewGuideAcknowledged(false);
-      setReviewGuideOpen(true);
+    });
+  };
+
+  const confirmPlaceFound = () =>
+    run(async () => {
+      await revealAssignedPlace();
+      setDraftClipboardStatus("idle");
+      setStep("draft");
+    });
+
+  const copyDraftAndReturnToMaps = () =>
+    run(async () => {
+      const copied = await copyReviewDraftToClipboard(draft);
+      setDraftClipboardStatus(copied ? "copied" : "failed");
+      if (!copied) {
+        setError("클립보드 복사를 허용한 뒤 원고 복사 버튼을 다시 눌러 주세요.");
+      }
     });
 
   const completeAssignment = () =>
@@ -404,11 +444,82 @@ export function ReviewFlow({
           </Step>
         )}
 
-        {step === "draft" && (
-          <Step title="참여 원고가 배정됐어요" desc="미리 준비된 원고를 확인한 뒤 Google 지도에서 리뷰를 등록해 주세요.">
+        {step === "placeSearch" && (
+          <Step
+            title="먼저 장소를 검색해 주세요"
+            desc="검색어를 복사한 뒤 Google Maps에서 매장명과 주소가 맞는지 확인해 주세요."
+          >
             <CampaignCard rewardPoints={currentRewardPoints} assignmentId={assignmentId} />
+            <Card className="mt-4 space-y-3">
+              <p className="text-sm font-semibold text-ink-weak">1. 장소 검색</p>
+              {revealedPlace ? (
+                <div className="rounded-field bg-brand-tint p-3">
+                  <p className="text-sm font-bold text-ink">{revealedPlace.businessName}</p>
+                  <p className="mt-1 text-xs leading-5 text-ink-sub">
+                    {[revealedPlace.category, revealedPlace.address].filter(Boolean).join(" · ")}
+                  </p>
+                </div>
+              ) : (
+                <p className="text-sm leading-6 text-ink-sub">
+                  검색어 복사 버튼을 누르면 매장명과 주소를 준비합니다.
+                </p>
+              )}
+              <p
+                className={`text-xs font-medium ${
+                  searchClipboardStatus === "failed" ? "text-danger" : "text-brand"
+                }`}
+                aria-live="polite"
+              >
+                {searchClipboardStatus === "copied"
+                  ? "검색어가 복사됐어요. Google Maps 검색창에 붙여넣어 주세요."
+                  : searchClipboardStatus === "failed"
+                    ? "검색어를 복사하지 못했어요. 브라우저 권한을 확인한 뒤 다시 눌러 주세요."
+                    : "클립보드에는 검색어만 복사됩니다."}
+              </p>
+              <a
+                href="https://www.google.com/maps"
+                target="_blank"
+                rel="noreferrer"
+                aria-disabled={!revealedPlace}
+                onClick={(event) => {
+                  if (!revealedPlace) {
+                    event.preventDefault();
+                    return;
+                  }
+                  copyGoogleMapsSearchQuery();
+                }}
+                className={`inline-flex h-[52px] w-full items-center justify-center rounded-btn px-5 text-base font-medium transition ${
+                  revealedPlace
+                    ? "bg-brand text-white hover:brightness-95 active:scale-[0.98]"
+                    : "cursor-not-allowed bg-line text-ink-weak"
+                }`}
+              >
+                검색어 복사하고 Google Maps 열기
+              </a>
+              <Button fullWidth variant="text" loading={busy} onClick={confirmPlaceFound}>
+                플레이스를 찾았어요
+              </Button>
+            </Card>
+          </Step>
+        )}
+
+        {step === "draft" && (
+          <Step
+            title="원고를 복사해 리뷰를 등록해 주세요"
+            desc="Google Maps에서 확인한 플레이스의 리뷰 입력란에 배정 원고를 붙여넣어 주세요."
+          >
+            <CampaignCard rewardPoints={currentRewardPoints} assignmentId={assignmentId} />
+            {revealedPlace && (
+              <Card className="mt-4 bg-brand-tint">
+                <p className="text-xs font-semibold text-brand">확인한 리뷰 등록 장소</p>
+                <p className="mt-1 text-base font-bold text-ink">{revealedPlace.businessName}</p>
+                <p className="mt-1 text-xs leading-5 text-ink-sub">
+                  {[revealedPlace.category, revealedPlace.address].filter(Boolean).join(" · ")}
+                </p>
+              </Card>
+            )}
             <Card className="mt-4 space-y-2">
-              <p className="text-sm font-semibold text-ink-weak">배정된 원고</p>
+              <p className="text-sm font-semibold text-ink-weak">2. 배정된 원고</p>
               <p className="text-[15px] leading-7 text-ink">{draft}</p>
               {draftMeta && (
                 <p className="text-xs text-ink-weak">
@@ -418,25 +529,22 @@ export function ReviewFlow({
               )}
               <p
                 className={`text-xs font-medium ${
-                  clipboardStatus === "failed" ? "text-danger" : "text-brand"
+                  draftClipboardStatus === "failed" ? "text-danger" : "text-brand"
                 }`}
                 aria-live="polite"
               >
-                {clipboardStatus === "copied"
-                  ? "원고가 클립보드에 자동 복사됐어요."
-                  : clipboardStatus === "failed"
-                    ? "자동 복사가 차단됐어요. 리뷰 등록 버튼을 누르면 다시 복사합니다."
-                    : "원고를 클립보드에 복사하고 있어요."}
+                {draftClipboardStatus === "copied"
+                  ? "원고가 복사됐어요. Google Maps로 돌아가 리뷰 입력란에 붙여넣어 주세요."
+                  : draftClipboardStatus === "failed"
+                    ? "원고를 복사하지 못했어요. 브라우저 권한을 확인한 뒤 다시 눌러 주세요."
+                    : "원고는 이 버튼을 누를 때만 복사됩니다."}
               </p>
-              <div className="grid gap-2 pt-2">
-                <Button
-                  fullWidth
-                  loading={busy}
-                  onClick={openReviewRegistration}
-                >
-                  Google Maps에서 리뷰 등록하기
-                </Button>
-              </div>
+              <Button fullWidth loading={busy} onClick={copyDraftAndReturnToMaps}>
+                원고 복사 후 Google Maps로 돌아가기
+              </Button>
+              <Button fullWidth variant="text" onClick={() => setReviewGuideOpen(true)}>
+                리뷰 캡처 기준 보기
+              </Button>
             </Card>
           </Step>
         )}
@@ -532,9 +640,7 @@ export function ReviewFlow({
 
       <ReviewProofGuideModal
         open={reviewGuideOpen}
-        acknowledged={reviewGuideAcknowledged}
         place={revealedPlace}
-        onAcknowledge={setReviewGuideAcknowledged}
         onClose={() => setReviewGuideOpen(false)}
       />
 
@@ -632,15 +738,11 @@ export function ReviewFlow({
 
 function ReviewProofGuideModal({
   open,
-  acknowledged,
   place,
-  onAcknowledge,
   onClose,
 }: {
   open: boolean;
-  acknowledged: boolean;
   place: RevealedPlace | null;
-  onAcknowledge: (value: boolean) => void;
   onClose: () => void;
 }) {
   if (!open || !place) return null;
@@ -688,28 +790,9 @@ function ReviewProofGuideModal({
           </figcaption>
         </figure>
         </div>
-        <label className="mt-4 flex cursor-pointer items-start gap-2 rounded-field border border-line bg-surface p-3 text-sm text-ink-sub">
-          <input
-            type="checkbox"
-            checked={acknowledged}
-            onChange={(event) => onAcknowledge(event.target.checked)}
-            className="mt-0.5 size-4 accent-brand"
-          />
-          <span>캡처 예시와 제출 기준을 확인했어요.</span>
-        </label>
-        <a
-          {...(acknowledged ? { href: place.googleMapsUrl, target: "_blank", rel: "noreferrer" } : {})}
-          onClick={(event) => {
-            if (!acknowledged) event.preventDefault();
-            else onClose();
-          }}
-          aria-disabled={!acknowledged}
-          className={`mt-4 inline-flex h-[52px] w-full items-center justify-center rounded-btn px-5 text-base font-medium transition ${
-            acknowledged ? "bg-brand text-white" : "cursor-not-allowed bg-line text-ink-weak"
-          }`}
-        >
-          Google Maps 열기
-        </a>
+        <Button fullWidth className="mt-4" onClick={onClose}>
+          확인했어요
+        </Button>
       </div>
     </div>
   );
@@ -798,9 +881,9 @@ function CampaignCard({
         <h2 className="mt-1 text-xl font-bold leading-snug text-ink">
           참여 캠페인이 준비됐어요
         </h2>
-        <p className="mt-1 text-sm leading-5 text-ink-weak">
-          원고는 자동으로 복사되며, 리뷰 등록 버튼을 누르면 장소를 확인할 수 있어요.
-        </p>
+         <p className="mt-1 text-sm leading-5 text-ink-weak">
+          먼저 장소를 검색해 확인한 뒤, 배정 원고를 복사해 리뷰를 등록해 주세요.
+         </p>
       </div>
       <div className="grid grid-cols-1 gap-2">
         <Metric label="이번 적립" value={`${formatPoints(rewardPoints)}P`} />

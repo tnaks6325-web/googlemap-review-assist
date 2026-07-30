@@ -1,5 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
-import { copyReviewDraftToClipboard } from "@/components/flow/ReviewFlow";
+import {
+  buildGoogleMapsSearchQuery,
+  copyReviewDraftToClipboard,
+} from "@/components/flow/ReviewFlow";
+
+describe("buildGoogleMapsSearchQuery", () => {
+  it("combines the place name and address for the reviewer to paste into Google Maps", () => {
+    expect(
+      buildGoogleMapsSearchQuery("  로우파이브안국  ", "  서울 종로구 재동 60  "),
+    ).toBe("로우파이브안국 서울 종로구 재동 60");
+  });
+
+  it("uses only the place name when the campaign has no address", () => {
+    expect(buildGoogleMapsSearchQuery("로우파이브안국", null)).toBe("로우파이브안국");
+  });
+});
 
 describe("copyReviewDraftToClipboard", () => {
   it("copies the assigned draft and reports success", async () => {
