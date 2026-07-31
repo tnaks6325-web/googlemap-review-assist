@@ -178,6 +178,28 @@ export function applyResolvedGooglePlaceNameToSheetRow(
   return { ...row, businessName: place.name.trim() };
 }
 
+function normalizeBusinessName(value: string) {
+  return value.replace(/\s+/g, " ").trim().toLocaleLowerCase("ko-KR");
+}
+
+export function excludeExistingGoogleMapReviewCampaignRows(
+  rows: SheetImportDryRunRow[],
+  existingBusinessNames: Iterable<string>
+) {
+  const existingNames = new Set(
+    Array.from(existingBusinessNames, normalizeBusinessName).filter(Boolean)
+  );
+  const filteredRows = rows.filter((row) => {
+    const businessName = normalizeBusinessName(row.businessName || row.googlePlace?.name || "");
+    return !businessName || !existingNames.has(businessName);
+  });
+
+  return {
+    rows: filteredRows,
+    skippedExistingCampaigns: rows.length - filteredRows.length,
+  };
+}
+
 export function summarizeSheetImportRows(rows: SheetImportDryRunRow[]): SheetImportDryRunSummary {
   return {
     totalRows: rows.length,
