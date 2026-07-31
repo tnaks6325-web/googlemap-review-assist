@@ -307,13 +307,30 @@ export async function POST(req: Request) {
   try {
     const sheet = await readGoogleSheetValues(spreadsheetId, range);
     const dryRunResult = parseGoogleMapReviewSheet(sheet.values);
-    const existingBusinessNames = dryRun
-      ? await prisma.campaign.findMany({ select: { business: { select: { name: true } } } })
+    const existingCampaigns = dryRun
+      ? await prisma.campaign.findMany({
+          select: {
+            business: {
+              select: {
+                name: true,
+                googlePlaceId: true,
+                externalPlaces: {
+                  where: { platform: "GOOGLE" },
+                  select: { externalId: true },
+                },
+              },
+            },
+          },
+        })
       : [];
+    const existingCampaignReferences = existingCampaigns.map(({ business }) => ({
+      businessName: business.name,
+      googlePlaceIds: [business.googlePlaceId, ...business.externalPlaces.map((place) => place.externalId)],
+    }));
     const initialRows = dryRun
       ? excludeExistingGoogleMapReviewCampaignRows(
           dryRunResult.rows,
-          existingBusinessNames.map(({ business }) => business.name)
+          existingCampaignReferences
         )
       : { rows: dryRunResult.rows, skippedExistingCampaigns: 0 };
     const googleRows = await addGooglePlacePreviews(
@@ -323,7 +340,7 @@ export async function POST(req: Request) {
     const filteredGoogleRows = dryRun
       ? excludeExistingGoogleMapReviewCampaignRows(
           googleRows,
-          existingBusinessNames.map(({ business }) => business.name)
+          existingCampaignReferences
         )
       : { rows: googleRows, skippedExistingCampaigns: 0 };
     const rows = dryRun ? await addNaverPlacePreviews(filteredGoogleRows.rows, PLACE_PREVIEW_LIMIT) : filteredGoogleRows.rows;

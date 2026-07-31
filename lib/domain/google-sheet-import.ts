@@ -182,16 +182,34 @@ function normalizeBusinessName(value: string) {
   return value.replace(/\s+/g, " ").trim().toLocaleLowerCase("ko-KR");
 }
 
+function normalizeGooglePlaceId(value: string | null | undefined) {
+  return value?.trim() ?? "";
+}
+
+export interface ExistingGoogleMapReviewCampaign {
+  businessName: string;
+  googlePlaceIds?: Iterable<string | null | undefined>;
+}
+
 export function excludeExistingGoogleMapReviewCampaignRows(
   rows: SheetImportDryRunRow[],
-  existingBusinessNames: Iterable<string>
+  existingCampaigns: Iterable<ExistingGoogleMapReviewCampaign>
 ) {
-  const existingNames = new Set(
-    Array.from(existingBusinessNames, normalizeBusinessName).filter(Boolean)
-  );
+  const existingReferences = Array.from(existingCampaigns, (campaign) => ({
+    businessName: normalizeBusinessName(campaign.businessName),
+    googlePlaceIds: new Set(
+      Array.from(campaign.googlePlaceIds ?? [], normalizeGooglePlaceId).filter(Boolean)
+    ),
+  }));
   const filteredRows = rows.filter((row) => {
     const businessName = normalizeBusinessName(row.businessName || row.googlePlace?.name || "");
-    return !businessName || !existingNames.has(businessName);
+    const googlePlaceId = normalizeGooglePlaceId(row.googlePlace?.placeId);
+
+    return !existingReferences.some((campaign) => {
+      if (googlePlaceId && campaign.googlePlaceIds.has(googlePlaceId)) return true;
+      if (googlePlaceId && campaign.googlePlaceIds.size > 0) return false;
+      return Boolean(businessName && campaign.businessName === businessName);
+    });
   });
 
   return {

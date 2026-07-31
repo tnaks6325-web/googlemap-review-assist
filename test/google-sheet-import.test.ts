@@ -30,7 +30,7 @@ const header = [
 
 describe("google map review sheet import dry-run parser", () => {
   it("excludes rows whose campaigns were already reflected", () => {
-    const existingName = "Warm Table";
+    const existingCampaign = { businessName: "Warm Table" };
     const rows = [
       {
         rowNumber: 6,
@@ -72,10 +72,35 @@ describe("google map review sheet import dry-run parser", () => {
       },
     ];
 
-    const result = excludeExistingGoogleMapReviewCampaignRows(rows, [existingName]);
+    const result = excludeExistingGoogleMapReviewCampaignRows(rows, [existingCampaign]);
 
     expect(result.skippedExistingCampaigns).toBe(1);
     expect(result.rows.map((row) => row.businessName)).toEqual(["New Table"]);
+
+    const placeIdResult = excludeExistingGoogleMapReviewCampaignRows(
+      [
+        {
+          ...rows[0],
+          businessName: "Warm Table sheet alias",
+          googlePlace: {
+            status: "RESOLVED",
+            providerConfigured: true,
+            input: rows[0].landingUrl,
+            placeId: "ChIJWarmTable",
+            name: "Warm Table on Google",
+            address: null,
+            url: null,
+            rating: null,
+            reviewCount: null,
+            matchConfidence: 100,
+            message: null,
+          },
+        },
+      ],
+      [{ businessName: "Warm Table", googlePlaceIds: ["ChIJWarmTable"] }]
+    );
+
+    expect(placeIdResult.rows).toEqual([]);
   });
 
   it("marks complete campaign rows as ready", () => {
