@@ -149,6 +149,29 @@ export async function promotePreparedDraftRequest({
   return data.draft;
 }
 
+export async function regeneratePreparedDraftRequest({
+  campaignId,
+  draftId,
+  fetcher = fetch,
+}: {
+  campaignId: string;
+  draftId: string;
+  fetcher?: Fetcher;
+}) {
+  const response = await fetcher(preparedDraftUrl(campaignId, draftId), {
+    method: "PATCH",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action: "REGENERATE" }),
+  });
+  const data = (await response.json().catch(() => null)) as
+    | { draft?: Pick<PreparedDraftItem, "id" | "text" | "qualityPassed" | "status">; error?: ErrorResult["error"] }
+    | null;
+  if (!response.ok || !data?.draft) {
+    throwPreparedDraftMutationError(data?.error, "원고를 재생성하지 못했어요.");
+  }
+  return data.draft;
+}
+
 export async function deleteQualityExcludedDraftsRequest({
   campaignId,
   fetcher = fetch,
@@ -494,6 +517,22 @@ export function AdminCampaignDraftPreview({
     }
   };
 
+  const regenerateDraft = async (item: PreparedDraftItem) => {
+    const mutationId = `regenerate:${item.id}`;
+    setMutatingDraftId(mutationId);
+    setError(null);
+    setPendingReview(null);
+    try {
+      await regeneratePreparedDraftRequest({ campaignId, draftId: item.id });
+      applyHistory(await fetchHistory());
+      if (editingDraftId === item.id) cancelEdit();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "원고를 재생성하지 못했어요.");
+    } finally {
+      setMutatingDraftId(null);
+    }
+  };
+
   const applyPendingReview = () => {
     if (!pendingReview) return;
     if (pendingReview.kind === "edit") {
@@ -744,6 +783,14 @@ export function AdminCampaignDraftPreview({
                             {mutatingDraftId === item.id ? "이동 중…" : "미배정으로 이동"}
                           </button>
                         ) : null}
+                        <button
+                          type="button"
+                          onClick={() => void regenerateDraft(item)}
+                          disabled={mutatingDraftId !== null}
+                          className="h-8 rounded-[8px] border border-brand/30 bg-brand-tint px-3 text-xs font-bold text-brand hover:bg-blue-100 disabled:opacity-50"
+                        >
+                          {mutatingDraftId === `regenerate:${item.id}` ? "재생성 중…" : "재생성"}
+                        </button>
                         <button
                           type="button"
                           onClick={() => beginEdit(item)}
