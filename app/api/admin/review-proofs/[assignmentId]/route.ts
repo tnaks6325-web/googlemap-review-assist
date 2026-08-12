@@ -1,5 +1,6 @@
 import { checkOrigin } from "@/lib/auth/origin";
 import { getAdminId } from "@/lib/auth/session";
+import { campaignOperationsMutationLockResponse } from "@/lib/admin-campaign-operations-lock";
 import { prisma } from "@/lib/db";
 import {
   completeReviewerCampaignAssignment,
@@ -9,6 +10,7 @@ import {
 import { err, ok } from "@/lib/http";
 import { recordOperationalError } from "@/lib/error-logging";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
+import { resolveReviewRejectionReason } from "@/lib/review-rejection";
 import {
   getPrivateReviewProof,
   privateReviewProofResponse,
@@ -71,6 +73,8 @@ export async function POST(
   const adminId = await getAdminId();
   if (!adminId) return err("UNAUTHORIZED", "관리자 로그인이 필요해요", 401);
 
+  const lockResponse = await campaignOperationsMutationLockResponse();
+  if (lockResponse) return lockResponse;
   if (!(await rateLimit(`admin:review-proof:${adminId}:${clientIp(req)}`, 120, HOUR)).ok) {
     return err("RATE_LIMITED", "잠시 후 다시 시도해 주세요.", 429);
   }
@@ -78,10 +82,22 @@ export async function POST(
   const { assignmentId } = await params;
   const body = await req.json().catch(() => ({}));
   const action = body?.action;
-  const note = typeof body?.note === "string" ? body.note.trim() : undefined;
   if (action !== "approve" && action !== "reject") {
     return err("INVALID_ACTION", "승인 또는 반려 작업을 선택해 주세요");
   }
+  const rejectionReason =
+    action === "reject"
+      ? resolveReviewRejectionReason(body?.reasonCode, body?.customReason)
+      : null;
+  if (rejectionReason && !rejectionReason.ok) {
+    return err("INVALID_REJECTION_REASON", rejectionReason.message, 400);
+  }
+  const note =
+    action === "reject"
+      ? rejectionReason?.note
+      : typeof body?.note === "string"
+        ? body.note.trim()
+        : undefined;
   if (note && note.length > 500) {
     return err("INVALID_NOTE", "검수 메모는 500자 이내로 입력해 주세요.", 400);
   }

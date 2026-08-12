@@ -1,5 +1,6 @@
 import { checkOrigin } from "@/lib/auth/origin";
 import { getAdminId } from "@/lib/auth/session";
+import { campaignOperationsMutationLockResponse } from "@/lib/admin-campaign-operations-lock";
 import {
   CampaignReviewDraftError,
   CampaignReviewDraftWarningError,
@@ -23,6 +24,8 @@ async function authorizeMutation(req: Request, action: string) {
   if (!checkOrigin(req)) return err("BAD_ORIGIN", "요청 출처가 올바르지 않아요", 403);
   const adminId = await getAdminId();
   if (!adminId) return err("UNAUTHORIZED", "관리자 로그인이 필요해요", 401);
+  const lockResponse = await campaignOperationsMutationLockResponse();
+  if (lockResponse) return lockResponse;
   const allowed = await rateLimit(
     `admin:prepared-draft:${action}:${adminId}:${clientIp(req)}`,
     120,

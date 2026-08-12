@@ -3,11 +3,18 @@ import {
   AdminCampaignOperationsTable,
   type AdminCampaignOperationsRow,
 } from "@/components/admin/AdminCampaignOperationsTable";
+import {
+  AdminCampaignAutomationStatus,
+  type AdminCampaignAutomationStatusRow,
+} from "@/components/admin/AdminCampaignAutomationStatus";
+import { AdminCampaignOperationsLockStatus } from "@/components/admin/AdminCampaignOperationsLockStatus";
 import { GoogleSheetConnectionStatus } from "@/components/admin/GoogleSheetConnectionStatus";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { SheetImportDryRun } from "@/components/admin/SheetImportDryRun";
 import { operationalCampaignStatus } from "@/lib/admin-campaign-table";
 import { getAdminId } from "@/lib/auth/session";
+import { listAdminCampaignAutomationStatuses } from "@/lib/domain/campaign-automation-admin";
+import { getCampaignOperationsAutomationLock } from "@/lib/domain/campaign-operations-lock";
 import { listAdminCampaigns } from "@/lib/domain/operator-campaigns";
 import { readGoogleSpreadsheetTitle } from "@/lib/google-sheets";
 
@@ -21,9 +28,11 @@ export default async function AdminCampaignsPage() {
   const adminId = await getAdminId();
   if (!adminId) redirect("/admin/login");
 
-  const [campaigns, spreadsheetTitle] = await Promise.all([
+  const [campaigns, spreadsheetTitle, automationStatuses, automationLock] = await Promise.all([
     listAdminCampaigns(),
     readGoogleSpreadsheetTitle(SPREADSHEET_ID).catch(() => null),
+    listAdminCampaignAutomationStatuses(),
+    getCampaignOperationsAutomationLock(),
   ]);
   const activeCount = campaigns.filter((campaign) => campaign.active).length;
   const assignedCount = campaigns.reduce(
@@ -47,6 +56,11 @@ export default async function AdminCampaignsPage() {
       createdAt: campaign.createdAt.toISOString(),
     }),
   );
+  const automationStatusRows: AdminCampaignAutomationStatusRow[] = automationStatuses.map((status) => ({
+    ...status,
+    nextRetryAt: status.nextRetryAt?.toISOString() ?? null,
+    updatedAt: status.updatedAt.toISOString(),
+  }));
 
   return (
     <AdminShell
@@ -80,7 +94,9 @@ export default async function AdminCampaignsPage() {
         />
       </section>
 
-      <section className="mb-7 rounded-[13px] border border-blue-200 bg-blue-50/60 p-4">
+      <AdminCampaignOperationsLockStatus state={automationLock} />
+
+      {!automationLock.isLocked ? <section className="mb-7 rounded-[13px] border border-blue-200 bg-blue-50/60 p-4">
         <div className="grid gap-4 xl:grid-cols-[minmax(240px,0.6fr)_minmax(480px,1.4fr)] xl:items-start">
           <div className="flex items-start gap-3">
             <span
@@ -103,9 +119,11 @@ export default async function AdminCampaignsPage() {
             <SheetImportDryRun />
           </div>
         </div>
-      </section>
+      </section> : null}
 
-      <AdminCampaignOperationsTable campaigns={tableCampaigns} />
+      <AdminCampaignAutomationStatus rows={automationStatusRows} readOnly={automationLock.isLocked} />
+
+      <AdminCampaignOperationsTable campaigns={tableCampaigns} automationLocked={automationLock.isLocked} />
     </AdminShell>
   );
 }

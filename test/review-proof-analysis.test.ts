@@ -180,7 +180,7 @@ ${draft}
     expect(result).toMatchObject({ status: "AUTO_REJECT", reason: "REVIEW_TOO_OLD" });
   });
 
-  it("keeps a matching proof in manual review when the place name is not visible in the OCR text", () => {
+  it("requires manual review when the place name is not visible in the OCR text", () => {
     const draft = "고기를 맛있게 먹었고 직원분들이 친절해서 만족스러운 식사였습니다.";
     const extracted = `
 리뷰
@@ -195,6 +195,99 @@ ${draft}
       provider: "test",
     });
 
-    expect(result).toMatchObject({ status: "MANUAL_REVIEW", reason: "PLACE_NAME_NOT_FOUND" });
+    expect(result).toMatchObject({
+      status: "MANUAL_REVIEW",
+      reason: "PLACE_NAME_NOT_FOUND",
+      checks: { placeName: "FAIL" },
+    });
+  });
+
+  it.each([
+    "천안바른마취통증의학",
+    "천안바른마취통증",
+  ])("accepts a sufficiently long OCR-truncated place name: %s", (visiblePlaceName) => {
+    const draft = "병원에 방문했는데 원장님과 간호사분들이 친절하고 깔끔해서 만족했습니다.";
+    const extracted = `
+리뷰
+${visiblePlaceName}...
+${draft}
+`;
+
+    const result = decideReviewProofAnalysis({
+      draftText: draft,
+      extractedText: extracted,
+      expectedPlaceName: "천안바른마취통증의학과",
+      provider: "test",
+    });
+
+    expect(result).toMatchObject({
+      status: "AUTO_APPROVE",
+      checks: { placeName: "PASS" },
+    });
+  });
+
+  it.each([
+    "천안바른",
+    "천안바른정형외과",
+  ])("does not accept an ambiguous or divergent place-name prefix: %s", (visiblePlaceName) => {
+    const draft = "병원에 방문했는데 원장님과 간호사분들이 친절하고 깔끔해서 만족했습니다.";
+    const extracted = `
+리뷰
+${visiblePlaceName}
+${draft}
+`;
+
+    const result = decideReviewProofAnalysis({
+      draftText: draft,
+      extractedText: extracted,
+      expectedPlaceName: "천안바른마취통증의학과",
+      provider: "test",
+    });
+
+    expect(result).toMatchObject({
+      status: "MANUAL_REVIEW",
+      reason: "PLACE_NAME_NOT_FOUND",
+      checks: { placeName: "FAIL" },
+    });
+  });
+
+  it("ignores a trailing English parenthetical label when matching a Korean place name", () => {
+    const draft = "남친이랑 데이트 코스로 갔는데 분위기 좋고 탕수육도 바삭했어요.";
+    const extracted = `
+리뷰
+차이들 안녕인사동점
+${draft}
+`;
+
+    const result = decideReviewProofAnalysis({
+      draftText: draft,
+      extractedText: extracted,
+      expectedPlaceName: "차이들 안녕인사동점 (CHAIDLE - Korean Chinese Food)",
+      provider: "test",
+    });
+
+    expect(result).toMatchObject({
+      status: "AUTO_APPROVE",
+      checks: { placeName: "PASS" },
+    });
+  });
+
+  it("auto-approves an 80%+ matching proof even when rating and recency OCR metadata are unavailable", () => {
+    const draft = "생성 원고와 동일한 리뷰 문구입니다.";
+    const extracted = `
+리뷰
+테스트 매장
+${draft}
+`;
+
+    const result = decideReviewProofAnalysis({
+      draftText: draft,
+      extractedText: extracted,
+      expectedPlaceName: "테스트 매장",
+      provider: "test",
+    });
+
+    expect(result.similarity).toBeGreaterThanOrEqual(0.8);
+    expect(result).toMatchObject({ status: "AUTO_APPROVE", reason: "DRAFT_TEXT_MATCHED" });
   });
 });

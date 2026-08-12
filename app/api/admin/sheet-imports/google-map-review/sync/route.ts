@@ -1,4 +1,5 @@
 import { ok, err } from "@/lib/http";
+import { campaignOperationsMutationLockResponse } from "@/lib/admin-campaign-operations-lock";
 import { recordOperationalError } from "@/lib/error-logging";
 import { getAdminId } from "@/lib/auth/session";
 import { checkOrigin } from "@/lib/auth/origin";
@@ -292,6 +293,9 @@ export async function POST(req: Request) {
 
   const adminId = await getAdminId();
   if (!adminId) return err("UNAUTHORIZED", "관리자 로그인이 필요해요", 401);
+
+  const lockResponse = await campaignOperationsMutationLockResponse();
+  if (lockResponse) return lockResponse;
 
   const ip = clientIp(req);
   if (!(await rateLimit(`admin:sheet-import:${adminId}:${ip}`, 20, HOUR)).ok) {

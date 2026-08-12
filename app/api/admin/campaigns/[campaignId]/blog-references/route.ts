@@ -1,5 +1,6 @@
 import { checkOrigin } from "@/lib/auth/origin";
 import { getAdminId } from "@/lib/auth/session";
+import { campaignOperationsMutationLockResponse } from "@/lib/admin-campaign-operations-lock";
 import {
   collectCampaignBlogReferences,
   countCampaignBlogReferences,
@@ -29,6 +30,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ campaig
 
   const adminId = await getAdminId();
   if (!adminId) return err("UNAUTHORIZED", "관리자 로그인이 필요합니다", 401);
+
+  const lockResponse = await campaignOperationsMutationLockResponse();
+  if (lockResponse) return lockResponse;
 
   const ip = clientIp(req);
   if (!(await rateLimit(`admin:blog-references:${adminId}:${ip}`, 30, HOUR)).ok) {

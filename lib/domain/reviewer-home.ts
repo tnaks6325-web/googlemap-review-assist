@@ -20,6 +20,7 @@ export interface ReviewerHomeParticipationItem {
   status: string;
   rewardPoints: number;
   reviewNote: string | null;
+  hasProofImage: boolean;
   occurredAt: string;
 }
 
@@ -100,6 +101,7 @@ export async function getReviewerHomeDashboard(
         id: true,
         status: true,
         reviewProofSubmittedAt: true,
+        reviewProofImageUrl: true,
         reviewReviewedAt: true,
         reviewReviewNote: true,
         createdAt: true,
@@ -180,6 +182,7 @@ export async function getReviewerHomeDashboard(
           receipt.rewardPoints ??
           receipt.campaign.rewardPoints,
         reviewNote: receipt.reviewReviewNote,
+        hasProofImage: Boolean(receipt.reviewProofImageUrl),
         occurredAt: (
           receipt.reviewReviewedAt ??
           receipt.reviewProofSubmittedAt ??

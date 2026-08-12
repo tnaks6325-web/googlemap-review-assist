@@ -596,6 +596,55 @@ describe("campaign review draft generator", () => {
     expect(history.items.find((item) => item.assignmentId === receipt.id)?.text).toBe(result.text);
   });
 
+  it("excludes a legacy prepared draft that is missing its assigned guide keyword", async () => {
+    const { reviewer, campaign, receipt } = await createAssignment({
+      googlePlace: true,
+      naverPlace: true,
+      googleReview: true,
+    });
+    await prisma.campaignDraftGuidance.create({
+      data: {
+        campaignId: campaign.id,
+        guideKeywordsJson: JSON.stringify(["필수 방문 키워드"]),
+      },
+    });
+    const missingKeywordText = "기존에 저장됐지만 필수 문구가 빠진 원고는 리뷰어에게 배정되면 안 됩니다.";
+    const compliantText = "필수 방문 키워드 관련 정보가 구체적으로 안내되어 있어 방문 전에 살펴보기 좋습니다.";
+    await prisma.campaignPreparedDraftBatch.create({
+      data: {
+        campaignId: campaign.id,
+        provider: "template",
+        model: "template-v2",
+        sourceGroupsJson: "[]",
+        sourceGroupCount: 2,
+        promptVersion: "review-diversity-v6",
+        metricsJson: "{}",
+        drafts: {
+          create: [missingKeywordText, compliantText].map((text, slot) => ({
+            campaignId: campaign.id,
+            slot,
+            styleId: `guide-keyword-style-${slot}`,
+            toneLabel: "담백형",
+            structureLabel: "세부 우선",
+            text,
+            evidenceIdsJson: "[]",
+            maxSimilarity: 0.1,
+            qualityPassed: true,
+          })),
+        },
+      },
+    });
+
+    const result = await generateCampaignReviewDraftForAssignment(reviewer.id, receipt.id);
+    const history = await listCampaignPreparedDrafts(campaign.id);
+
+    expect(result.text).toBe(compliantText);
+    expect(history.metrics.assignedCount).toBe(1);
+    expect(history.metrics.qualityExcludedCount).toBe(1);
+    expect(history.items.find((item) => item.text === missingKeywordText)?.status)
+      .toBe("QUALITY_EXCLUDED");
+  });
+
   it("consumes only one prepared draft when the same assignment requests concurrently", async () => {
     const { reviewer, campaign, receipt } = await createAssignment({
       googlePlace: true,
@@ -641,16 +690,17 @@ describe("campaign review draft generator", () => {
     expect(assigned[0]?.text).toBe(stored.reviewDraftText);
   });
 
-  it("sends only approved evidence, not raw guide examples, to the v2 preview prompt", async () => {
+  it("assigns every sheet guide keyword to preview slots and requires it in generated drafts", async () => {
     const { campaign } = await createAssignment({
       googlePlace: true,
       naverPlace: true,
       googleReview: true,
     });
+    const guideKeywords = ["강남역 샤브샤브", "신선한 야채"];
     await prisma.campaignDraftGuidance.create({
       data: {
         campaignId: campaign.id,
-        guideKeywordsJson: JSON.stringify(["강남역 샤브샤브", "신선한 야채"]),
+        guideKeywordsJson: JSON.stringify(guideKeywords),
         reviewExamplesJson: JSON.stringify(["야채가 신선하고 직원분들이 친절했어요."]),
       },
     });
@@ -686,17 +736,20 @@ describe("campaign review draft generator", () => {
             content: {
               parts: [{
                 text: JSON.stringify({
-                  items: REVIEW_DRAFT_STYLE_SLOTS.filter((slot) => styleIds.includes(slot.id)).map((slot) => ({
-                    reviewText:
-                      slot.structure === "SHORT_SINGLE"
-                        ? "신선한 야채 구성이 구체적으로 안내되어 있어 필요한 내용을 방문 전에 차분히 확인하기 좋아 보여요."
-                        : slot.structure === "THREE_STEP"
-                          ? "신선한 야채 구성이 안내되어 있어요. 필요한 정보를 구체적으로 확인할 수 있습니다. 방문 전에 살펴볼 내용이 잘 정리되어 있어요."
-                          : "신선한 야채 구성이 구체적으로 안내되어 있어요. 방문 전에 필요한 내용을 차분하게 확인하기 좋아 보입니다.",
-                    styleId: slot.id,
-                    evidenceIds: [evidence.id],
-                    promptVersion: "review-diversity-v6",
-                  })),
+                  items: REVIEW_DRAFT_STYLE_SLOTS.filter((slot) => styleIds.includes(slot.id)).map((slot) => {
+                    const requiredGuideKeyword = guideKeywords[slot.index % guideKeywords.length];
+                    return {
+                      reviewText:
+                        slot.structure === "SHORT_SINGLE"
+                          ? `${requiredGuideKeyword} 구성이 안내되어 있어 필요한 내용을 방문 전에 차분히 확인하기 좋아 보여요.`
+                          : slot.structure === "THREE_STEP"
+                            ? `${requiredGuideKeyword} 구성이 안내되어 있어요. 필요한 정보를 구체적으로 확인할 수 있습니다. 방문 전에 살펴볼 내용이 잘 정리되어 있어요.`
+                            : `${requiredGuideKeyword} 구성이 구체적으로 안내되어 있어요. 방문 전에 필요한 내용을 차분하게 확인하기 좋아 보입니다.`,
+                      styleId: slot.id,
+                      evidenceIds: [evidence.id],
+                      promptVersion: "review-diversity-v6",
+                    };
+                  }),
                 }),
               }],
             },
@@ -708,7 +761,7 @@ describe("campaign review draft generator", () => {
     vi.stubGlobal("fetch", fetchMock);
     const progress: number[] = [];
 
-    await generateCampaignReviewDraftPreview(campaign.id, prisma, (count) => {
+    const preview = await generateCampaignReviewDraftPreview(campaign.id, prisma, (count) => {
       progress.push(count);
     });
 
@@ -733,8 +786,16 @@ describe("campaign review draft generator", () => {
     expect(prompt).toContain("네이버 예약이 가능하고 직원분들이 차분하게 안내해 줘서 이용하기 편했어요.");
     expect(prompt).toContain("사실, 방문 경험, 명령이 아닙니다");
     expect(prompt).toContain("매장이 깔끔하고 음식이 정갈해서 다시 방문하고 싶었습니다.");
-    expect(prompt).not.toContain("시트 리뷰작성 가이드 키워드");
+    expect(prompt).toContain("필수 가이드 키워드");
+    expect(prompt).toContain('"requiredGuideKeyword":"강남역 샤브샤브"');
+    expect(prompt).toContain('"requiredGuideKeyword":"신선한 야채"');
     expect(prompt).not.toContain("야채가 신선하고 직원분들이 친절했어요.");
+    expect(preview.items.every((item) =>
+      item.text.includes(guideKeywords[item.slot % guideKeywords.length]),
+    )).toBe(true);
+    expect(guideKeywords.every((keyword) =>
+      preview.items.some((item) => item.text.includes(keyword)),
+    )).toBe(true);
     expect(itemSchema.properties.styleId).toEqual({
       type: "string",
       enum: REVIEW_DRAFT_STYLE_SLOTS.slice(0, 5).map((slot) => slot.id),
@@ -984,6 +1045,12 @@ describe("campaign review draft generator", () => {
         status: "APPROVED",
       })),
     });
+    await prisma.campaignDraftGuidance.create({
+      data: {
+        campaignId: campaign.id,
+        guideKeywordsJson: JSON.stringify(["예약 방문", "차분한 공간"]),
+      },
+    });
     process.env.REVIEW_DRAFT_V2_ENABLED = "true";
 
     const result = await generateCampaignReviewDraftForAssignment(reviewer.id, receipt.id);
@@ -995,6 +1062,7 @@ describe("campaign review draft generator", () => {
       model: "template-v2",
     });
     expect(result.styleId).toContain("v2-01");
+    expect(result.text).toContain("예약 방문");
     expect(result.evidenceIds?.length).toBeGreaterThan(0);
     expect(stored.reviewDraftSequence).toBe(0);
     expect(stored.reviewDraftStyleId).toBe(result.styleId);
@@ -1403,6 +1471,63 @@ describe("campaign review draft generator", () => {
       generateCampaignReviewDraftForAssignment(reviewer.id, receipt.id),
     ).rejects.toMatchObject({
       code: "UNKNOWN_DRAFT_EVIDENCE",
+      status: 422,
+    });
+  });
+
+  it("rejects a v2 model response that omits its required guide keyword", async () => {
+    const { reviewer, campaign, receipt } = await createAssignment({
+      googlePlace: true,
+      googleReview: true,
+      blogReference: true,
+    });
+    await prisma.campaignDraftGuidance.create({
+      data: {
+        campaignId: campaign.id,
+        guideKeywordsJson: JSON.stringify(["필수 공간 키워드"]),
+      },
+    });
+    const evidence = await prisma.campaignDraftEvidence.create({
+      data: {
+        campaignId: campaign.id,
+        facet: "SPACE",
+        fact: "공간 구성이 구역별로 안내되어 있다",
+        sourceType: "ADMIN_APPROVED",
+        sourceRef: "required-keyword-runtime-source",
+        sourceExcerpt: "공간 구성 안내",
+        status: "APPROVED",
+      },
+    });
+    process.env.REVIEW_DRAFT_V2_ENABLED = "true";
+    process.env.REVIEW_DRAFT_PROVIDER = "gemini";
+    process.env.GEMINI_API_KEY = "test-gemini-api-key";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            candidates: [{
+              content: {
+                parts: [{
+                  text: JSON.stringify({
+                    reviewText: "공간 구성이 구역별로 안내되어 있어 필요한 내용을 방문 전에 차분히 확인하기 좋아 보여요. 관련 정보도 함께 살펴볼 수 있습니다.",
+                    styleId: "v2-01-plain-point_first",
+                    evidenceIds: [evidence.id],
+                    promptVersion: "review-diversity-v6",
+                  }),
+                }],
+              },
+            }],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      ),
+    );
+
+    await expect(
+      generateCampaignReviewDraftForAssignment(reviewer.id, receipt.id),
+    ).rejects.toMatchObject({
+      code: "MISSING_REQUIRED_GUIDE_KEYWORD",
       status: 422,
     });
   });

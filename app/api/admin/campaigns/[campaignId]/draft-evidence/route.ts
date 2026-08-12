@@ -1,5 +1,6 @@
 import { checkOrigin } from "@/lib/auth/origin";
 import { getAdminId } from "@/lib/auth/session";
+import { campaignOperationsMutationLockResponse } from "@/lib/admin-campaign-operations-lock";
 import {
   CampaignDraftEvidenceError,
   extractCampaignDraftEvidence,
@@ -49,6 +50,8 @@ export async function POST(
   if (!checkOrigin(req)) return err("BAD_ORIGIN", "요청 출처가 올바르지 않습니다.", 403);
   const adminId = await authorize();
   if (!adminId) return err("UNAUTHORIZED", "관리자 로그인이 필요합니다.", 401);
+  const lockResponse = await campaignOperationsMutationLockResponse();
+  if (lockResponse) return lockResponse;
   if (!(await rateLimit(`admin:draft-evidence:extract:${adminId}:${clientIp(req)}`, 10, HOUR)).ok) {
     return err("RATE_LIMITED", "자료 분석 횟수를 초과했습니다. 잠시 후 다시 시도해 주세요.", 429);
   }

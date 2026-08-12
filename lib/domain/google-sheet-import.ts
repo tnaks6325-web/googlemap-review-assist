@@ -37,6 +37,7 @@ export interface SheetImportNaverPlacePreview {
 export interface SheetImportDryRunRow {
   rowNumber: number;
   status: SheetImportRowStatus;
+  receiptId?: string;
   advertiserName: string;
   businessName: string;
   searchKeyword: string;
@@ -81,6 +82,7 @@ const COLUMN = {
   guide: 15,
   examples: 16,
   excludedDays: 17,
+  receiptId: 20,
 } as const;
 
 function cell(row: unknown[], index: number) {
@@ -236,6 +238,7 @@ export function parseGoogleMapReviewSheet(values: unknown[][]): SheetImportDryRu
     if (isBlankImportRow(row)) return;
 
     const advertiserName = cell(row, COLUMN.advertiserName);
+    const receiptId = cell(row, COLUMN.receiptId);
     const businessName = cell(row, COLUMN.businessName);
     const searchKeyword = cell(row, COLUMN.searchKeyword);
     const landingUrl = cell(row, COLUMN.landingUrl);
@@ -281,6 +284,7 @@ export function parseGoogleMapReviewSheet(values: unknown[][]): SheetImportDryRu
     rows.push({
       rowNumber,
       status: errors.length ? "ERROR" : "READY",
+      receiptId: receiptId || undefined,
       advertiserName,
       businessName,
       searchKeyword,

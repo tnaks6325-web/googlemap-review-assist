@@ -92,6 +92,7 @@ export interface ReviewerCampaignProofInput {
   draftText: string;
   analysis?: ReviewProofAnalysis;
   reprocess?: boolean;
+  resubmissionNote?: string;
   submittedAt?: Date;
 }
 
@@ -920,6 +921,10 @@ export async function submitReviewerCampaignProof(
   if (!input.screenshotUrl || !input.screenshotMimeType || !input.screenshotOriginalName) {
     throw new ReviewerCampaignError("INVALID_PROOF", "구글맵 리뷰 캡처본을 첨부해 주세요");
   }
+  const resubmissionNote = input.resubmissionNote?.trim() ?? "";
+  if (resubmissionNote.length > 500) {
+    throw new ReviewerCampaignError("INVALID_RESUBMISSION_NOTE", "보완 내용은 500자 이내로 입력해 주세요.");
+  }
   const clientDraftText = input.draftText.trim();
   if (clientDraftText.length < 0) {
     throw new ReviewerCampaignError("INVALID_DRAFT", "생성된 리뷰 원고를 확인해 주세요");
@@ -984,6 +989,7 @@ export async function submitReviewerCampaignProof(
         REVIEWER_ASSIGNMENT_STATUS_ASSIGNED,
         "VERIFIED",
         REVIEWER_ASSIGNMENT_STATUS_REVIEW_SUBMITTED,
+        REVIEWER_ASSIGNMENT_STATUS_REJECTED,
       ].includes(receipt.status)
     ) {
       throw new ReviewerCampaignError("BAD_ASSIGNMENT_STATE", "검수 요청할 수 없는 참여 상태예요", 409);
@@ -1009,7 +1015,10 @@ export async function submitReviewerCampaignProof(
       reviewProofAnalysisJson: analysis ? JSON.stringify(analysis).slice(0, 4000) : null,
       reviewReviewedAt: null,
       reviewReviewedBy: null,
-      reviewReviewNote: null,
+      reviewReviewNote:
+        receipt.status === REVIEWER_ASSIGNMENT_STATUS_REJECTED && resubmissionNote
+          ? `보완 제출: ${resubmissionNote}`
+          : null,
     };
 
     const status =

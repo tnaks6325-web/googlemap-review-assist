@@ -3,9 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatAdminDateTime } from "@/lib/admin-date-format";
+import {
+  REVIEW_REJECTION_REASON_OPTIONS,
+  type ReviewRejectionReasonCode,
+} from "@/lib/review-rejection";
 
 type DecisionStatus = "PENDING" | "PASSED" | "FAILED";
 type ViewMode = "THUMBNAIL" | "TABLE";
+type PlaceNameCheck = "PASS" | "FAIL" | "UNKNOWN";
 
 interface SubmissionItem {
   id: string;
@@ -17,6 +22,7 @@ interface SubmissionItem {
   analysisStatus: string | null;
   analysisReason: string | null;
   similarity: number | null;
+  placeNameCheck: PlaceNameCheck;
   reviewedAt: string | null;
   reviewedBy: string | null;
   reviewNote: string | null;
@@ -49,6 +55,23 @@ const ANALYSIS_LABELS: Record<string, string> = {
   UNAVAILABLE: "AI 이미지 인식 불가",
 };
 
+const ANALYSIS_REASON_LABELS: Record<string, string> = {
+  DRAFT_TEXT_MATCHED: "원고 내용 일치",
+  DRAFT_TEXT_MISMATCHED: "원고 내용 불일치",
+  SIMILARITY_REVIEW_REQUIRED: "원고 유사도 추가 확인 필요",
+  PLACE_NAME_NOT_FOUND: "매장명 확인 불가",
+  RATING_NOT_FIVE_STAR: "별점 5점 확인 불가",
+  REVIEW_TOO_OLD: "최근 작성 리뷰가 아님",
+  REVIEW_METADATA_UNCERTAIN: "리뷰 정보 확인 필요",
+  OCR_TEXT_UNAVAILABLE: "리뷰 텍스트 인식 불가",
+  OCR_FAILED: "이미지 문자 인식 실패",
+};
+
+function analysisReasonLabel(reason: string | null) {
+  if (!reason) return null;
+  return ANALYSIS_REASON_LABELS[reason] ?? "추가 확인 필요";
+}
+
 function StatusBadge({ status }: { status: DecisionStatus }) {
   return (
     <span
@@ -62,14 +85,45 @@ function StatusBadge({ status }: { status: DecisionStatus }) {
 function AnalysisText({ item }: { item: SubmissionItem }) {
   const similarity =
     item.similarity === null ? null : `${(item.similarity * 100).toFixed(1)}%`;
+  const placeNameMatched = item.placeNameCheck === "PASS";
+  const isAutoApprovedSimilarity = item.similarity !== null && item.similarity >= 0.8 && placeNameMatched;
+  const reasonLabel = analysisReasonLabel(item.analysisReason);
   return (
-    <p className="mt-1 text-[11px] leading-5 text-ink-weak">
-      {item.analysisStatus
-        ? ANALYSIS_LABELS[item.analysisStatus] ?? item.analysisStatus
-        : "AI 분석 결과 없음"}
-      {similarity ? ` · 유사도 ${similarity}` : ""}
-      {item.analysisReason ? ` · ${item.analysisReason}` : ""}
-    </p>
+    <div className="mt-1 text-[11px] leading-5 text-ink-weak">
+      <p>
+        {item.analysisStatus
+          ? ANALYSIS_LABELS[item.analysisStatus] ?? "AI 분석 결과 확인 필요"
+          : "AI 분석 결과 없음"}
+        {similarity ? ` · 유사도 ${similarity}` : ""}
+        {isAutoApprovedSimilarity ? (
+          <span
+            className="ml-1 inline-flex align-text-bottom text-emerald-600"
+            title="유사도 80% 이상: 자동 승인 대상"
+            aria-label="유사도 80% 이상: 자동 승인 대상"
+          >
+            <svg viewBox="0 0 16 16" aria-hidden="true" className="h-3.5 w-3.5 fill-current">
+              <path d="M8 1.25a6.75 6.75 0 1 0 0 13.5 6.75 6.75 0 0 0 0-13.5Zm3.18 4.85-3.7 4.2a.75.75 0 0 1-1.09.03L4.52 8.5a.75.75 0 1 1 1.06-1.06l1.3 1.3 3.18-3.61a.75.75 0 1 1 1.12.99Z" />
+            </svg>
+          </span>
+        ) : null}
+        {reasonLabel ? ` · ${reasonLabel}` : ""}
+      </p>
+      <p className={`inline-flex items-center gap-1 font-semibold ${placeNameMatched ? "text-emerald-700" : "text-danger"}`}>
+        매장명 검수 : {placeNameMatched ? "일치" : "확인불가"}
+        {placeNameMatched ? (
+          <svg viewBox="0 0 16 16" aria-label="매장명 일치" className="h-3.5 w-3.5 fill-current">
+            <path d="M8 1.25a6.75 6.75 0 1 0 0 13.5 6.75 6.75 0 0 0 0-13.5Zm3.18 4.85-3.7 4.2a.75.75 0 0 1-1.09.03L4.52 8.5a.75.75 0 1 1 1.06-1.06l1.3 1.3 3.18-3.61a.75.75 0 1 1 1.12.99Z" />
+          </svg>
+        ) : (
+          <>
+            <svg viewBox="0 0 16 16" aria-label="매장명 확인불가" className="h-3.5 w-3.5 fill-current">
+              <path d="M8 1.25a6.75 6.75 0 1 0 0 13.5 6.75 6.75 0 0 0 0-13.5ZM5.47 4.41 8 6.94l2.53-2.53 1.06 1.06L9.06 8l2.53 2.53-1.06 1.06L8 9.06l-2.53 2.53-1.06-1.06L6.94 8 4.41 5.47l1.06-1.06Z" />
+            </svg>
+            <span>→ 수동검수 필수</span>
+          </>
+        )}
+      </p>
+    </div>
   );
 }
 
@@ -77,24 +131,35 @@ export function AdminCampaignReviewSubmissions({
   campaignId,
   businessName,
   initialCount,
+  initialPassedCount,
+  readOnly = false,
 }: {
   campaignId: string;
   businessName: string;
   initialCount: number;
+  initialPassedCount: number;
+  readOnly?: boolean;
 }) {
   const router = useRouter();
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const enlargedCloseButtonRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
-  const [view, setView] = useState<ViewMode>("THUMBNAIL");
+  const [view, setView] = useState<ViewMode>("TABLE");
   const [result, setResult] = useState<SubmissionsResponse | null>(null);
   const [items, setItems] = useState<SubmissionItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [reanalyzing, setReanalyzing] = useState(false);
+  const [reanalyzeConfirmOpen, setReanalyzeConfirmOpen] = useState(false);
   const [mutatingId, setMutatingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [enlarged, setEnlarged] = useState<SubmissionItem | null>(null);
+  const [rejectionTarget, setRejectionTarget] = useState<SubmissionItem | null>(null);
+  const [reasonCode, setReasonCode] = useState<ReviewRejectionReasonCode>("OTHER_STORE");
+  const [customReason, setCustomReason] = useState("");
+  const [rejectionError, setRejectionError] = useState<string | null>(null);
   const displayCount = result?.summary.total ?? initialCount;
+  const displayPassedCount = result?.summary.passed ?? initialPassedCount;
 
   useEffect(() => {
     if (!open) return;
@@ -110,14 +175,28 @@ export function AdminCampaignReviewSubmissions({
 
   useEffect(() => {
     if (!open) return;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      if (enlarged) setEnlarged(null);
-      else setOpen(false);
+    const handleKeyboard = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        if (reanalyzeConfirmOpen) setReanalyzeConfirmOpen(false);
+        else if (rejectionTarget) setRejectionTarget(null);
+        else if (enlarged) setEnlarged(null);
+        else setOpen(false);
+        return;
+      }
+      if (!enlarged) return;
+
+      const enlargedIndex = items.findIndex((item) => item.id === enlarged.id);
+      if (event.key === "ArrowLeft" && enlargedIndex > 0) {
+        event.preventDefault();
+        setEnlarged(items[enlargedIndex - 1]);
+      } else if (event.key === "ArrowRight" && enlargedIndex >= 0 && enlargedIndex < items.length - 1) {
+        event.preventDefault();
+        setEnlarged(items[enlargedIndex + 1]);
+      }
     };
-    document.addEventListener("keydown", closeOnEscape);
-    return () => document.removeEventListener("keydown", closeOnEscape);
-  }, [enlarged, open]);
+    document.addEventListener("keydown", handleKeyboard);
+    return () => document.removeEventListener("keydown", handleKeyboard);
+  }, [enlarged, items, open, reanalyzeConfirmOpen, rejectionTarget]);
 
   useEffect(() => {
     if (enlarged) enlargedCloseButtonRef.current?.focus();
@@ -145,23 +224,25 @@ export function AdminCampaignReviewSubmissions({
 
   const openSubmissions = () => {
     setOpen(true);
-    setView("THUMBNAIL");
+    setView("TABLE");
     setItems([]);
     setResult(null);
     setMessage(null);
     setEnlarged(null);
+    setRejectionTarget(null);
+    setRejectionError(null);
     void load(1);
   };
 
-  const decide = async (item: SubmissionItem, action: "approve" | "reject") => {
-    const prompt =
-      action === "approve"
-        ? "이 리뷰 캡처를 육안 검수 통과로 승인하고 포인트를 적립할까요?"
-        : "이 리뷰 캡처를 검수 미통과로 확정할까요?";
-    if (!window.confirm(prompt)) return;
-
+  const persistDecision = async (
+    item: SubmissionItem,
+    action: "approve" | "reject",
+    rejection?: { reasonCode: ReviewRejectionReasonCode; customReason: string },
+  ) => {
+    if (readOnly) return;
     setMutatingId(item.id);
     setError(null);
+    setRejectionError(null);
     setMessage(null);
     try {
       const response = await fetch(`/api/admin/review-proofs/${encodeURIComponent(item.id)}`, {
@@ -169,10 +250,9 @@ export function AdminCampaignReviewSubmissions({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           action,
-          note:
-            action === "approve"
-              ? "관리자 육안 검수 결과 정상 리뷰로 확인했습니다."
-              : "관리자 육안 검수 결과 검수 미통과로 확정했습니다.",
+          ...(action === "approve"
+            ? { note: "관리자 육안 검수 결과 정상 리뷰로 확인했습니다." }
+            : rejection),
         }),
       });
       const data = (await response.json().catch(() => null)) as {
@@ -187,11 +267,68 @@ export function AdminCampaignReviewSubmissions({
           : "검수 미통과로 확정했습니다.",
       );
       await load(1);
+      setRejectionTarget(null);
       router.refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "검수 결과를 저장하지 못했습니다.");
+      const message = cause instanceof Error ? cause.message : "검수 결과를 저장하지 못했습니다.";
+      if (action === "reject") setRejectionError(message);
+      else setError(message);
     } finally {
       setMutatingId(null);
+    }
+  };
+
+  const decide = (item: SubmissionItem, action: "approve" | "reject") => {
+    if (action === "reject") {
+      setReasonCode("OTHER_STORE");
+      setCustomReason("");
+      setRejectionError(null);
+      setRejectionTarget(item);
+      return;
+    }
+    if (!window.confirm("이 리뷰 캡처를 육안 검수 통과로 승인하고 포인트를 적립할까요?")) return;
+    void persistDecision(item, "approve");
+  };
+
+  const confirmRejection = () => {
+    if (!rejectionTarget) return;
+    if (reasonCode === "CUSTOM" && !customReason.trim()) {
+      setRejectionError("상세 반려 사유를 입력해 주세요.");
+      return;
+    }
+    void persistDecision(rejectionTarget, "reject", { reasonCode, customReason });
+  };
+
+  const reanalyzePending = async () => {
+    if (readOnly || !result?.summary.pending) return;
+    setReanalyzeConfirmOpen(false);
+    setReanalyzing(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const response = await fetch(
+        `/api/admin/campaigns/${encodeURIComponent(campaignId)}/review-submissions/reanalyze`,
+        { method: "POST" },
+      );
+      const data = (await response.json().catch(() => null)) as {
+        total?: number;
+        autoApproved?: number;
+        stillPending?: number;
+        skipped?: number;
+        error?: { message?: string };
+      } | null;
+      if (!response.ok) {
+        throw new Error(data?.error?.message || "AI 일괄 재검수를 완료하지 못했습니다.");
+      }
+      setMessage(
+        `AI 재검수 ${data?.total ?? 0}건 완료 · 자동 승인 ${data?.autoApproved ?? 0}건 · 확인 필요 유지 ${data?.stillPending ?? 0}건 · 건너뜀 ${data?.skipped ?? 0}건`,
+      );
+      await load(1);
+      router.refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "AI 일괄 재검수를 완료하지 못했습니다.");
+    } finally {
+      setReanalyzing(false);
     }
   };
 
@@ -201,10 +338,12 @@ export function AdminCampaignReviewSubmissions({
         type="button"
         onClick={openSubmissions}
         disabled={initialCount === 0}
-        title={`${businessName} 제출 리뷰 이미지 ${initialCount}건`}
-        className="h-9 whitespace-nowrap rounded-[9px] border border-brand/20 bg-brand-tint px-3 text-xs font-bold text-brand transition hover:border-brand/40 hover:bg-blue-100 disabled:cursor-not-allowed disabled:border-line disabled:bg-surface-alt disabled:text-ink-weak"
+        title={`${businessName} 리뷰 검수 ${displayPassedCount}/${displayCount} · 리뷰 제출함 열기`}
+        aria-label={`${businessName} 리뷰 검수 ${displayPassedCount}/${displayCount}, 리뷰 제출함 열기`}
+        className="group inline-flex h-9 min-w-20 items-center justify-center gap-1.5 whitespace-nowrap rounded-[9px] border border-brand/25 bg-brand-tint px-3 text-sm font-black tabular-nums text-brand transition hover:border-brand/50 hover:bg-blue-100 hover:shadow-sm disabled:cursor-not-allowed disabled:border-line disabled:bg-surface-alt disabled:text-ink-weak"
       >
-        리뷰제출함 {displayCount}건
+        {displayPassedCount}/{displayCount}
+        <span aria-hidden="true" className="text-xs transition group-hover:translate-x-0.5">›</span>
       </button>
 
       {open ? (
@@ -257,7 +396,7 @@ export function AdminCampaignReviewSubmissions({
 
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-b border-line pb-3">
                 <div className="flex gap-2" role="tablist" aria-label="리뷰 제출함 보기 방식">
-                  {(["THUMBNAIL", "TABLE"] as const).map((mode) => (
+                  {(["TABLE", "THUMBNAIL"] as const).map((mode) => (
                     <button
                       key={mode}
                       type="button"
@@ -272,7 +411,19 @@ export function AdminCampaignReviewSubmissions({
                     </button>
                   ))}
                 </div>
-                <p className="text-xs text-ink-weak">불러온 이미지 {items.length}건</p>
+                <div className="flex items-center gap-3">
+                  {!readOnly && result?.summary.pending ? (
+                    <button
+                      type="button"
+                      onClick={() => setReanalyzeConfirmOpen(true)}
+                      disabled={reanalyzing}
+                      className="h-9 rounded-[9px] border border-brand/25 bg-brand-tint px-3 text-xs font-bold text-brand disabled:opacity-45"
+                    >
+                      {reanalyzing ? "AI 재검수 중…" : `AI 일괄 재검수 ${result.summary.pending}건`}
+                    </button>
+                  ) : null}
+                  <p className="text-xs text-ink-weak">불러온 이미지 {items.length}건</p>
+                </div>
               </div>
 
               <div aria-live="polite">
@@ -296,7 +447,7 @@ export function AdminCampaignReviewSubmissions({
                       item={item}
                       busy={mutatingId === item.id}
                       onEnlarge={() => setEnlarged(item)}
-                      onDecide={(action) => void decide(item, action)}
+                      onDecide={readOnly ? undefined : (action) => void decide(item, action)}
                     />
                   ))}
                 </div>
@@ -307,7 +458,7 @@ export function AdminCampaignReviewSubmissions({
                   items={items}
                   mutatingId={mutatingId}
                   onEnlarge={setEnlarged}
-                  onDecide={(item, action) => void decide(item, action)}
+                  onDecide={readOnly ? undefined : (item, action) => void decide(item, action)}
                 />
               ) : null}
 
@@ -340,30 +491,197 @@ export function AdminCampaignReviewSubmissions({
           </section>
 
           {enlarged ? (
-            <div
-              role="dialog"
-              aria-modal="true"
-              aria-label="이미지 확대 보기"
-              className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/85 p-4"
-              onMouseDown={(event) => {
-                if (event.currentTarget === event.target) setEnlarged(null);
-              }}
-            >
-              <button
-                ref={enlargedCloseButtonRef}
-                type="button"
-                onClick={() => setEnlarged(null)}
-                aria-label="확대 이미지 닫기"
-                className="absolute right-5 top-5 inline-flex size-10 items-center justify-center rounded-full bg-white text-2xl text-ink shadow-lg"
+            (() => {
+              const enlargedIndex = items.findIndex((item) => item.id === enlarged.id);
+              const previous = enlargedIndex > 0 ? items[enlargedIndex - 1] : null;
+              const next = enlargedIndex >= 0 && enlargedIndex < items.length - 1 ? items[enlargedIndex + 1] : null;
+              const similarity = enlarged.similarity === null ? "-" : `${(enlarged.similarity * 100).toFixed(1)}%`;
+
+              return (
+                <div
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="이미지 확대 보기"
+                  className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/85 p-4"
+                  onMouseDown={(event) => {
+                    if (event.currentTarget === event.target) setEnlarged(null);
+                  }}
+                >
+                  <div className="absolute left-1/2 top-5 flex -translate-x-1/2 items-center gap-3 rounded-full bg-white/95 px-4 py-2 text-xs shadow-lg">
+                    <span className="font-semibold text-ink">제출 리뷰어 · {enlarged.reviewerLabel}</span>
+                    <span className="border-l border-line pl-3 text-ink-sub">AI 유사도 · {similarity}</span>
+                    {enlargedIndex >= 0 ? <span className="text-ink-weak">{enlargedIndex + 1} / {items.length}</span> : null}
+                  </div>
+                  <button
+                    ref={enlargedCloseButtonRef}
+                    type="button"
+                    onClick={() => setEnlarged(null)}
+                    aria-label="확대 이미지 닫기"
+                    className="absolute right-5 top-5 inline-flex size-10 items-center justify-center rounded-full bg-white text-2xl text-ink shadow-lg"
+                  >
+                    ×
+                  </button>
+                  {previous ? (
+                    <button
+                      type="button"
+                      onClick={() => setEnlarged(previous)}
+                      aria-label="이전 제출 이미지 보기"
+                      className="absolute left-5 top-1/2 inline-flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/95 text-2xl text-ink shadow-lg hover:bg-white"
+                    >
+                      ‹
+                    </button>
+                  ) : null}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={enlarged.imageUrl}
+                    alt={`${enlarged.reviewerLabel} 제출 리뷰 캡처 확대`}
+                    className="max-h-[84vh] max-w-[94vw] rounded-[12px] bg-white object-contain shadow-2xl"
+                  />
+                  {next ? (
+                    <button
+                      type="button"
+                      onClick={() => setEnlarged(next)}
+                      aria-label="다음 제출 이미지 보기"
+                      className="absolute right-5 top-1/2 inline-flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-white/95 text-2xl text-ink shadow-lg hover:bg-white"
+                    >
+                      ›
+                    </button>
+                  ) : null}
+                </div>
+              );
+            })()
+          ) : null}
+
+          {rejectionTarget ? (
+            <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/60 p-4">
+              <section
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="review-rejection-title"
+                className="w-full max-w-md rounded-[16px] border border-line bg-surface p-5 shadow-2xl"
               >
-                ×
-              </button>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={enlarged.imageUrl}
-                alt={`${enlarged.reviewerLabel} 제출 리뷰 캡처 확대`}
-                className="max-h-[90vh] max-w-[94vw] rounded-[12px] bg-white object-contain shadow-2xl"
-              />
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-bold text-danger">검수 미통과</p>
+                    <h4 id="review-rejection-title" className="mt-1 text-lg font-bold text-ink">
+                      반려 사유 선택
+                    </h4>
+                    <p className="mt-1 text-xs text-ink-weak">
+                      선택한 사유는 {rejectionTarget.reviewerLabel} 리뷰어에게 표시됩니다.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setRejectionTarget(null)}
+                    aria-label="반려 사유 선택 닫기"
+                    className="inline-flex size-8 items-center justify-center rounded-[8px] border border-line text-lg text-ink-weak"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <fieldset className="mt-5 space-y-2">
+                  <legend className="sr-only">반려 사유</legend>
+                  {REVIEW_REJECTION_REASON_OPTIONS.map((option) => (
+                    <label
+                      key={option.code}
+                      className={`flex cursor-pointer items-center gap-3 rounded-[10px] border px-4 py-3 text-sm font-semibold ${
+                        reasonCode === option.code
+                          ? "border-brand bg-brand-tint text-brand"
+                          : "border-line text-ink-sub"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name={`rejection-reason-${rejectionTarget.id}`}
+                        value={option.code}
+                        checked={reasonCode === option.code}
+                        onChange={() => {
+                          setReasonCode(option.code);
+                          setRejectionError(null);
+                        }}
+                        className="size-4 accent-brand"
+                      />
+                      {option.label}
+                    </label>
+                  ))}
+                </fieldset>
+
+                <label className="mt-4 block text-sm font-bold text-ink" htmlFor="custom-rejection-reason">
+                  상세 반려 사유
+                </label>
+                <textarea
+                  id="custom-rejection-reason"
+                  value={customReason}
+                  onChange={(event) => {
+                    setCustomReason(event.target.value);
+                    setRejectionError(null);
+                  }}
+                  maxLength={500}
+                  disabled={reasonCode !== "CUSTOM"}
+                  placeholder="리뷰어가 이해하기 쉽도록 보완할 내용을 입력해 주세요."
+                  className="mt-2 min-h-24 w-full resize-y rounded-[10px] border border-line bg-surface px-3 py-2 text-sm text-ink outline-none focus:border-brand disabled:bg-surface-alt disabled:text-ink-weak"
+                />
+                {rejectionError ? (
+                  <p className="mt-2 text-xs font-semibold text-danger" role="alert">
+                    {rejectionError}
+                  </p>
+                ) : null}
+
+                <div className="mt-5 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setRejectionTarget(null)}
+                    disabled={mutatingId === rejectionTarget.id}
+                    className="h-10 rounded-[9px] border border-line px-4 text-sm font-bold text-ink-sub"
+                  >
+                    취소
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmRejection}
+                    disabled={mutatingId === rejectionTarget.id}
+                    className="h-10 rounded-[9px] bg-danger px-4 text-sm font-bold text-white disabled:opacity-45"
+                  >
+                    {mutatingId === rejectionTarget.id ? "처리 중…" : "반려 확정"}
+                  </button>
+                </div>
+              </section>
+            </div>
+          ) : null}
+
+          {reanalyzeConfirmOpen && result?.summary.pending ? (
+            <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/60 p-4">
+              <section
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="review-reanalysis-title"
+                className="w-full max-w-md rounded-[16px] border border-line bg-surface p-5 shadow-2xl"
+              >
+                <p className="text-xs font-bold text-brand">AI 일괄 재검수</p>
+                <h4 id="review-reanalysis-title" className="mt-1 text-lg font-bold text-ink">
+                  확인 필요 {result.summary.pending}건을 다시 검수할까요?
+                </h4>
+                <p className="mt-2 text-sm leading-6 text-ink-sub">
+                  최신 AI 기준으로 재분석하며, 통과한 제출건은 자동 승인되고 포인트가 적립됩니다.
+                </p>
+                <div className="mt-5 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setReanalyzeConfirmOpen(false)}
+                    className="h-10 rounded-[9px] border border-line px-4 text-sm font-bold text-ink-sub"
+                  >
+                    취소
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void reanalyzePending()}
+                    className="h-10 rounded-[9px] bg-brand px-4 text-sm font-bold text-white"
+                  >
+                    재검수 실행
+                  </button>
+                </div>
+              </section>
             </div>
           ) : null}
         </div>
@@ -406,7 +724,7 @@ function SubmissionCard({
   item: SubmissionItem;
   busy: boolean;
   onEnlarge: () => void;
-  onDecide: (action: "approve" | "reject") => void;
+  onDecide?: (action: "approve" | "reject") => void;
 }) {
   return (
     <article className="overflow-hidden rounded-[13px] border border-line bg-surface">
@@ -434,8 +752,10 @@ function SubmissionCard({
         </div>
         <AnalysisText item={item} />
         {item.reviewNote ? <p className="mt-2 text-[11px] text-ink-weak">검수 메모 · {item.reviewNote}</p> : null}
-        {item.status !== "PASSED" ? (
+        {item.status !== "PASSED" && onDecide ? (
           <DecisionButtons busy={busy} onDecide={onDecide} />
+        ) : item.status !== "PASSED" ? (
+          <p className="mt-3 text-right text-[11px] font-semibold text-ink-weak">자동화 진행 중 · 열람 전용</p>
         ) : (
           <p className="mt-3 text-right text-[11px] font-semibold text-emerald-700">포인트 지급 완료</p>
         )}
@@ -453,7 +773,7 @@ function SubmissionTable({
   items: SubmissionItem[];
   mutatingId: string | null;
   onEnlarge: (item: SubmissionItem) => void;
-  onDecide: (item: SubmissionItem, action: "approve" | "reject") => void;
+  onDecide?: (item: SubmissionItem, action: "approve" | "reject") => void;
 }) {
   return (
     <div className="mt-4 overflow-x-auto rounded-[12px] border border-line">
@@ -492,11 +812,13 @@ function SubmissionTable({
               <td className="max-w-72 px-3 py-3"><AnalysisText item={item} /></td>
               <td className="px-3 py-3"><StatusBadge status={item.status} /></td>
               <td className="px-3 py-3 text-right">
-                {item.status !== "PASSED" ? (
+                {item.status !== "PASSED" && onDecide ? (
                   <DecisionButtons
                     busy={mutatingId === item.id}
                     onDecide={(action) => onDecide(item, action)}
                   />
+                ) : item.status !== "PASSED" ? (
+                  <span className="text-xs font-semibold text-ink-weak">열람 전용</span>
                 ) : (
                   <span className="text-xs font-semibold text-emerald-700">처리 완료</span>
                 )}

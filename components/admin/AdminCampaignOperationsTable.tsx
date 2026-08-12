@@ -89,8 +89,10 @@ async function requestBlogReferenceCollection(campaignId: string) {
 
 export function AdminCampaignOperationsTable({
   campaigns,
+  automationLocked = false,
 }: {
   campaigns: AdminCampaignOperationsRow[];
+  automationLocked?: boolean;
 }) {
   const router = useRouter();
   const autoLinkStarted = useRef(false);
@@ -134,6 +136,7 @@ export function AdminCampaignOperationsTable({
   }, []);
 
   useEffect(() => {
+    if (automationLocked) return;
     if (autoLinkStarted.current) return;
     autoLinkStarted.current = true;
 
@@ -149,9 +152,10 @@ export function AdminCampaignOperationsTable({
     return () => {
       cancelled = true;
     };
-  }, [campaigns, router, runNaverAutoLink]);
+  }, [automationLocked, campaigns, router, runNaverAutoLink]);
 
   const runAllAutomation = async () => {
+    if (automationLocked) return;
     const plan = adminCampaignAutomationPlan(campaigns);
     automationRunning.current = true;
     setAutomationLoading(true);
@@ -219,7 +223,7 @@ export function AdminCampaignOperationsTable({
             type="button"
             variant="secondary"
             loading={automationLoading}
-            disabled={automationLoading || campaigns.length === 0}
+            disabled={automationLocked || automationLoading || campaigns.length === 0}
             onClick={runAllAutomation}
             className="h-10 shrink-0 whitespace-nowrap px-3 text-xs"
           >
@@ -264,7 +268,7 @@ export function AdminCampaignOperationsTable({
 
       <div className="mt-3 overflow-hidden rounded-[14px] border border-line bg-surface shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1420px] table-fixed border-separate border-spacing-0">
+          <table className="w-full min-w-[1450px] table-fixed border-separate border-spacing-0">
             <caption className="sr-only">
               관리자 캠페인 운영 상태 및 자료 연결 현황
             </caption>
@@ -277,7 +281,8 @@ export function AdminCampaignOperationsTable({
               <col className="w-[130px]" />
               <col className="w-[80px]" />
               <col className="w-[110px]" />
-              <col className="w-[400px]" />
+              <col className="w-[110px]" />
+              <col className="w-[300px]" />
             </colgroup>
             <thead>
               <tr className="bg-surface-alt">
@@ -289,6 +294,7 @@ export function AdminCampaignOperationsTable({
                 <TableHeading>원고 자료</TableHeading>
                 <TableHeading>채널 연결</TableHeading>
                 <TableHeading>참고자료</TableHeading>
+                <TableHeading>리뷰검수</TableHeading>
                 <TableHeading align="right">관리</TableHeading>
               </tr>
             </thead>
@@ -308,6 +314,7 @@ export function AdminCampaignOperationsTable({
                     expanded={expanded}
                     sourcePercent={sourcePercent}
                     status={campaignStatus}
+                    automationLocked={automationLocked}
                     onToggle={() =>
                       setExpandedCampaignId(expanded ? null : campaign.id)
                     }
@@ -350,12 +357,14 @@ function CampaignRows({
   expanded,
   sourcePercent,
   status,
+  automationLocked,
   onToggle,
 }: {
   campaign: AdminCampaignOperationsRow;
   expanded: boolean;
   sourcePercent: number;
   status: ReturnType<typeof operationalCampaignStatus>;
+  automationLocked: boolean;
   onToggle: () => void;
 }) {
   const googleMapsUrl = safeGoogleMapsUrl(campaign.googleMapsUrl);
@@ -364,7 +373,7 @@ function CampaignRows({
     <>
       <tr className="group h-[92px]">
         <td className="border-t border-line px-4 py-4 group-first:border-t-0">
-          {googleMapsUrl ? (
+          {googleMapsUrl && !automationLocked ? (
             <a
               href={googleMapsUrl}
               target="_blank"
@@ -458,17 +467,22 @@ function CampaignRows({
             {campaign.reviewReferenceCount}
           </p>
         </TableCell>
+        <TableCell>
+          <AdminCampaignReviewSubmissions
+            campaignId={campaign.id}
+            businessName={campaign.businessName}
+            initialCount={campaign.submittedReviewCount}
+            initialPassedCount={campaign.passedReviewCount}
+            readOnly={automationLocked}
+          />
+        </TableCell>
         <TableCell align="right">
           <div className="flex justify-end gap-1.5">
             <AdminCampaignDraftPreview
               campaignId={campaign.id}
               businessName={campaign.businessName}
               initialMetrics={campaign.preparedDraftMetrics}
-            />
-            <AdminCampaignReviewSubmissions
-              campaignId={campaign.id}
-              businessName={campaign.businessName}
-              initialCount={campaign.submittedReviewCount}
+              readOnly={automationLocked}
             />
             <button
               type="button"
@@ -484,8 +498,8 @@ function CampaignRows({
       </tr>
       {expanded ? (
         <tr id={`campaign-detail-${campaign.id}`}>
-          <td colSpan={9} className="border-t border-line bg-[#f8fbff] p-4">
-            <AdminCampaignRewardPoints
+          <td colSpan={10} className="border-t border-line bg-[#f8fbff] p-4">
+            {automationLocked ? <p className="rounded-[10px] border border-brand/20 bg-brand-tint px-4 py-3 text-sm font-semibold text-ink-sub">자동화 진행 중에는 상세 정보만 확인할 수 있습니다. 원고보관함·리뷰제출함의 상세 열람은 계속 가능합니다.</p> : <><AdminCampaignRewardPoints
               campaignId={campaign.id}
               initialRewardPoints={campaign.rewardPoints}
             />
@@ -506,6 +520,7 @@ function CampaignRows({
                 initialGuidance={campaign.draftGuidance}
               />
             </div>
+            </>}
           </td>
         </tr>
       ) : null}

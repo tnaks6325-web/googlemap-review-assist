@@ -140,6 +140,17 @@ describe("reviewer home account", () => {
           campaignId: campaign.id,
           reviewerId: reviewer.id,
           source: "CAMPAIGN_ASSIGNMENT",
+          dedupeHash: `dashboard-rejected-${suffix}`,
+          status: "REJECTED",
+          reviewProofImageUrl: "/uploads/review-proofs/rejected.png",
+          reviewProofSubmittedAt: new Date("2026-07-19T13:00:00.000Z"),
+          reviewReviewNote: "리뷰내용 수정필요",
+        },
+        {
+          businessId: business.id,
+          campaignId: campaign.id,
+          reviewerId: reviewer.id,
+          source: "CAMPAIGN_ASSIGNMENT",
           dedupeHash: `dashboard-completed-${suffix}`,
           status: "COMPLETED",
           reviewReviewedAt: new Date("2026-07-18T12:00:00.000Z"),
@@ -175,18 +186,19 @@ describe("reviewer home account", () => {
       },
       points: { balance: 12000 },
       participation: {
-        totalCount: 4,
+        totalCount: 5,
         reviewPendingCount: 1,
         completedCount: 1,
       },
     });
-    expect(dashboard.participation.items).toHaveLength(4);
+    expect(dashboard.participation.items).toHaveLength(5);
     expect(dashboard.participation.items.map((item) => item.status)).toEqual(
       expect.arrayContaining([
         "ASSIGNED",
         "VERIFIED",
         "REVIEW_SUBMITTED",
         "COMPLETED",
+        "REJECTED",
       ]),
     );
     for (const status of ["ASSIGNED", "VERIFIED"]) {
@@ -209,5 +221,11 @@ describe("reviewer home account", () => {
     ).toBe(500);
     expect(dashboard.profile).not.toHaveProperty("accountNumber");
     expect(JSON.stringify(dashboard)).not.toContain("99000");
+    expect(
+      dashboard.participation.items.find((item) => item.status === "REJECTED"),
+    ).toMatchObject({
+      reviewNote: "리뷰내용 수정필요",
+      hasProofImage: true,
+    });
   });
 });
