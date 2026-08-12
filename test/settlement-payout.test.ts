@@ -5,6 +5,7 @@ import {
   settlementRequestsToCsv,
 } from "@/lib/domain/admin";
 import {
+  createAdminSettlementForFullBalance,
   decodeSettlementPayoutInfo,
   getReviewerSettlementSummary,
   processSettlement,
@@ -26,6 +27,19 @@ async function createReviewer(balance = 10000) {
 }
 
 describe("settlement payout account", () => {
+  it("allows an administrator to register a reviewer's entire positive balance for a bank payout", async () => {
+    const reviewer = await createReviewer(550);
+    await upsertReviewerPayoutAccount(reviewer.id, {
+      bankName: "하나은행",
+      accountNumber: "110-123-456789",
+      accountHolder: "관리자정산",
+    });
+    const settlement = await createAdminSettlementForFullBalance(reviewer.id, "admin:test");
+    expect(settlement.amount).toBe(550);
+    const summary = await getReviewerSettlementSummary(reviewer.id);
+    expect(summary).toMatchObject({ availableBalance: 0, pendingAmount: 550 });
+  });
+
   it("returns the full normalized account number to the authenticated reviewer view", async () => {
     const reviewer = await createReviewer();
     const payoutAccount = await upsertReviewerPayoutAccount(reviewer.id, {
