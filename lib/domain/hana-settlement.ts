@@ -1,3 +1,5 @@
+import { createHash } from "crypto";
+
 export interface HanaTransferExportRecord {
   settlementId: string;
   accountNumber: string;
@@ -64,6 +66,27 @@ export function hanaBankCode(bankName: string): string | null {
   if (HANA_BANK_CODES[normalized]) return HANA_BANK_CODES[normalized];
   const matches = Object.entries(HANA_BANK_CODES).filter(([name]) => normalized.includes(name));
   return matches.length === 1 ? matches[0][1] : null;
+}
+
+/** Stable, order-independent idempotency key for one requested bank transfer set. */
+export function hanaTransferExportDedupeKey(settlementIds: string[]) {
+  const normalized = [...new Set(settlementIds)].sort().join("\n");
+  return `hana-transfer-export:${createHash("sha256").update(normalized).digest("hex")}`;
+}
+
+/**
+ * Hana result files do not carry an application settlement ID. A duplicate
+ * account/amount/recipient tuple would make a mixed success/failure result
+ * impossible to assign safely, so it must not be exported.
+ */
+export function hasAmbiguousHanaTransferTarget(records: HanaTransferExportRecord[]) {
+  const seen = new Set<string>();
+  return records.some((record) => {
+    const key = `${normalizeDigits(record.accountNumber)}:${record.amount}:${normalizeName(record.accountHolder)}`;
+    if (seen.has(key)) return true;
+    seen.add(key);
+    return false;
+  });
 }
 
 function normalizeAmount(value: unknown): number | null {

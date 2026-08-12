@@ -134,11 +134,6 @@ function decryptAccountNumber(payload: string): string {
   }
 }
 
-/** Server-only: call only after an authenticated administrator authorization check. */
-export function decodePayoutAccountNumber(accountNumberEnc: string): string {
-  return decryptAccountNumber(accountNumberEnc);
-}
-
 function maskAccountNumber(accountNumber: string): string {
   if (accountNumber.length <= 4) return accountNumber;
   return `${"*".repeat(Math.max(accountNumber.length - 4, 0))}${accountNumber.slice(-4)}`;
@@ -331,7 +326,7 @@ export async function getReviewerSettlementSummary(reviewerId: string) {
   return {
     availableBalance: wallet?.balance ?? 0,
     pendingAmount: settlements
-      .filter((settlement) => settlement.status === "REQUESTED")
+      .filter((settlement) => settlement.status === "REQUESTED" || settlement.status === "EXPORTED")
       .reduce((sum, settlement) => sum + settlement.amount, 0),
     paidAmount: settlements
       .filter((settlement) => settlement.status === "PAID")
@@ -439,7 +434,7 @@ export async function createAdminSettlementForFullBalance(reviewerId: string, ac
       tx.reviewerPayoutAccount.findUnique({ where: { reviewerId: cleanReviewerId } }),
       tx.reviewer.findUnique({ where: { id: cleanReviewerId }, select: { id: true } }),
       tx.pointWallet.findUnique({ where: { reviewerId: cleanReviewerId }, select: { balance: true } }),
-      tx.settlement.findFirst({ where: { reviewerId: cleanReviewerId, status: "REQUESTED" }, select: { id: true } }),
+      tx.settlement.findFirst({ where: { reviewerId: cleanReviewerId, status: { in: ["REQUESTED", "EXPORTED"] } }, select: { id: true } }),
     ]);
     if (!reviewer) throw new SettlementError("REVIEWER_NOT_FOUND", "리뷰어를 찾을 수 없습니다.", 404);
     if (!account) throw new SettlementError("PAYOUT_REQUIRED", "정산 계좌가 등록되지 않았습니다.", 422);

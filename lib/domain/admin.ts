@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { decodeSettlementPayoutInfo } from "@/lib/domain/settlement";
+import { hanaBankCode } from "@/lib/domain/hana-settlement";
 
 const maskPhone = (phone?: string | null) =>
   phone && phone.length >= 5 ? `${phone.slice(0, 3)}****${phone.slice(-2)}` : "-";
@@ -9,6 +10,14 @@ const maskAccount = (accountNumber?: string | null, last4?: string | null) => {
     return `${"*".repeat(Math.max(accountNumber.length - 4, 0))}${accountNumber.slice(-4)}`;
   }
   return last4 ? `****${last4}` : "-";
+};
+
+const maskPersonName = (value?: string | null) => {
+  const name = value?.trim();
+  if (!name) return null;
+  if (name.length === 1) return "*";
+  if (name.length === 2) return `${name[0]}*`;
+  return `${name[0]}${"*".repeat(name.length - 2)}${name.at(-1)}`;
 };
 
 function csvCell(value: unknown) {
@@ -110,6 +119,18 @@ export interface AdminSettlementRequestRow {
   } | null;
 }
 
+export interface AdminAutoSettlementCandidate {
+  reviewerId: string;
+  displayName: string;
+  maskedPhone: string;
+  amount: number;
+  payout: {
+    bankName: string;
+    maskedAccountNumber: string;
+  } | null;
+  unavailableReason: string | null;
+}
+
 export interface AdminReviewProofRow {
   id: string;
   reviewerId: string;
@@ -134,7 +155,7 @@ export interface AdminReviewProofRow {
 
 export async function getPendingSettlements() {
   const items = await prisma.settlement.findMany({
-    where: { status: "REQUESTED" },
+    where: { status: { in: ["REQUESTED", "EXPORTED"] } },
     orderBy: { createdAt: "asc" },
     take: 100,
     include: { reviewer: { select: { phone: true } } },
@@ -211,7 +232,7 @@ export async function getAdminReviewerRows(): Promise<AdminReviewerRow[]> {
   const sums = new Map<string, { pending: number; paid: number }>();
   for (const row of groupedSettlements) {
     const current = sums.get(row.reviewerId) ?? { pending: 0, paid: 0 };
-    if (row.status === "REQUESTED") current.pending += row._sum.amount ?? 0;
+    if (row.status === "REQUESTED" || row.status === "EXPORTED") current.pending += row._sum.amount ?? 0;
     if (row.status === "PAID") current.paid += row._sum.amount ?? 0;
     sums.set(row.reviewerId, current);
   }
@@ -241,10 +262,10 @@ export async function getAdminReviewerRows(): Promise<AdminReviewerRow[]> {
 }
 
 export async function getAdminSettlementRequests(
-  status = "REQUESTED",
+  status: string | string[] = "REQUESTED",
 ): Promise<AdminSettlementRequestRow[]> {
   const settlements = await prisma.settlement.findMany({
-    where: { status },
+    where: { status: Array.isArray(status) ? { in: status } : status },
     orderBy: { createdAt: "asc" },
     take: 500,
     include: { reviewer: { select: { phone: true } } },
@@ -267,6 +288,42 @@ export async function getAdminSettlementRequests(
             maskedAccountNumber: maskAccount(payout.accountNumber, payout.accountLast4),
           }
         : null,
+    };
+  });
+}
+
+export async function getAdminAutoSettlementCandidates(): Promise<AdminAutoSettlementCandidate[]> {
+  const reviewers = await prisma.reviewer.findMany({
+    where: { wallet: { is: { balance: { gt: 0 } } } },
+    orderBy: { createdAt: "asc" },
+    take: 500,
+    include: {
+      wallet: { select: { balance: true } },
+      payoutAccount: { select: { bankName: true, accountLast4: true, accountHolder: true } },
+      settlements: { where: { status: { in: ["REQUESTED", "EXPORTED"] } }, select: { id: true }, take: 1 },
+    },
+  });
+  return reviewers.map((reviewer) => {
+    const payout = reviewer.payoutAccount
+      ? {
+          bankName: reviewer.payoutAccount.bankName,
+          maskedAccountNumber: maskAccount(null, reviewer.payoutAccount.accountLast4),
+        }
+      : null;
+    const unavailableReason = reviewer.settlements.length
+      ? "이미 지급 대기 정산이 있습니다."
+      : !payout
+        ? "정산 계좌가 등록되지 않았습니다."
+        : !hanaBankCode(payout.bankName)
+          ? "하나은행 코드가 없는 금융기관입니다."
+          : null;
+    return {
+      reviewerId: reviewer.id,
+      displayName: maskPersonName(reviewer.name) ?? "리뷰어",
+      maskedPhone: maskPhone(reviewer.phone),
+      amount: reviewer.wallet?.balance ?? 0,
+      payout,
+      unavailableReason,
     };
   });
 }

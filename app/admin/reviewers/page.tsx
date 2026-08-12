@@ -20,7 +20,7 @@ export default async function AdminReviewersPage() {
   const [reviewers, reviewProofs, settlementRequests] = await Promise.all([
     getAdminReviewerRows(),
     getPendingReviewProofs(),
-    getAdminSettlementRequests("REQUESTED"),
+    getAdminSettlementRequests(["REQUESTED", "EXPORTED"]),
   ]);
   const totalBalance = reviewers.reduce((sum, reviewer) => sum + reviewer.balance, 0);
   const pendingAmount = settlementRequests.reduce((sum, settlement) => sum + settlement.amount, 0);
@@ -70,7 +70,7 @@ export default async function AdminReviewersPage() {
       <section className="mb-8 space-y-3">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-sm font-semibold text-ink-weak">
-            정산 신청 대기 ({settlementRequests.length}) · {pendingAmount.toLocaleString("ko-KR")}P
+            정산 대기·이체 결과 대기 ({settlementRequests.length}) · {pendingAmount.toLocaleString("ko-KR")}P
           </h2>
         </div>
         <AdminSettlementBulkActions

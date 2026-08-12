@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import {
+  getAdminAutoSettlementCandidates,
   getAdminSettlementRequests,
   settlementRequestsToCsv,
 } from "@/lib/domain/admin";
@@ -12,6 +13,7 @@ import {
   requestSettlement,
   upsertReviewerPayoutAccount,
 } from "@/lib/domain/settlement";
+import { runMoneyTx } from "@/lib/tx";
 
 let seq = 0;
 const uniquePhone = () => `0109${String(seq++).padStart(7, "0")}`;
@@ -38,6 +40,56 @@ describe("settlement payout account", () => {
     expect(settlement.amount).toBe(550);
     const summary = await getReviewerSettlementSummary(reviewer.id);
     expect(summary).toMatchObject({ availableBalance: 0, pendingAmount: 550 });
+  });
+
+  it("exposes only masked account data to the automatic Hana settlement candidate view", async () => {
+    const reviewer = await createReviewer(12500);
+    await upsertReviewerPayoutAccount(reviewer.id, {
+      bankName: "하나은행",
+      accountNumber: "110-123-456789",
+      accountHolder: "관리자정산",
+    });
+
+    const candidate = (await getAdminAutoSettlementCandidates()).find((item) => item.reviewerId === reviewer.id);
+
+    expect(candidate).toMatchObject({
+      reviewerId: reviewer.id,
+      amount: 12500,
+      payout: { bankName: "하나은행", maskedAccountNumber: "****6789" },
+      unavailableReason: null,
+    });
+    expect(JSON.stringify(candidate)).not.toContain("110123456789");
+    expect(JSON.stringify(candidate)).not.toContain("관리자정산");
+    expect(JSON.stringify(candidate)).not.toContain("Test Reviewer");
+  });
+
+  it("atomically reserves a requested settlement for one Hana export", async () => {
+    const reviewer = await createReviewer(5000);
+    await upsertReviewerPayoutAccount(reviewer.id, {
+      bankName: "하나은행",
+      accountNumber: "110-123-456789",
+      accountHolder: "관리자정산",
+    });
+    const settlement = await createAdminSettlementForFullBalance(reviewer.id, "admin:test");
+
+    const attempts = await Promise.all([
+      runMoneyTx((tx) => tx.settlement.updateMany({
+        where: { id: settlement.settlementId, status: "REQUESTED" },
+        data: { status: "EXPORTED" },
+      })),
+      runMoneyTx((tx) => tx.settlement.updateMany({
+        where: { id: settlement.settlementId, status: "REQUESTED" },
+        data: { status: "EXPORTED" },
+      })),
+    ]);
+
+    expect(attempts.map((attempt) => attempt.count).sort()).toEqual([0, 1]);
+    await expect(prisma.settlement.findUniqueOrThrow({ where: { id: settlement.settlementId } }))
+      .resolves.toMatchObject({ status: "EXPORTED" });
+    await expect(getReviewerSettlementSummary(reviewer.id))
+      .resolves.toMatchObject({ availableBalance: 0, pendingAmount: 5000 });
+    await expect(createAdminSettlementForFullBalance(reviewer.id, "admin:test"))
+      .rejects.toMatchObject({ code: "PENDING_EXISTS" });
   });
 
   it("returns the full normalized account number to the authenticated reviewer view", async () => {

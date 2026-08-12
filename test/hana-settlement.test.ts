@@ -1,8 +1,17 @@
 import { describe, expect, it } from "vitest";
 import * as XLSX from "xlsx";
-import { hanaBankCode, matchHanaTransferConfirmation } from "@/lib/domain/hana-settlement";
+import {
+  hanaBankCode,
+  hanaTransferExportDedupeKey,
+  hasAmbiguousHanaTransferTarget,
+  matchHanaTransferConfirmation,
+} from "@/lib/domain/hana-settlement";
 import { createHanaTransferXls } from "@/lib/hana-transfer-workbook";
-import { HanaResultError, parseHanaTransferResult } from "@/lib/domain/hana-settlement-results";
+import {
+  HanaResultError,
+  hasHanaExportSettlementOverlap,
+  parseHanaTransferResult,
+} from "@/lib/domain/hana-settlement-results";
 
 describe("Hana settlement files", () => {
   it("uses Hana bank codes and preserves text account identifiers in the transfer workbook", () => {
@@ -42,5 +51,34 @@ describe("Hana settlement files", () => {
     ]);
     XLSX.utils.sheet_add_aoa(source.Sheets.Sheet1, [["", "", "하나 110-123-456789", 500, 0, "김정산", "김정산 IA플레이스", "등록 (예약대기)"]], { origin: "A2" });
     expect(() => parseHanaTransferResult(XLSX.write(source, { type: "buffer", bookType: "biff8" }))).toThrow(HanaResultError);
+  });
+
+  it("detects an overlap with an unreconciled export before another bank file is created", () => {
+    const pendingBatch = JSON.stringify({ settlementIds: ["settlement-1", "settlement-2"] });
+
+    expect(hasHanaExportSettlementOverlap([pendingBatch], ["settlement-2", "settlement-3"])).toBe(true);
+    expect(hasHanaExportSettlementOverlap([pendingBatch], ["settlement-3"])).toBe(false);
+    expect(hasHanaExportSettlementOverlap(["not-json"], ["settlement-1"])).toBe(false);
+  });
+
+  it("uses one stable key for the same set of bank transfer settlements", () => {
+    expect(hanaTransferExportDedupeKey(["settlement-2", "settlement-1"])).toBe(
+      hanaTransferExportDedupeKey(["settlement-1", "settlement-2"]),
+    );
+    expect(hanaTransferExportDedupeKey(["settlement-1"])).not.toBe(
+      hanaTransferExportDedupeKey(["settlement-2"]),
+    );
+  });
+
+  it("rejects ambiguous bank result targets before a transfer workbook is created", () => {
+    const target = { accountNumber: "110-123-456789", amount: 5000, accountHolder: "김정산" };
+    expect(hasAmbiguousHanaTransferTarget([
+      { settlementId: "settlement-1", ...target },
+      { settlementId: "settlement-2", ...target },
+    ])).toBe(true);
+    expect(hasAmbiguousHanaTransferTarget([
+      { settlementId: "settlement-1", ...target },
+      { settlementId: "settlement-2", ...target, amount: 6000 },
+    ])).toBe(false);
   });
 });
