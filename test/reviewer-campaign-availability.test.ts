@@ -416,7 +416,7 @@ describe("reviewer campaign availability", () => {
     ).toMatchObject({ reviewerId: owner.id, status: "ASSIGNED" });
   });
 
-  it("releases an unsubmitted assignment after five minutes and does not keep the place cooldown", async () => {
+  it("releases an unsubmitted assignment after five minutes but keeps the seven-day place cooldown", async () => {
     const reviewer = await createReviewer();
     await prisma.campaign.updateMany({ data: { active: false } });
     const fixture = await createCampaign(`google-place-expiry-${uniq()}`, { dailyQuota: 1 });
@@ -427,10 +427,64 @@ describe("reviewer campaign availability", () => {
     const availability = await getReviewerCampaignAvailability(reviewer.id, prisma, afterExpiry);
 
     expect(assigned.assignmentId).toBeTruthy();
-    expect(availability.campaigns.map((campaign) => campaign.id)).toContain(fixture.campaign.id);
+    expect(availability.campaigns.map((campaign) => campaign.id)).not.toContain(fixture.campaign.id);
     expect(
       await prisma.receipt.findUnique({ where: { id: assigned.assignmentId! } }),
     ).toMatchObject({ status: "EXPIRED" });
+  });
+
+  it("temporarily protects the same Google place from another reviewer for 120 seconds", async () => {
+    const firstReviewer = await createReviewer();
+    const secondReviewer = await createReviewer();
+    await prisma.campaign.updateMany({ data: { active: false } });
+    const fixture = await createCampaign(`google-place-protected-${uniq()}`);
+    const now = new Date("2026-07-21T00:00:00.000Z");
+
+    await assignReviewerCampaign(firstReviewer.id, now);
+
+    const protectedAvailability = await getReviewerCampaignAvailability(
+      secondReviewer.id,
+      prisma,
+      new Date(now.getTime() + 60_000),
+    );
+    expect(protectedAvailability.campaigns.map((campaign) => campaign.id)).not.toContain(
+      fixture.campaign.id,
+    );
+    expect(protectedAvailability.participationRestriction).toMatchObject({
+      code: "PLACE_COOLDOWN",
+      remainingSeconds: 60,
+    });
+
+    const releasedAvailability = await getReviewerCampaignAvailability(
+      secondReviewer.id,
+      prisma,
+      new Date(now.getTime() + 121_000),
+    );
+    expect(releasedAvailability.campaigns.map((campaign) => campaign.id)).toContain(
+      fixture.campaign.id,
+    );
+    expect(releasedAvailability.participationRestriction).toBeNull();
+  });
+
+  it("limits a reviewer to one distinct campaign place within 12 hours", async () => {
+    const reviewer = await createReviewer();
+    await prisma.campaign.updateMany({ data: { active: false } });
+    await createCampaign(`google-place-window-first-${uniq()}`);
+    await createCampaign(`google-place-window-second-${uniq()}`);
+    await createCampaign(`google-place-window-third-${uniq()}`);
+    const now = new Date("2026-07-21T00:00:00.000Z");
+
+    await assignReviewerCampaign(reviewer.id, now);
+    const availability = await getReviewerCampaignAvailability(
+      reviewer.id,
+      prisma,
+      new Date(now.getTime() + 6 * 60_000),
+    );
+    expect(availability.availableCount).toBe(0);
+    expect(availability.participationRestriction).toMatchObject({
+      code: "REVIEWER_WINDOW_LIMIT",
+      remainingSeconds: 12 * 60 * 60 - 6 * 60,
+    });
   });
 
   it("hides a campaign when its daily assignment quota is reached", async () => {

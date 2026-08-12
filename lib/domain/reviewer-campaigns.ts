@@ -27,6 +27,9 @@ import {
 } from "@/lib/domain/campaign-participation-stats";
 
 export const REVIEWER_PLACE_COOLDOWN_DAYS = 7;
+export const CAMPAIGN_PLACE_ASSIGNMENT_COOLDOWN_MS = 2 * 60 * 1000;
+export const REVIEWER_CAMPAIGN_WINDOW_MS = 12 * 60 * 60 * 1000;
+export const REVIEWER_CAMPAIGN_WINDOW_LIMIT = 1;
 export const REVIEWER_ASSIGNMENT_STATUS_ASSIGNED = "ASSIGNED";
 export const REVIEWER_ASSIGNMENT_STATUS_REVIEW_SUBMITTED = "REVIEW_SUBMITTED";
 export const REVIEWER_ASSIGNMENT_STATUS_COMPLETED = "COMPLETED";
@@ -58,6 +61,21 @@ export interface ReviewerCampaignAvailability {
   categoryCounts: ReviewerCampaignCategoryCount[];
   campaigns: ReviewerCampaignAssignment[];
   activeAssignment: ReviewerActiveAssignment | null;
+  participationRestriction: ReviewerCampaignParticipationRestriction | null;
+}
+
+export type ReviewerCampaignParticipationRestrictionCode =
+  | "PLACE_COOLDOWN"
+  | "REVIEWER_WINDOW_LIMIT";
+
+export interface ReviewerCampaignParticipationRestriction {
+  code: ReviewerCampaignParticipationRestrictionCode;
+  unlockAt: Date;
+  remainingSeconds: number;
+}
+
+interface ReviewerCampaignAvailabilityOptions {
+  ignoreWindowLimit?: boolean;
 }
 
 export interface ReviewerActiveAssignment {
@@ -122,6 +140,14 @@ function assertAssignmentNotExpired(
 
 function cooldownStart(now = new Date()) {
   return new Date(now.getTime() - REVIEWER_PLACE_COOLDOWN_DAYS * 24 * 60 * 60 * 1000);
+}
+
+function campaignWindowStart(now = new Date()) {
+  return new Date(now.getTime() - REVIEWER_CAMPAIGN_WINDOW_MS);
+}
+
+function placeAssignmentCooldownStart(now = new Date()) {
+  return new Date(now.getTime() - CAMPAIGN_PLACE_ASSIGNMENT_COOLDOWN_MS);
 }
 
 function googlePlaceKeyForBusiness(
@@ -235,9 +261,10 @@ async function fetchCooldownReceiptRows(db: DbClient, reviewerId: string, now = 
     where: {
       reviewerId,
       createdAt: { gte: cooldownStart(now) },
-      ...effectiveCampaignAssignmentWhere(now),
+      source: REVIEWER_ASSIGNMENT_SOURCE,
     },
     select: {
+      createdAt: true,
       business: {
         select: {
           id: true,
@@ -253,8 +280,112 @@ async function fetchCooldownReceiptRows(db: DbClient, reviewerId: string, now = 
   });
 }
 
+async function fetchRecentPlaceAssignmentRows(
+  db: DbClient,
+  businessIds: string[],
+  now = new Date(),
+) {
+  if (businessIds.length === 0) return [];
+  return db.receipt.findMany({
+    where: {
+      source: REVIEWER_ASSIGNMENT_SOURCE,
+      businessId: { in: businessIds },
+      createdAt: { gte: placeAssignmentCooldownStart(now) },
+    },
+    select: {
+      reviewerId: true,
+      createdAt: true,
+      business: {
+        select: {
+          id: true,
+          googlePlaceId: true,
+          externalPlaces: {
+            where: { platform: "GOOGLE" },
+            take: 1,
+            select: { platform: true, externalId: true },
+          },
+        },
+      },
+    },
+  });
+}
+
+async function fetchReviewerCampaignWindowRows(db: DbClient, reviewerId: string, now = new Date()) {
+  return db.receipt.findMany({
+    where: {
+      reviewerId,
+      source: REVIEWER_ASSIGNMENT_SOURCE,
+      createdAt: { gte: campaignWindowStart(now) },
+    },
+    select: {
+      createdAt: true,
+      business: {
+        select: {
+          id: true,
+          googlePlaceId: true,
+          externalPlaces: {
+            where: { platform: "GOOGLE" },
+            take: 1,
+            select: { platform: true, externalId: true },
+          },
+        },
+      },
+    },
+  });
+}
+
+function googlePlaceKeyForReceipt(receipt: {
+  business: Parameters<typeof googlePlaceKeyForBusiness>[0];
+}) {
+  return googlePlaceKeyForBusiness(receipt.business);
+}
+
 function toExcludedGooglePlaceKeys(receipts: ReceiptRow[]) {
-  return new Set(receipts.map((receipt) => googlePlaceKeyForBusiness(receipt.business)));
+  return new Set(receipts.map(googlePlaceKeyForReceipt));
+}
+
+function latestUnlockByGooglePlaceKey(
+  receipts: Array<{
+    createdAt: Date;
+    business: Parameters<typeof googlePlaceKeyForBusiness>[0];
+  }>,
+  cooldownMs: number,
+) {
+  const unlockByPlaceKey = new Map<string, Date>();
+  for (const receipt of receipts) {
+    const key = googlePlaceKeyForReceipt(receipt);
+    const unlockAt = new Date(receipt.createdAt.getTime() + cooldownMs);
+    const previous = unlockByPlaceKey.get(key);
+    if (!previous || previous.getTime() < unlockAt.getTime()) {
+      unlockByPlaceKey.set(key, unlockAt);
+    }
+  }
+  return unlockByPlaceKey;
+}
+
+function reviewerWindowRestriction(
+  receipts: Awaited<ReturnType<typeof fetchReviewerCampaignWindowRows>>,
+  now: Date,
+): ReviewerCampaignParticipationRestriction | null {
+  const latestCreatedAtByPlaceKey = new Map<string, Date>();
+  for (const receipt of receipts) {
+    const key = googlePlaceKeyForReceipt(receipt);
+    const previous = latestCreatedAtByPlaceKey.get(key);
+    if (!previous || previous.getTime() < receipt.createdAt.getTime()) {
+      latestCreatedAtByPlaceKey.set(key, receipt.createdAt);
+    }
+  }
+  if (latestCreatedAtByPlaceKey.size < REVIEWER_CAMPAIGN_WINDOW_LIMIT) return null;
+
+  const unlockAt = new Date(
+    Math.min(...Array.from(latestCreatedAtByPlaceKey.values(), (createdAt) => createdAt.getTime())) +
+      REVIEWER_CAMPAIGN_WINDOW_MS,
+  );
+  return {
+    code: "REVIEWER_WINDOW_LIMIT",
+    unlockAt,
+    remainingSeconds: Math.max(0, Math.ceil((unlockAt.getTime() - now.getTime()) / 1000)),
+  };
 }
 
 function hasSufficientDraftSources(campaign: CampaignRow) {
@@ -369,11 +500,13 @@ export async function getReviewerCampaignAvailability(
   reviewerId: string,
   db: DbClient = prisma,
   now = new Date(),
+  options: ReviewerCampaignAvailabilityOptions = {},
 ): Promise<ReviewerCampaignAvailability> {
   await expireStaleCampaignAssignments(db, now);
-  const [campaigns, cooldownReceipts] = await Promise.all([
+  const [campaigns, cooldownReceipts, reviewerWindowReceipts] = await Promise.all([
     fetchActiveCampaignRows(db),
     fetchCooldownReceiptRows(db, reviewerId, now),
+    fetchReviewerCampaignWindowRows(db, reviewerId, now),
   ]);
   const statsByCampaignId = await fetchCampaignParticipationStats(
     db,
@@ -388,8 +521,13 @@ export async function getReviewerCampaignAvailability(
       now,
     ),
   );
+  const recentPlaceAssignments = await fetchRecentPlaceAssignmentRows(
+    db,
+    Array.from(new Set(allCampaigns.map((campaign) => campaign.businessId))),
+    now,
+  );
   const campaignRowsById = new Map(campaigns.map((campaign) => [campaign.id, campaign]));
-  const eligible = allCampaigns.filter(
+  const eligibleBeforeParticipationLimits = allCampaigns.filter(
     (campaign) => {
       const campaignRow = campaignRowsById.get(campaign.id);
       return Boolean(
@@ -400,6 +538,21 @@ export async function getReviewerCampaignAvailability(
       );
     },
   );
+  const placeCooldownUnlockByKey = latestUnlockByGooglePlaceKey(
+    recentPlaceAssignments.filter((receipt) => receipt.reviewerId !== reviewerId),
+    CAMPAIGN_PLACE_ASSIGNMENT_COOLDOWN_MS,
+  );
+  const placeCooldownCandidates = eligibleBeforeParticipationLimits.filter((campaign) =>
+    placeCooldownUnlockByKey.has(campaign.googlePlaceKey),
+  );
+  const reviewerLimit = options.ignoreWindowLimit
+    ? null
+    : reviewerWindowRestriction(reviewerWindowReceipts, now);
+  const eligible = reviewerLimit
+    ? []
+    : eligibleBeforeParticipationLimits.filter(
+        (campaign) => !placeCooldownUnlockByKey.has(campaign.googlePlaceKey),
+      );
   const activeReceipt = await db.receipt.findFirst({
     where: {
       reviewerId,
@@ -448,6 +601,24 @@ export async function getReviewerCampaignAvailability(
         }
       : null;
 
+  const placeCooldownRestriction =
+    !reviewerLimit && eligible.length === 0 && placeCooldownCandidates.length > 0
+      ? (() => {
+          const unlockAt = new Date(
+            Math.min(
+              ...placeCooldownCandidates.map(
+                (campaign) => placeCooldownUnlockByKey.get(campaign.googlePlaceKey)!.getTime(),
+              ),
+            ),
+          );
+          return {
+            code: "PLACE_COOLDOWN" as const,
+            unlockAt,
+            remainingSeconds: Math.max(0, Math.ceil((unlockAt.getTime() - now.getTime()) / 1000)),
+          };
+        })()
+      : null;
+
   return {
     availableCount: eligible.length,
     totalRewardPoints: eligible.reduce((sum, campaign) => sum + campaign.rewardPoints, 0),
@@ -455,6 +626,7 @@ export async function getReviewerCampaignAvailability(
     categoryCounts: buildCategoryCounts(eligible),
     campaigns: eligible,
     activeAssignment,
+    participationRestriction: reviewerLimit ?? placeCooldownRestriction,
   };
 }
 
@@ -761,7 +933,6 @@ export async function assignReviewerCampaign(
     try {
       return await prisma.$transaction(
         async (tx) => {
-          const availability = await getReviewerCampaignAvailability(reviewerId, tx, now);
           const replaceAssignmentId = options.replaceAssignmentId?.trim() || null;
           const replacementReceipt = replaceAssignmentId
             ? await tx.receipt.findUnique({
@@ -787,6 +958,11 @@ export async function assignReviewerCampaign(
               404,
             );
           }
+
+          const availability = await getReviewerCampaignAvailability(reviewerId, tx, now, {
+            ignoreWindowLimit:
+              replacementReceipt?.status === REVIEWER_ASSIGNMENT_STATUS_ASSIGNED,
+          });
 
           const replacingActiveAssignment = Boolean(
             replacementReceipt?.status === REVIEWER_ASSIGNMENT_STATUS_ASSIGNED &&
