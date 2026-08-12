@@ -27,6 +27,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return err("INVALID_ACTION", "approve 또는 reject 액션만 사용할 수 있어요");
   }
 
+  if (action === "approve") {
+    return err(
+      "MANUAL_COMPLETION_DISABLED",
+      "정산 완료는 하나은행 이체결과 파일을 업로드해 대조한 뒤에만 처리할 수 있습니다.",
+      409,
+    );
+  }
+
   try {
     const result = await processSettlement(id, action, actor);
     return ok(result);

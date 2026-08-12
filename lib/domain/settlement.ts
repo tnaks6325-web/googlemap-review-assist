@@ -134,6 +134,11 @@ function decryptAccountNumber(payload: string): string {
   }
 }
 
+/** Server-only: call only after an authenticated administrator authorization check. */
+export function decodePayoutAccountNumber(accountNumberEnc: string): string {
+  return decryptAccountNumber(accountNumberEnc);
+}
+
 function maskAccountNumber(accountNumber: string): string {
   if (accountNumber.length <= 4) return accountNumber;
   return `${"*".repeat(Math.max(accountNumber.length - 4, 0))}${accountNumber.slice(-4)}`;
@@ -421,6 +426,56 @@ export async function requestSettlement(
       amount,
       balance: wallet?.balance ?? 0,
     };
+  });
+}
+
+/** Creates a pending bank settlement for an administrator-selected full balance. */
+export async function createAdminSettlementForFullBalance(reviewerId: string, actor: string) {
+  const cleanReviewerId = reviewerId.trim();
+  if (!cleanReviewerId) throw new SettlementError("INVALID_REVIEWER", "리뷰어를 선택해 주세요.");
+
+  return runMoneyTx(async (tx) => {
+    const [account, reviewer, wallet, existing] = await Promise.all([
+      tx.reviewerPayoutAccount.findUnique({ where: { reviewerId: cleanReviewerId } }),
+      tx.reviewer.findUnique({ where: { id: cleanReviewerId }, select: { id: true } }),
+      tx.pointWallet.findUnique({ where: { reviewerId: cleanReviewerId }, select: { balance: true } }),
+      tx.settlement.findFirst({ where: { reviewerId: cleanReviewerId, status: "REQUESTED" }, select: { id: true } }),
+    ]);
+    if (!reviewer) throw new SettlementError("REVIEWER_NOT_FOUND", "리뷰어를 찾을 수 없습니다.", 404);
+    if (!account) throw new SettlementError("PAYOUT_REQUIRED", "정산 계좌가 등록되지 않았습니다.", 422);
+    if (existing) throw new SettlementError("PENDING_EXISTS", "이미 지급 대기 정산이 있습니다.", 409);
+    const amount = wallet?.balance ?? 0;
+    if (!Number.isSafeInteger(amount) || amount <= 0) {
+      throw new SettlementError("NO_AVAILABLE_BALANCE", "정산할 보유 포인트가 없습니다.", 422);
+    }
+    const decremented = await tx.pointWallet.updateMany({
+      where: { reviewerId: cleanReviewerId, balance: { gte: amount } },
+      data: { balance: { decrement: amount } },
+    });
+    if (decremented.count !== 1) {
+      throw new SettlementError("BALANCE_CHANGED", "보유 포인트가 변경되어 다시 확인해 주세요.", 409);
+    }
+    const settlement = await tx.settlement.create({
+      data: {
+        reviewerId: cleanReviewerId,
+        amount,
+        method: "BANK",
+        payoutInfo: buildSettlementPayoutInfo(account),
+        status: "REQUESTED",
+        processedBy: actor,
+      },
+    });
+    await tx.pointTransaction.create({
+      data: {
+        reviewerId: cleanReviewerId,
+        type: "SETTLE",
+        amount: -amount,
+        settlementId: settlement.id,
+        idempotencyKey: `admin-settle:${settlement.id}`,
+        memo: "관리자 지급 대상 등록",
+      },
+    });
+    return { settlementId: settlement.id, reviewerId: cleanReviewerId, amount };
   });
 }
 
