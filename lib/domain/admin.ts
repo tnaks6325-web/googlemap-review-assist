@@ -113,6 +113,7 @@ export interface AdminSettlementRequestRow {
 export interface AdminReviewProofRow {
   id: string;
   reviewerId: string;
+  reviewerName: string | null;
   maskedPhone: string;
   businessName: string;
   campaignName: string;
@@ -153,7 +154,7 @@ export async function getPendingReviewProofs(): Promise<AdminReviewProofRow[]> {
     orderBy: [{ reviewProofSubmittedAt: "asc" }, { createdAt: "asc" }],
     take: 100,
     include: {
-      reviewer: { select: { phone: true } },
+      reviewer: { select: { name: true, phone: true } },
       business: { select: { name: true } },
       campaign: { select: { name: true, rewardPoints: true } },
     },
@@ -162,6 +163,7 @@ export async function getPendingReviewProofs(): Promise<AdminReviewProofRow[]> {
   return receipts.map((receipt) => ({
     id: receipt.id,
     reviewerId: receipt.reviewerId,
+    reviewerName: receipt.reviewer.name,
     maskedPhone: maskPhone(receipt.reviewer.phone),
     businessName: receipt.business.name,
     campaignName: receipt.campaign.name,

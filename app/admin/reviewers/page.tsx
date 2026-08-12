@@ -48,6 +48,7 @@ export default async function AdminReviewersPage() {
         <ReviewProofQueue
           items={reviewProofs.map((item) => ({
             id: item.id,
+            reviewerName: item.reviewerName,
             maskedPhone: item.maskedPhone,
             businessName: item.businessName,
             campaignName: item.campaignName,

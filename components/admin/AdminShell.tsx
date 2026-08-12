@@ -3,7 +3,7 @@ import Link from "next/link";
 import { AdminLogout } from "@/components/admin/AdminLogout";
 import { cn } from "@/lib/cn";
 
-type AdminSection = "overview" | "campaigns" | "reviewers" | "errors";
+type AdminSection = "overview" | "campaigns" | "reviewProofs" | "reviewers" | "errors";
 
 interface AdminShellProps {
   current: AdminSection;
@@ -16,6 +16,7 @@ interface AdminShellProps {
 const navigation: Array<{ id: AdminSection; href: string; label: string; description: string }> = [
   { id: "overview", href: "/admin", label: "운영 현황", description: "대기 업무와 운영 신호" },
   { id: "campaigns", href: "/admin/campaigns", label: "캠페인 운영", description: "접수 반영과 장소 자료" },
+  { id: "reviewProofs", href: "/admin/review-proofs", label: "리뷰 캡처 검수", description: "검수 대기 이미지 확인" },
   { id: "reviewers", href: "/admin/reviewers", label: "리뷰어 · 정산", description: "검수와 지급 관리" },
   { id: "errors", href: "/admin/errors", label: "오류 로그", description: "실패 원인과 조치 확인" },
 ];
