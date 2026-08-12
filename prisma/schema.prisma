@@ -550,7 +550,7 @@ model Settlement {
   amount       Int // 양수(요청 금액)
   method       String // 예: BANK
   payoutInfo   String? // JSON (계좌 등)
-  status       String             @default("REQUESTED") // REQUESTED | APPROVED | PAID | REJECTED
+  status       String             @default("REQUESTED") // REQUESTED | EXPORTED | APPROVED | PAID | REJECTED | ACCOUNT_ERROR
   processedBy  String? // 처리한 관리자 식별(F1 감사)
   transactions PointTransaction[]
   createdAt    DateTime           @default(now())

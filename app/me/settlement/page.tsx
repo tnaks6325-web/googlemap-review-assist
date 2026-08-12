@@ -51,6 +51,7 @@ const POINT_LABEL: Record<string, string> = {
 
 const SETTLEMENT_LABEL: Record<string, string> = {
   REQUESTED: "정산 대기",
+  EXPORTED: "은행 이체 결과 대기",
   PAID: "정산 완료",
   REJECTED: "반려",
 };

@@ -25,6 +25,22 @@ interface ExportPayload {
   totalAmount?: unknown;
 }
 
+export interface HanaExportBatchSummary {
+  id: string;
+  filename: string;
+  count: number;
+  totalAmount: number;
+  createdAt: Date;
+  status: string;
+  result: HanaImportSummary | null;
+}
+
+export interface HanaImportSummary {
+  paidCount: number;
+  accountErrorCount: number;
+  importedAt: Date;
+}
+
 export class HanaResultError extends Error {
   constructor(
     public readonly code: string,
@@ -75,6 +91,23 @@ function parseExportPayload(value: string) {
     count: typeof payload.count === "number" ? payload.count : settlementIds.length,
     totalAmount: typeof payload.totalAmount === "number" ? payload.totalAmount : 0,
   };
+}
+
+/**
+ * A settlement must never be sent to the bank twice while its previously
+ * downloaded transfer file is still awaiting a final result reconciliation.
+ * Invalid historical job payloads are ignored here and remain inspectable by
+ * administrators rather than blocking every future export.
+ */
+export function hasHanaExportSettlementOverlap(payloads: string[], settlementIds: string[]) {
+  const currentIds = new Set(settlementIds);
+  return payloads.some((payload) => {
+    try {
+      return parseExportPayload(payload).settlementIds.some((id) => currentIds.has(id));
+    } catch {
+      return false;
+    }
+  });
 }
 
 function assertSafeWorkbookShape(workbook: XLSX.WorkBook, sheet: XLSX.WorkSheet) {
@@ -150,7 +183,10 @@ export async function reconcileHanaTransferResult(input: {
     where: { id: { in: payload.settlementIds } },
     select: { id: true, reviewerId: true, amount: true, payoutInfo: true, status: true },
   });
-  if (settlements.length !== payload.settlementIds.length || settlements.some((item) => item.status !== "REQUESTED")) {
+  if (
+    settlements.length !== payload.settlementIds.length ||
+    settlements.some((item) => item.status !== "EXPORTED" && item.status !== "REQUESTED")
+  ) {
     throw new HanaResultError("BATCH_CHANGED", "다운로드 이후 정산 대상 상태가 변경되어 결과를 반영할 수 없습니다.", 409);
   }
   if (rows.length !== settlements.length) {
@@ -198,7 +234,7 @@ export async function reconcileHanaTransferResult(input: {
       throw new HanaResultError("STALE_EXPORT_BATCH", "같은 정산 대상의 더 최근 하나은행 파일이 있어 이전 파일 결과는 반영할 수 없습니다.", 409);
     }
     const stillRequested = await tx.settlement.count({
-      where: { id: { in: payload.settlementIds }, status: "REQUESTED" },
+      where: { id: { in: payload.settlementIds }, status: { in: ["EXPORTED", "REQUESTED"] } },
     });
     if (stillRequested !== payload.settlementIds.length) {
       throw new HanaResultError("BATCH_CHANGED", "다른 처리로 정산 대상 상태가 변경되어 결과를 반영할 수 없습니다.", 409);
@@ -256,5 +292,63 @@ export async function reconcileHanaTransferResult(input: {
     });
     await tx.operationalJob.update({ where: { id: batch.id }, data: { status: "RECONCILED", completedAt: importedAt } });
     return { paidCount, accountErrorCount, unmatchedResultRows: 0 };
+  });
+}
+
+function importSummaryForBatch(batchId: string, jobs: Array<{ payloadJson: string; completedAt: Date | null }>) {
+  const summaries = jobs.flatMap((job) => {
+    if (!job.completedAt) return [];
+    try {
+      const value = JSON.parse(job.payloadJson) as {
+        batchId?: unknown;
+        paidCount?: unknown;
+        accountErrorCount?: unknown;
+      };
+      if (
+        value.batchId !== batchId ||
+        !Number.isSafeInteger(value.paidCount) ||
+        !Number.isSafeInteger(value.accountErrorCount) ||
+        (value.paidCount as number) < 0 ||
+        (value.accountErrorCount as number) < 0
+      ) return [];
+      return [{ paidCount: value.paidCount as number, accountErrorCount: value.accountErrorCount as number, importedAt: job.completedAt }];
+    } catch {
+      return [];
+    }
+  });
+  return summaries.sort((left, right) => right.importedAt.getTime() - left.importedAt.getTime())[0] ?? null;
+}
+
+/** Returns recent export metadata only; uploaded result files and account numbers are never retained here. */
+export async function getHanaExportBatches(): Promise<HanaExportBatchSummary[]> {
+  const [exports, imports] = await Promise.all([
+    prisma.operationalJob.findMany({
+      where: { type: "HANA_TRANSFER_EXPORT" },
+      orderBy: { createdAt: "desc" },
+      take: 30,
+      select: { id: true, payloadJson: true, createdAt: true, status: true },
+    }),
+    prisma.operationalJob.findMany({
+      where: { type: "HANA_TRANSFER_RESULT_IMPORT", status: "COMPLETED" },
+      orderBy: { completedAt: "desc" },
+      take: 100,
+      select: { payloadJson: true, completedAt: true },
+    }),
+  ]);
+  return exports.flatMap((job) => {
+    try {
+      const payload = parseExportPayload(job.payloadJson);
+      return [{
+        id: job.id,
+        filename: payload.filename,
+        count: payload.count,
+        totalAmount: payload.totalAmount,
+        createdAt: job.createdAt,
+        status: job.status,
+        result: importSummaryForBatch(job.id, imports),
+      }];
+    } catch {
+      return [];
+    }
   });
 }
