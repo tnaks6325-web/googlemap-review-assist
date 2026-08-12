@@ -1,10 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
 import { formatAdminDateTime } from "@/lib/admin-date-format";
 import { filterAdminReviewProofs, type AdminReviewProofFilter } from "@/lib/domain/admin";
+import {
+  adjacentReviewProofId,
+  reviewProofDecisionBody,
+  reviewProofReviewerLabel,
+} from "@/lib/review-proof-queue";
 
 type ReviewProofCheckStatus = "PASS" | "FAIL" | "UNKNOWN";
 
@@ -16,6 +21,7 @@ interface ReviewProofChecks {
 
 interface ReviewProofItem {
   id: string;
+  reviewerName: string | null;
   maskedPhone: string;
   businessName: string;
   campaignName: string;
@@ -38,62 +44,84 @@ const EMPTY_CHECKS: ReviewProofChecks = {
   recency: "UNKNOWN",
 };
 
-const checkLabels: Record<ReviewProofCheckStatus, string> = {
-  PASS: "통과",
-  FAIL: "실패",
-  UNKNOWN: "확인 필요",
-};
-
-const checkClassNames: Record<ReviewProofCheckStatus, string> = {
-  PASS: "border-emerald-100 bg-emerald-50 text-emerald-700",
-  FAIL: "border-red-100 bg-red-50 text-danger",
-  UNKNOWN: "border-line bg-canvas text-ink-weak",
-};
+const STATUS_LABELS: Record<string, string> = { AUTO_APPROVE: "AI 자동 통과", AUTO_REJECT: "AI 미통과", MANUAL_REVIEW: "AI 수동 확인 요청", UNAVAILABLE: "AI 이미지 인식 불가" };
+const REJECTION_TEMPLATES = [
+  { label: "리뷰 확인 불가", message: "제출된 이미지에서 작성한 리뷰 내용을 확인하기 어렵습니다. Google Maps의 작성 완료 화면 또는 내 리뷰가 보이는 화면으로 다시 제출해 주세요." },
+  { label: "매장 확인 불가", message: "제출된 이미지에서 캠페인 매장명을 확인하기 어렵습니다. 해당 매장 페이지와 리뷰가 함께 보이도록 다시 캡처해 주세요." },
+  { label: "이미지 불완전", message: "리뷰 작성 완료 여부를 확인할 수 없는 이미지입니다. 화면 전체가 보이도록 다시 캡처해 제출해 주세요." },
+] as const;
 
 function CheckChip({ label, value }: { label: string; value: ReviewProofCheckStatus }) {
-  return (
-    <span
-      className={`inline-flex items-center justify-between gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${checkClassNames[value]}`}
-    >
-      <span className="text-ink-weak">{label}</span>
-      <span>{checkLabels[value]}</span>
-    </span>
-  );
+  const tone = value === "PASS" ? "border-emerald-100 bg-emerald-50 text-emerald-700" : value === "FAIL" ? "border-red-100 bg-red-50 text-danger" : "border-line bg-surface-alt text-ink-weak";
+  const state = value === "PASS" ? "통과" : value === "FAIL" ? "실패" : "확인 필요";
+  return <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${tone}`}>{label} · {state}</span>;
 }
 
 export function ReviewProofQueue({ items }: { items: ReviewProofItem[] }) {
   const router = useRouter();
-  const [busy, setBusy] = useState<string | null>(null);
+  const noteRef = useRef<HTMLTextAreaElement>(null);
+  const [queue, setQueue] = useState(items);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [busyAction, setBusyAction] = useState<"approve" | "reject" | null>(null);
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectionNote, setRejectionNote] = useState("");
+  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [filter, setFilter] = useState<AdminReviewProofFilter>("ALL");
-  const visibleItems = filterAdminReviewProofs(items, filter);
+  useEffect(() => setQueue(items), [items]);
+  const visibleItems = useMemo(() => filterAdminReviewProofs(queue, filter), [filter, queue]);
+  const activeItem = activeId ? visibleItems.find((item) => item.id === activeId) ?? null : null;
+  const activeReviewerLabel = activeItem ? reviewProofReviewerLabel(activeItem.reviewerName, activeItem.maskedPhone) : null;
+  const closeModal = () => { setActiveId(null); setRejectOpen(false); setRejectionNote(""); setSelectedTemplate(null); };
+  const openModal = (id: string) => { setError(null); setMessage(null); setActiveId(id); setRejectOpen(false); setRejectionNote(""); setSelectedTemplate(null); };
+  const move = (direction: "previous" | "next") => {
+    if (!activeItem) return;
+    const nextId = adjacentReviewProofId(visibleItems.map((item) => item.id), activeItem.id, direction);
+    if (nextId) { setActiveId(nextId); setRejectOpen(false); setRejectionNote(""); setSelectedTemplate(null); }
+  };
 
-  const act = async (id: string, action: "approve" | "reject") => {
-    setBusy(`${id}:${action}`);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!activeItem || event.target === noteRef.current) return;
+      if (event.key === "ArrowLeft") { event.preventDefault(); move("previous"); }
+      if (event.key === "ArrowRight") { event.preventDefault(); move("next"); }
+      if (event.key === "Escape") closeModal();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [activeItem, visibleItems]);
+
+  const decide = async (action: "approve" | "reject") => {
+    if (!activeItem || busyAction) return;
+    const note = action === "reject" ? rejectionNote.trim() : "관리자 육안 검수 결과 정상 리뷰로 확인했습니다.";
+    if (action === "reject" && !note) { noteRef.current?.focus(); return; }
+    setBusyAction(action);
     setError(null);
     setMessage(null);
     try {
-      const res = await fetch(`/api/admin/review-proofs/${id}`, {
+      const res = await fetch(`/api/admin/review-proofs/${encodeURIComponent(activeItem.id)}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          action,
-          note: action === "reject" ? "캡처본에서 리뷰 등록 여부를 확인하기 어렵습니다." : "",
-        }),
+        body: JSON.stringify(reviewProofDecisionBody(action, note)),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error?.message ?? "처리에 실패했어요");
-      setMessage(action === "approve" ? "검수 승인과 포인트 적립을 완료했어요." : "검수 요청을 반려했어요.");
+      if (!res.ok) throw new Error(data?.error?.message ?? "검수 결과를 저장하지 못했습니다.");
+      const ids = visibleItems.map((item) => item.id);
+      const nextId = adjacentReviewProofId(ids, activeItem.id, "next") ?? adjacentReviewProofId(ids, activeItem.id, "previous");
+      setQueue((current) => current.filter((item) => item.id !== activeItem.id));
+      setActiveId(nextId);
+      setRejectOpen(false); setRejectionNote(""); setSelectedTemplate(null);
+      setMessage(action === "approve" ? "승인과 포인트 적립을 완료했습니다." : "반려 사유를 리뷰어에게 전송했습니다.");
       router.refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "오류가 발생했어요");
+      setError(e instanceof Error ? e.message : "검수 결과를 저장하지 못했습니다.");
     } finally {
-      setBusy(null);
+      setBusyAction(null);
     }
   };
 
-  if (!items.length) {
+  if (!queue.length) {
     return <p className="text-sm text-ink-weak">검수 대기 중인 리뷰 캡처가 없습니다.</p>;
   }
 
@@ -153,23 +181,7 @@ export function ReviewProofQueue({ items }: { items: ReviewProofItem[] }) {
                   <CheckChip label="작성일" value={checks.recency} />
                 </div>
               </div>
-              <div className="flex shrink-0 gap-2">
-                <Button
-                  className="h-11 px-4 text-sm"
-                  loading={busy === `${item.id}:approve`}
-                  onClick={() => act(item.id, "approve")}
-                >
-                  승인 적립
-                </Button>
-                <Button
-                  variant="secondary"
-                  className="h-11 px-4 text-sm"
-                  loading={busy === `${item.id}:reject`}
-                  onClick={() => act(item.id, "reject")}
-                >
-                  반려
-                </Button>
-              </div>
+              <Button className="h-11 px-4 text-sm" onClick={() => openModal(item.id)}>이미지 검수하기</Button>
             </div>
             <div className="mt-3 grid gap-3 sm:grid-cols-[180px_1fr]">
               <a
@@ -203,6 +215,23 @@ export function ReviewProofQueue({ items }: { items: ReviewProofItem[] }) {
           </div>
         );
       })}
+      {activeItem ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/70 p-4" role="dialog" aria-modal="true" aria-label="이미지 검수하기" onMouseDown={(event) => { if (event.currentTarget === event.target) closeModal(); }}>
+          <section className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-auto rounded-card bg-surface shadow-2xl">
+            <header className="flex items-center justify-between border-b border-line px-5 py-4"><h2 className="text-lg font-bold text-ink">이미지 검수하기</h2><button type="button" onClick={closeModal} className="rounded-btn border border-line px-3 py-2 text-xs font-bold">닫기 ×</button></header>
+            <div className="grid gap-5 p-5 lg:grid-cols-[1.4fr_1fr]">
+              <section className="rounded-field bg-canvas p-2">{activeItem.hasProofImage ? <img src={`/api/admin/review-proofs/${activeItem.id}`} alt={`${activeItem.businessName} 제출 리뷰 확대 이미지`} className="h-auto w-full rounded-[8px]" /> : <div className="flex min-h-60 items-center justify-center text-sm text-ink-weak">이미지를 불러올 수 없습니다.</div>}</section>
+              <aside>
+                <p className="text-xs font-bold text-ink-weak">AI 검수 결과</p><p className="mt-2 font-bold text-ink">{STATUS_LABELS[activeItem.analysisStatus ?? ""] ?? "분석 대기"}</p><p className="mt-3 text-sm leading-6 text-ink-sub">{activeItem.analysisReason ?? "AI 판정 사유가 아직 준비되지 않았습니다."}</p>
+                <p className="mt-5 text-sm font-semibold text-ink">리뷰어 {activeReviewerLabel}</p><p className="mt-1 text-sm text-ink-sub">적립 예정 {activeItem.rewardPoints.toLocaleString("ko-KR")}P</p>
+                <div className="mt-5 flex gap-2"><Button variant="secondary" className="flex-1" disabled={Boolean(busyAction)} onClick={() => setRejectOpen((current) => !current)}>반려</Button><Button className="flex-1" loading={busyAction === "approve"} disabled={Boolean(busyAction)} onClick={() => void decide("approve")}>수동 승인</Button></div>
+                {rejectOpen ? <section className="mt-4 rounded-card border border-danger/20 bg-red-50/60 p-4"><p className="font-bold text-ink">반려 사유</p><div className="mt-2 flex flex-wrap gap-2">{REJECTION_TEMPLATES.map((template) => <button key={template.label} type="button" onClick={() => { setSelectedTemplate(template.label); setRejectionNote(template.message); }} className={`rounded-btn border px-3 py-2 text-xs font-bold ${selectedTemplate === template.label ? "border-danger text-danger" : "border-line"}`}>{template.label}</button>)}</div><textarea ref={noteRef} value={rejectionNote} maxLength={500} onChange={(event) => { setSelectedTemplate(null); setRejectionNote(event.target.value); }} className="mt-3 min-h-28 w-full rounded-field border border-line p-3 text-sm" placeholder="리뷰어에게 보낼 반려 사유를 입력하세요." /><Button className="mt-3 w-full" loading={busyAction === "reject"} disabled={!rejectionNote.trim() || Boolean(busyAction)} onClick={() => void decide("reject")}>반려 확정 및 메시지 전송</Button></section> : null}
+              </aside>
+            </div>
+            <footer className="flex justify-between border-t border-line px-5 py-3"><button type="button" onClick={() => move("previous")} className="text-sm font-bold">‹ 이전 리뷰</button><button type="button" onClick={() => move("next")} className="text-sm font-bold">다음 리뷰 ›</button></footer>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }
