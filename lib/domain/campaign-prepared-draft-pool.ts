@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import { generateCampaignReviewDraftPreview } from "@/lib/domain/campaign-review-draft";
-import { CAMPAIGN_AUTOMATION_DRAFT_TARGET } from "@/lib/domain/campaign-automation-policy";
+import { campaignPreparedDraftReserveTarget } from "@/lib/domain/campaign-draft-reserve";
 
 const MAX_ROUNDS = 12;
 const MAX_STAGNANT_ROUNDS = 3;
@@ -30,7 +30,7 @@ export async function fillPreparedDraftPool(
   _campaignId: string,
   dependencies: PreparedDraftPoolDependencies,
 ): Promise<PreparedDraftPoolResult> {
-  const target = dependencies.target ?? CAMPAIGN_AUTOMATION_DRAFT_TARGET;
+  const target = dependencies.target ?? campaignPreparedDraftReserveTarget(null);
   const maxRounds = dependencies.maxRounds ?? MAX_ROUNDS;
   const maxStagnantRounds = dependencies.maxStagnantRounds ?? MAX_STAGNANT_ROUNDS;
   const initialCount = await dependencies.countUnassignedQualityDrafts();
@@ -56,14 +56,20 @@ export async function fillPreparedDraftPool(
     finalCount,
     rounds,
     stagnantRounds,
-    reachedTarget: finalCount === target,
+    reachedTarget: finalCount >= target,
   };
 }
 
 export async function fillCampaignPreparedDraftPool(campaignId: string) {
   const cleanCampaignId = campaignId.trim();
   if (!cleanCampaignId) throw new Error("Missing campaign id for prepared draft pool");
+  const campaign = await prisma.campaign.findUnique({
+    where: { id: cleanCampaignId },
+    select: { totalQuota: true },
+  });
+  if (!campaign) throw new Error("Campaign not found for prepared draft pool");
   return fillPreparedDraftPool(cleanCampaignId, {
+    target: campaignPreparedDraftReserveTarget(campaign.totalQuota),
     countUnassignedQualityDrafts: () => prisma.campaignPreparedDraft.count({
       where: { campaignId: cleanCampaignId, qualityPassed: true, assignedReceiptId: null },
     }),

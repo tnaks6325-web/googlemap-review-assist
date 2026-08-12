@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { campaignPreparedDraftReserveTarget } from "@/lib/domain/campaign-draft-reserve";
 
 type DraftStatus = "UNASSIGNED" | "QUALITY_EXCLUDED" | "ASSIGNED";
 
@@ -253,6 +254,7 @@ export const CAMPAIGN_DRAFT_AUTOFILL_MAX_STAGNANT_ROUNDS = 3;
 
 export async function runCampaignDraftAutofill({
   initialUnassignedCount,
+  targetCount = 5,
   generateRound,
   loadHistory,
   onHistory,
@@ -260,17 +262,19 @@ export async function runCampaignDraftAutofill({
   maxStagnantRounds = CAMPAIGN_DRAFT_AUTOFILL_MAX_STAGNANT_ROUNDS,
 }: {
   initialUnassignedCount: number;
+  targetCount?: number;
   generateRound: (round: number) => Promise<void>;
   loadHistory: () => Promise<PreparedDraftHistory>;
   onHistory?: (history: PreparedDraftHistory) => void;
   maxRounds?: number;
   maxStagnantRounds?: number;
 }) {
+  const safeTargetCount = Math.max(1, targetCount);
   let unassignedCount = Math.max(0, initialUnassignedCount);
   let stagnantRounds = 0;
   let latestHistory: PreparedDraftHistory | null = null;
 
-  for (let round = 1; unassignedCount < 25 && round <= maxRounds; round += 1) {
+  for (let round = 1; unassignedCount < safeTargetCount && round <= maxRounds; round += 1) {
     let lastError: unknown;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
@@ -296,8 +300,8 @@ export async function runCampaignDraftAutofill({
   }
 
   if (!latestHistory) latestHistory = await loadHistory();
-  if (latestHistory.metrics.unassignedCount < 25) {
-    throw new Error("미배정 원고 25건을 채우지 못했습니다. 잠시 후 이어서 생성해 주세요.");
+  if (latestHistory.metrics.unassignedCount < safeTargetCount) {
+    throw new Error(`미배정 원고 ${safeTargetCount}건을 채우지 못했습니다. 잠시 후 이어서 생성해 주세요.`);
   }
   return latestHistory;
 }
@@ -315,6 +319,7 @@ type PendingDraftReview =
 export function AdminCampaignDraftPreview({
   campaignId,
   businessName,
+  totalQuota,
   readOnly = false,
   initialMetrics = {
     totalCount: 0,
@@ -326,9 +331,11 @@ export function AdminCampaignDraftPreview({
 }: {
   campaignId: string;
   businessName: string;
+  totalQuota?: number | null;
   readOnly?: boolean;
   initialMetrics?: PreparedDraftMetrics;
 }) {
+  const draftTarget = campaignPreparedDraftReserveTarget(totalQuota);
   const [busy, setBusy] = useState<"loading" | "generating" | null>(null);
   const [history, setHistory] = useState<PreparedDraftHistory | null>(null);
   const [metrics, setMetrics] = useState(initialMetrics);
@@ -336,12 +343,12 @@ export function AdminCampaignDraftPreview({
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [generationProgress, setGenerationProgress] = useState<number | null>(null);
-  const [generationTarget, setGenerationTarget] = useState(25);
   const [editingDraftId, setEditingDraftId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
   const [mutatingDraftId, setMutatingDraftId] = useState<string | null>(null);
   const [pendingReview, setPendingReview] = useState<PendingDraftReview | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const preparedDraftCount = metrics.unassignedCount;
 
   useEffect(() => {
     if (!open) return;
@@ -397,15 +404,15 @@ export function AdminCampaignDraftPreview({
     setError(null);
     try {
       await runCampaignDraftAutofill({
-        initialUnassignedCount: metrics.unassignedCount,
+        initialUnassignedCount: preparedDraftCount,
+        targetCount: draftTarget,
         generateRound: async () => {
           setGenerationProgress(0);
           const response = await fetch(`/api/admin/campaigns/${campaignId}/draft-preview`, {
             method: "POST",
           });
-          await consumeDraftGenerationStream(response, (generatedCount, targetCount) => {
+          await consumeDraftGenerationStream(response, (generatedCount) => {
             setGenerationProgress(generatedCount);
-            setGenerationTarget(targetCount);
           });
         },
         loadHistory: fetchHistory,
@@ -523,18 +530,17 @@ export function AdminCampaignDraftPreview({
       {!readOnly ? <button
         type="button"
         onClick={generate}
-        disabled={busy !== null || mutatingDraftId !== null || metrics.unassignedCount >= 25}
+        disabled={busy !== null || mutatingDraftId !== null || preparedDraftCount >= draftTarget}
         title={`${businessName} 원고 생성`}
         className="relative h-10 min-w-[112px] overflow-hidden whitespace-nowrap rounded-[9px] border border-brand/20 bg-brand-tint px-3 text-xs font-bold text-brand transition hover:border-brand/40 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-70"
       >
         {busy === "generating" && generationProgress !== null
           ? <DraftGenerationProgress
-              current={metrics.unassignedCount}
-              target={25}
+              current={preparedDraftCount + generationProgress}
+              target={draftTarget}
               attempted={generationProgress}
-              attemptTarget={generationTarget}
             />
-          : `원고생성 ${Math.min(metrics.unassignedCount, 25)}/25`}
+          : `원고생성 ${Math.min(preparedDraftCount, draftTarget)}/${draftTarget}`}
       </button> : null}
       <button
         type="button"

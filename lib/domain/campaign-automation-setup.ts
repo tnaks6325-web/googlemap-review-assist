@@ -129,6 +129,7 @@ export async function activateAutomatedCampaign(campaignId: string) {
     activeReferenceCount: campaign.blogReferences.length,
     evidenceCount: campaign.draftEvidence.length,
     evidenceFacetCount: new Set(campaign.draftEvidence.map((evidence) => evidence.facet)).size,
+    totalQuota: campaign.totalQuota,
     unassignedQualityDraftCount: campaign.preparedDrafts.length,
     campaignPeriodValid: validCampaignPeriod(campaign),
   });

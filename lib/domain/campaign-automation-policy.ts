@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
+import {
+  CAMPAIGN_PREPARED_DRAFT_RESERVE_COUNT,
+  campaignPreparedDraftReserveTarget,
+} from "@/lib/domain/campaign-draft-reserve";
 
-export const CAMPAIGN_AUTOMATION_DRAFT_TARGET = 25;
+export const CAMPAIGN_AUTOMATION_DRAFT_TARGET = CAMPAIGN_PREPARED_DRAFT_RESERVE_COUNT;
 export const CAMPAIGN_AUTOMATION_MIN_EVIDENCE = 6;
 export const CAMPAIGN_AUTOMATION_MIN_EVIDENCE_FACETS = 3;
 
@@ -20,6 +24,7 @@ export interface CampaignAutomationGateInput {
   activeReferenceCount: number;
   evidenceCount: number;
   evidenceFacetCount: number;
+  totalQuota?: number | null;
   unassignedQualityDraftCount: number;
   campaignPeriodValid: boolean;
 }
@@ -74,7 +79,10 @@ export function evaluateCampaignAutomationGate(input: CampaignAutomationGateInpu
   ) {
     reasons.push("EVIDENCE_NOT_READY");
   }
-  if (input.unassignedQualityDraftCount !== CAMPAIGN_AUTOMATION_DRAFT_TARGET) {
+  if (
+    input.unassignedQualityDraftCount <
+    campaignPreparedDraftReserveTarget(input.totalQuota)
+  ) {
     reasons.push("PREPARED_DRAFT_TARGET_NOT_MET");
   }
   if (!input.campaignPeriodValid) reasons.push("CAMPAIGN_PERIOD_INVALID");

@@ -45,7 +45,20 @@ describe("신규 캠페인 자동화 정책", () => {
     expect(campaignSourceKey(base)).toBe(campaignSourceKey(sameBusinessDataWithDifferentRow));
   });
 
-  it("필수 준비 조건과 정확히 25개의 미배정 품질 통과 원고를 모두 요구한다", () => {
+  it("필수 준비 조건과 캠페인 모집 수에 맞춘 미배정 품질 통과 원고를 요구한다", () => {
+    expect(
+      evaluateCampaignAutomationGate({
+        sourceReady: true,
+        googlePlaceLinked: true,
+        naverPlaceLinked: true,
+        activeReferenceCount: 1,
+        evidenceCount: 6,
+        evidenceFacetCount: 3,
+        unassignedQualityDraftCount: 5,
+        campaignPeriodValid: true,
+      }),
+    ).toEqual({ ready: true, reasons: [] });
+
     expect(
       evaluateCampaignAutomationGate({
         sourceReady: true,
@@ -67,9 +80,23 @@ describe("신규 캠페인 자동화 정책", () => {
         activeReferenceCount: 1,
         evidenceCount: 6,
         evidenceFacetCount: 3,
-        unassignedQualityDraftCount: 24,
+        unassignedQualityDraftCount: 4,
         campaignPeriodValid: true,
       }),
     ).toEqual({ ready: false, reasons: ["PREPARED_DRAFT_TARGET_NOT_MET"] });
+
+    expect(
+      evaluateCampaignAutomationGate({
+        sourceReady: true,
+        googlePlaceLinked: true,
+        naverPlaceLinked: true,
+        activeReferenceCount: 1,
+        evidenceCount: 6,
+        evidenceFacetCount: 3,
+        totalQuota: 2,
+        unassignedQualityDraftCount: 2,
+        campaignPeriodValid: true,
+      }),
+    ).toEqual({ ready: true, reasons: [] });
   });
 });

@@ -50,6 +50,7 @@ async function createAssignment(options: {
   googleReview?: boolean;
   blogReference?: boolean;
   category?: string;
+  totalQuota?: number;
 }) {
   const reviewer = await createReviewer();
   const owner = await prisma.owner.create({
@@ -118,6 +119,7 @@ async function createAssignment(options: {
       slug: await generateUniqueSlug(),
       name: `campaign-${uniq()}`,
       active: true,
+      totalQuota: options.totalQuota,
       blogReferences: options.blogReference
         ? {
             create: {
@@ -249,11 +251,37 @@ describe("campaign review draft generator", () => {
       provider: "template",
       promptVersion: "review-diversity-v6",
     });
-    expect(preview.items).toHaveLength(25);
-    expect(preview.metrics.styleCoverage).toBe(25);
+    expect(preview.items).toHaveLength(5);
+    expect(preview.metrics.styleCoverage).toBe(5);
     expect(nonSpaceLength(preview.text)).toBeGreaterThanOrEqual(30);
     expect(after.reviewDraftText).toBe(before.reviewDraftText);
     expect(after.reviewDraftVersion).toBe(before.reviewDraftVersion);
+  });
+
+  it("limits the replacement reserve to the campaign quota when it is smaller than five", async () => {
+    const { campaign } = await createAssignment({
+      googlePlace: true,
+      naverPlace: true,
+      googleReview: true,
+      totalQuota: 2,
+    });
+    await prisma.campaignDraftEvidence.createMany({
+      data: Array.from({ length: 8 }, (_, index) => ({
+        campaignId: campaign.id,
+        facet: ["SPACE", "ACCESS", "OPERATIONS", "OTHER"][index % 4],
+        fact: `소규모 캠페인 승인 사실 ${index + 1}이 구체적으로 안내되어 있다`,
+        sourceType: "ADMIN_APPROVED",
+        sourceRef: `small-quota-preview-${index}`,
+        sourceExcerpt: `승인 사실 ${index + 1}`,
+        status: "APPROVED",
+      })),
+    });
+
+    const preview = await generateCampaignReviewDraftPreview(campaign.id);
+    const history = await listCampaignPreparedDrafts(campaign.id);
+
+    expect(preview.items).toHaveLength(2);
+    expect(history.metrics.totalCount).toBe(2);
   });
 
   it("keeps five existing drafts and stores only the remaining twenty passed drafts", () => {
@@ -275,7 +303,7 @@ describe("campaign review draft generator", () => {
     expect(selected.map((item) => item.id)).toContain("passed-0");
   });
 
-  it("stores every admin preview item and accumulates passed and excluded drafts", async () => {
+  it("stores every admin preview item in the replacement reserve", async () => {
     const { campaign } = await createAssignment({
       googlePlace: true,
       naverPlace: true,
@@ -295,22 +323,15 @@ describe("campaign review draft generator", () => {
 
     const first = await generateCampaignReviewDraftPreview(campaign.id);
     const firstHistory = await listCampaignPreparedDrafts(campaign.id);
-    const second = await generateCampaignReviewDraftPreview(campaign.id);
-    const accumulated = await listCampaignPreparedDrafts(campaign.id);
-
-    expect(firstHistory.metrics.totalCount).toBe(25);
+    expect(firstHistory.metrics.totalCount).toBe(first.items.length);
     expect(firstHistory.metrics.unassignedCount).toBe(
       first.items.filter((item) => item.qualityPassed).length,
     );
     expect(firstHistory.metrics.qualityExcludedCount).toBe(
       first.items.filter((item) => !item.qualityPassed).length,
     );
-    expect(accumulated.metrics.totalCount).toBe(50);
-    expect(accumulated.metrics.unassignedCount).toBe(
-      [...first.items, ...second.items].filter((item) => item.qualityPassed).length,
-    );
-    expect(accumulated.items).toHaveLength(50);
-    expect(new Set(accumulated.items.map((item) => item.batchId)).size).toBe(2);
+    expect(firstHistory.items).toHaveLength(first.items.length);
+    expect(new Set(firstHistory.items.map((item) => item.batchId)).size).toBe(1);
   });
 
   it("keeps the first distinct candidate and excludes only the later repeated candidate", () => {
@@ -410,7 +431,7 @@ describe("campaign review draft generator", () => {
     expect(progress).toEqual([1, 2, 3, 4, 5]);
   });
 
-  it("generates a long 25-draft matrix in five bounded batches", async () => {
+  it("generates the five-draft reserve in one bounded batch", async () => {
     const { campaign } = await createAssignment({
       googlePlace: true,
       naverPlace: true,
@@ -465,9 +486,9 @@ describe("campaign review draft generator", () => {
       progress.push(count);
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(5);
-    expect(preview.items).toHaveLength(25);
-    expect(progress).toEqual(Array.from({ length: 25 }, (_, index) => index + 1));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(preview.items).toHaveLength(5);
+    expect(progress).toEqual(Array.from({ length: 5 }, (_, index) => index + 1));
   });
 
   it("reports each completed matrix item while the preview is generated", async () => {
@@ -492,7 +513,7 @@ describe("campaign review draft generator", () => {
       progress.push(count);
     });
 
-    expect(progress).toEqual(Array.from({ length: 25 }, (_, index) => index + 1));
+    expect(progress).toEqual(Array.from({ length: 5 }, (_, index) => index + 1));
   });
 
   it("migrates legacy prepared drafts exactly once without deleting the originals", async () => {
@@ -766,7 +787,7 @@ describe("campaign review draft generator", () => {
     });
 
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain(":streamGenerateContent?alt=sse&key=");
-    expect(progress).toEqual(Array.from({ length: 25 }, (_, index) => index + 1));
+    expect(progress).toEqual(Array.from({ length: 5 }, (_, index) => index + 1));
     const requestBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
     const prompt = requestBody.contents[0].parts[0].text;
     const itemSchema =
