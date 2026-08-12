@@ -51,6 +51,13 @@ export async function POST(req: Request) {
       totalRewardPoints: 0,
       cooldownDays: result.cooldownDays,
       categoryCounts: result.categoryCounts,
+      participationRestriction: result.participationRestriction
+        ? {
+            code: result.participationRestriction.code,
+            unlockAt: result.participationRestriction.unlockAt.toISOString(),
+            remainingSeconds: result.participationRestriction.remainingSeconds,
+          }
+        : null,
       assignmentId: null,
       assignmentExpiresAt: null,
       remainingSeconds: 0,
@@ -65,6 +72,13 @@ export async function POST(req: Request) {
     totalRewardPoints: result.totalRewardPoints,
     cooldownDays: result.cooldownDays,
     categoryCounts: result.categoryCounts,
+    participationRestriction: result.participationRestriction
+      ? {
+          code: result.participationRestriction.code,
+          unlockAt: result.participationRestriction.unlockAt.toISOString(),
+          remainingSeconds: result.participationRestriction.remainingSeconds,
+        }
+      : null,
     assignmentId: result.assignmentId,
     assignmentExpiresAt: result.assignmentExpiresAt?.toISOString() ?? null,
     remainingSeconds: result.remainingSeconds,

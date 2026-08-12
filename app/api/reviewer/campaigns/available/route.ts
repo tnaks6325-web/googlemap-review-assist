@@ -18,6 +18,13 @@ export async function GET() {
     totalRewardPoints: availability.totalRewardPoints,
     cooldownDays: availability.cooldownDays,
     categoryCounts: availability.categoryCounts,
+    participationRestriction: availability.participationRestriction
+      ? {
+          code: availability.participationRestriction.code,
+          unlockAt: availability.participationRestriction.unlockAt.toISOString(),
+          remainingSeconds: availability.participationRestriction.remainingSeconds,
+        }
+      : null,
     activeAssignment: availability.activeAssignment
       ? {
           assignmentId: availability.activeAssignment.assignmentId,
