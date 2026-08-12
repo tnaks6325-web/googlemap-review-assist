@@ -4,6 +4,7 @@ import { recordOperationalError } from "@/lib/error-logging";
 import { getAdminId } from "@/lib/auth/session";
 import { checkOrigin } from "@/lib/auth/origin";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
+import { prisma } from "@/lib/db";
 import {
   findBestNaverPlaceSnapshotForCampaign,
   MIN_AUTO_NAVER_MATCH_CONFIDENCE,
@@ -12,6 +13,7 @@ import { resolveGooglePlace } from "@/lib/domain/external-place-providers";
 import { syncGoogleMapReviewCampaignRows } from "@/lib/domain/google-sheet-campaign-sync";
 import {
   applyResolvedGooglePlaceNameToSheetRow,
+  excludeExistingGoogleMapReviewCampaignRows,
   googlePlaceInputForSheetRow,
   parseGoogleMapReviewSheet,
   summarizeSheetImportRows,
@@ -309,11 +311,43 @@ export async function POST(req: Request) {
   try {
     const sheet = await readGoogleSheetValues(spreadsheetId, range);
     const dryRunResult = parseGoogleMapReviewSheet(sheet.values);
+    const existingCampaigns = dryRun
+      ? await prisma.campaign.findMany({
+          select: {
+            business: {
+              select: {
+                name: true,
+                googlePlaceId: true,
+                externalPlaces: {
+                  where: { platform: "GOOGLE" },
+                  select: { externalId: true },
+                },
+              },
+            },
+          },
+        })
+      : [];
+    const existingCampaignReferences = existingCampaigns.map(({ business }) => ({
+      businessName: business.name,
+      googlePlaceIds: [business.googlePlaceId, ...business.externalPlaces.map((place) => place.externalId)],
+    }));
+    const initialRows = dryRun
+      ? excludeExistingGoogleMapReviewCampaignRows(
+          dryRunResult.rows,
+          existingCampaignReferences
+        )
+      : { rows: dryRunResult.rows, skippedExistingCampaigns: 0 };
     const googleRows = await addGooglePlacePreviews(
-      dryRunResult.rows,
+      initialRows.rows,
       dryRun ? PLACE_PREVIEW_LIMIT : Number.POSITIVE_INFINITY
     );
-    const rows = dryRun ? await addNaverPlacePreviews(googleRows, PLACE_PREVIEW_LIMIT) : googleRows;
+    const filteredGoogleRows = dryRun
+      ? excludeExistingGoogleMapReviewCampaignRows(
+          googleRows,
+          existingCampaignReferences
+        )
+      : { rows: googleRows, skippedExistingCampaigns: 0 };
+    const rows = dryRun ? await addNaverPlacePreviews(filteredGoogleRows.rows, PLACE_PREVIEW_LIMIT) : filteredGoogleRows.rows;
     const sync = dryRun ? null : await syncGoogleMapReviewCampaignRows(rows);
     return ok({
       dryRun,
@@ -323,6 +357,8 @@ export async function POST(req: Request) {
       },
       ...dryRunResult,
       summary: summarizeSheetImportRows(rows),
+      excludedExistingCampaignCount:
+        initialRows.skippedExistingCampaigns + filteredGoogleRows.skippedExistingCampaigns,
       rows,
       sync,
     });

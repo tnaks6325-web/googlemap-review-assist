@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyResolvedGooglePlaceNameToSheetRow,
+  excludeExistingGoogleMapReviewCampaignRows,
   googlePlaceInputForSheetRow,
   parseGoogleMapReviewSheet,
 } from "@/lib/domain/google-sheet-import";
@@ -28,6 +29,80 @@ const header = [
 ];
 
 describe("google map review sheet import dry-run parser", () => {
+  it("excludes rows whose campaigns were already reflected", () => {
+    const existingCampaign = { businessName: "Warm Table" };
+    const rows = [
+      {
+        rowNumber: 6,
+        status: "READY" as const,
+        advertiserName: "Advertiser A",
+        businessName: "Warm Table",
+        searchKeyword: "",
+        landingUrl: "https://maps.app.goo.gl/warm-table",
+        startDate: "2026-07-02",
+        endDate: "2026-07-10",
+        totalQuota: 30,
+        dailyQuota: 5,
+        guide: "Guide",
+        guideKeywords: ["Guide"],
+        examplePhrases: ["Example"],
+        examplePhraseCount: 1,
+        excludedDays: [],
+        errors: [],
+        warnings: [],
+      },
+      {
+        rowNumber: 7,
+        status: "READY" as const,
+        advertiserName: "Advertiser B",
+        businessName: "New Table",
+        searchKeyword: "",
+        landingUrl: "https://maps.app.goo.gl/new-table",
+        startDate: "2026-07-02",
+        endDate: "2026-07-10",
+        totalQuota: 30,
+        dailyQuota: 5,
+        guide: "Guide",
+        guideKeywords: ["Guide"],
+        examplePhrases: ["Example"],
+        examplePhraseCount: 1,
+        excludedDays: [],
+        errors: [],
+        warnings: [],
+      },
+    ];
+
+    const result = excludeExistingGoogleMapReviewCampaignRows(rows, [existingCampaign]);
+
+    expect(result.skippedExistingCampaigns).toBe(1);
+    expect(result.rows.map((row) => row.businessName)).toEqual(["New Table"]);
+
+    const placeIdResult = excludeExistingGoogleMapReviewCampaignRows(
+      [
+        {
+          ...rows[0],
+          businessName: "Warm Table sheet alias",
+          googlePlace: {
+            status: "RESOLVED",
+            providerConfigured: true,
+            input: rows[0].landingUrl,
+            placeId: "ChIJWarmTable",
+            name: "Warm Table on Google",
+            address: null,
+            url: null,
+            rating: null,
+            reviewCount: null,
+            matchConfidence: 100,
+            message: null,
+          },
+        },
+      ],
+      [{ businessName: "Warm Table", googlePlaceIds: ["ChIJWarmTable"] }]
+    );
+
+    expect(placeIdResult.rows).toEqual([]);
+  });
+
   it("marks complete campaign rows as ready", () => {
     const result = parseGoogleMapReviewSheet([
       [],

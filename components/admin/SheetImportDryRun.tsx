@@ -18,6 +18,7 @@ interface DryRunResponse {
   };
   headerRowNumber: number;
   summary: SheetImportDryRunSummary;
+  excludedExistingCampaignCount: number;
   rows: SheetImportDryRunRow[];
   sync?: {
     imported: number;
@@ -239,6 +240,11 @@ export function SheetImportDryRun() {
             <Metric label="오류" value={result.summary.errorRows} />
             <Metric label="주의" value={result.summary.warningRows} />
           </div>
+          {result.excludedExistingCampaignCount > 0 && (
+            <p className="rounded-card border border-line bg-canvas px-3 py-2 text-sm text-ink-sub">
+              캠페인 목록에 이미 반영된 {result.excludedExistingCampaignCount}건은 검사 대상에서 제외했어요.
+            </p>
+          )}
           {result.sync?.errors.length ? (
             <ul className="space-y-1 rounded-card border border-line bg-canvas p-3 text-sm text-ink-weak">
               {result.sync.errors.slice(0, 5).map((syncError) => (
