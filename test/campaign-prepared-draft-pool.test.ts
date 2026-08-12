@@ -28,4 +28,18 @@ describe("미배정 원고 풀 자동 충전", () => {
     expect(result).toMatchObject({ initialCount: 4, finalCount: 4, reachedTarget: false, stagnantRounds: 3 });
     expect(result.rounds).toBe(3);
   });
+
+  it("기존에 목표보다 많은 원고가 있어도 추가 생성 없이 준비 완료로 처리한다", async () => {
+    const generateRound = async () => {
+      throw new Error("should not generate");
+    };
+
+    const result = await fillPreparedDraftPool("campaign-1", {
+      target: 5,
+      countUnassignedQualityDrafts: async () => 25,
+      generateRound,
+    });
+
+    expect(result).toMatchObject({ initialCount: 25, finalCount: 25, rounds: 0, reachedTarget: true });
+  });
 });

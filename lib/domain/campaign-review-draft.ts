@@ -3,6 +3,7 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { retryExternalOperation } from "@/lib/resilience";
 import { assignmentExpiry } from "@/lib/domain/campaign-availability-policy";
+import { campaignPreparedDraftReserveTarget } from "@/lib/domain/campaign-draft-reserve";
 import {
   REVIEW_DRAFT_DIVERSITY_VERSION,
   REVIEW_DRAFT_STYLE_SLOTS,
@@ -1428,16 +1429,17 @@ async function geminiMatrixDrafts(
   context: DraftContext,
   model: string,
   apiKey: string,
+  slots: readonly ReviewDraftStyleSlot[],
   onProgress?: (generatedCount: number, targetCount: number) => void,
   existingDrafts: readonly string[] = [],
 ) {
   const batches: ReviewDraftStyleSlot[][] = [];
   for (
     let index = 0;
-    index < REVIEW_DRAFT_STYLE_SLOTS.length;
+    index < slots.length;
     index += REVIEW_DRAFT_MATRIX_BATCH_SIZE
   ) {
-    batches.push(REVIEW_DRAFT_STYLE_SLOTS.slice(index, index + REVIEW_DRAFT_MATRIX_BATCH_SIZE));
+    batches.push(slots.slice(index, index + REVIEW_DRAFT_MATRIX_BATCH_SIZE));
   }
 
   const results: StructuredDraft[][] = new Array(batches.length);
@@ -1461,7 +1463,7 @@ async function geminiMatrixDrafts(
           if (generatedCount <= previousCount) return;
           batchReportedCounts[batchIndex] = generatedCount;
           totalReported += generatedCount - previousCount;
-          onProgress?.(totalReported, CAMPAIGN_PREPARED_DRAFT_TARGET);
+          onProgress?.(totalReported, slots.length);
         },
       );
     }
@@ -1502,9 +1504,14 @@ export function evaluateDraftQualitySequentially(
 
 async function generateMatrixPreviewItems(
   context: DraftContext,
+  targetCount: number,
   onProgress?: (generatedCount: number, targetCount: number) => void,
   existingDrafts: readonly string[] = [],
+  slots: readonly ReviewDraftStyleSlot[] = REVIEW_DRAFT_STYLE_SLOTS.slice(0, Math.max(1, targetCount)),
 ) {
+  const selectedSlots = slots.length
+    ? slots
+    : REVIEW_DRAFT_STYLE_SLOTS.slice(0, Math.max(1, targetCount));
   if (context.approvedEvidence.length === 0) {
     throw new CampaignReviewDraftError(
       "DRAFT_EVIDENCE_REQUIRED",
@@ -1517,9 +1524,9 @@ async function generateMatrixPreviewItems(
   const apiKey = envValue("GEMINI_API_KEY");
   const structured =
     provider === "template"
-      ? REVIEW_DRAFT_STYLE_SLOTS.map((slot) => templateStructuredDraft(context, slot, 0))
+      ? selectedSlots.map((slot) => templateStructuredDraft(context, slot, 0))
       : provider === "gemini" && apiKey
-        ? await geminiMatrixDrafts(context, model, apiKey, onProgress, existingDrafts)
+        ? await geminiMatrixDrafts(context, model, apiKey, selectedSlots, onProgress, existingDrafts)
         : null;
   if (!structured) {
     throw new CampaignReviewDraftError(
@@ -1531,13 +1538,13 @@ async function generateMatrixPreviewItems(
   const evaluations = evaluateDraftQualitySequentially(
     structured.map((item, index) => ({
       text: item.reviewText,
-      slot: REVIEW_DRAFT_STYLE_SLOTS[index],
+      slot: selectedSlots[index],
     })),
     existingDrafts,
     context.styleReferences,
   );
   return structured.map((item, index) => {
-    const slot = REVIEW_DRAFT_STYLE_SLOTS[index];
+    const slot = selectedSlots[index];
     const evaluation = evaluations[index];
     const previewItem = {
       slot: slot.index,
@@ -1549,7 +1556,7 @@ async function generateMatrixPreviewItems(
       maxSimilarity: evaluation.maxSimilarity,
       qualityPassed: evaluation.qualityPassed,
     };
-    if (provider === "template") onProgress?.(index + 1, structured.length);
+    if (provider === "template") onProgress?.(index + 1, selectedSlots.length);
     return previewItem;
   });
 }
@@ -1655,10 +1662,10 @@ function assertDraftContextReady(context: DraftContext) {
 
 export function selectPreparedDraftItemsForStorage<
   T extends { qualityPassed: boolean },
->(items: T[], currentUnassignedCount: number): T[] {
+>(items: T[], currentUnassignedCount: number, targetCount = CAMPAIGN_PREPARED_DRAFT_TARGET): T[] {
   let remainingPassed = Math.max(
     0,
-    CAMPAIGN_PREPARED_DRAFT_TARGET - Math.max(0, currentUnassignedCount),
+    targetCount - Math.max(0, currentUnassignedCount),
   );
   return items.filter((item) => {
     if (!item.qualityPassed) return true;
@@ -1775,7 +1782,7 @@ export async function generateCampaignReviewDraftPreview(
   if (!campaign) {
     throw new CampaignReviewDraftError("CAMPAIGN_NOT_FOUND", "캠페인을 찾을 수 없습니다.", 404);
   }
-  const [currentUnassignedCount, existingPassedDraftRows] = await Promise.all([
+  const [currentUnassignedDraftCount, existingPassedDraftRows] = await Promise.all([
     db.campaignPreparedDraft.count({
       where: {
         campaignId: campaign.id,
@@ -1790,10 +1797,11 @@ export async function generateCampaignReviewDraftPreview(
       select: { text: true },
     }),
   ]);
-  if (currentUnassignedCount >= CAMPAIGN_PREPARED_DRAFT_TARGET) {
+  const targetCount = campaignPreparedDraftReserveTarget(campaign.totalQuota);
+  if (currentUnassignedDraftCount >= targetCount) {
     throw new CampaignReviewDraftError(
       "PREPARED_DRAFT_TARGET_REACHED",
-      "미배정 원고 25건이 이미 준비되어 있습니다.",
+      `미배정 원고 ${targetCount}건이 이미 준비되어 있습니다.`,
       409,
     );
   }
@@ -1808,6 +1816,7 @@ export async function generateCampaignReviewDraftPreview(
   assertDraftContextReady(context);
   const items = await generateMatrixPreviewItems(
     context,
+    Math.min(targetCount - currentUnassignedDraftCount, REVIEW_DRAFT_STYLE_SLOTS.length),
     onProgress,
     existingPassedDraftRows.map((row) => row.text),
   );
@@ -1841,7 +1850,8 @@ export async function generateCampaignReviewDraftPreview(
   };
   const itemsToStore = selectPreparedDraftItemsForStorage(
     preview.items,
-    currentUnassignedCount,
+    currentUnassignedDraftCount,
+    targetCount,
   );
   await db.campaignPreparedDraftBatch.create({
     data: {

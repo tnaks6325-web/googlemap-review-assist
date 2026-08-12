@@ -61,7 +61,7 @@ describe("admin campaign prepared drafts", () => {
     expect(routeSource).toContain("export const maxDuration = 300;");
   });
 
-  it("renders separate generation and archive buttons with 25-draft progress", () => {
+  it("renders separate generation and archive buttons with reserve-draft progress", () => {
     const html = renderToStaticMarkup(
       <AdminCampaignDraftPreview
         campaignId="campaign-1"
@@ -76,9 +76,29 @@ describe("admin campaign prepared drafts", () => {
       />,
     );
 
-    expect(html).toContain("원고생성 3/25");
+    expect(html).toContain("원고생성 3/5");
     expect(html).toContain("원고보관함");
     expect(html).not.toContain("원고생성 테스트");
+  });
+
+  it("caps the displayed reserve at a smaller campaign quota", () => {
+    const html = renderToStaticMarkup(
+      <AdminCampaignDraftPreview
+        campaignId="campaign-1"
+        businessName="테스트 매장"
+        totalQuota={2}
+        initialMetrics={{
+          totalCount: 0,
+          unassignedCount: 0,
+          qualityExcludedCount: 0,
+          assignedCount: 0,
+          batchCount: 0,
+        }}
+      />,
+    );
+
+    expect(html).toContain("원고생성 0/2");
+    expect(html).not.toContain("원고생성 0/5");
   });
 
   it("offers quality-excluded promotion and confirmed bulk deletion controls", () => {
@@ -260,6 +280,7 @@ describe("admin campaign prepared drafts", () => {
 
     const result = await runCampaignDraftAutofill({
       initialUnassignedCount: 2,
+      targetCount: 25,
       generateRound: async () => {
         round += 1;
       },
@@ -285,6 +306,7 @@ describe("admin campaign prepared drafts", () => {
     let attempts = 0;
     const result = await runCampaignDraftAutofill({
       initialUnassignedCount: 20,
+      targetCount: 25,
       generateRound: async () => {
         attempts += 1;
         if (attempts === 1) throw new Error("temporary connection interruption");

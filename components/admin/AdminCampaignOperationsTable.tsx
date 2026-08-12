@@ -481,6 +481,7 @@ function CampaignRows({
             <AdminCampaignDraftPreview
               campaignId={campaign.id}
               businessName={campaign.businessName}
+              totalQuota={campaign.totalQuota}
               initialMetrics={campaign.preparedDraftMetrics}
               readOnly={automationLocked}
             />
