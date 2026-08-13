@@ -96,4 +96,23 @@ describe("campaign operations automation lock", () => {
     expect(state.isLocked).toBe(true);
     expect(state.activeJobCount).toBe(1);
   });
+
+  it("keeps sheet imports locked while a campaign setup job is active", async () => {
+    const state = await getCampaignOperationsAutomationLock(
+      {
+        operationalJob: {
+          count: async (args) => {
+            const jobTypes = (args as { where: { type: { in: string[] } } }).where.type.in;
+            return jobTypes.includes(CAMPAIGN_AUTOMATION_SETUP_JOB) ? 1 : 0;
+          },
+        },
+        automationRun: { findFirst: async () => null },
+        campaignAutomationRun: { count: async () => 1, findFirst: async () => null },
+      },
+      "SHEET_IMPORT",
+    );
+
+    expect(state.isLocked).toBe(true);
+    expect(state.activeJobCount).toBe(1);
+  });
 });
