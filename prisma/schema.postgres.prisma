@@ -611,3 +611,100 @@ model OtpChallenge {
 
   @@index([phone])
 }
+
+// ---------- 원고 생성 모델 파인튜닝 ----------
+model DraftTrainingExample {
+  id                  String                      @id @default(cuid())
+  sourceType          String
+  sourceRef           String?                     @unique
+  industry            String?
+  styleLabel          String?
+  inputText           String
+  outputText          String
+  split               String
+  status              String                      @default("PENDING")
+  qualityWarningsJson String                      @default("[]")
+  contentHash         String                      @unique
+  createdByAdminId    String
+  approvedByAdminId   String?
+  approvedAt          DateTime?
+  createdAt           DateTime                    @default(now())
+  updatedAt           DateTime                    @updatedAt
+  datasetLinks        DraftTuningDatasetExample[]
+
+  @@index([status, split, createdAt])
+  @@index([sourceType, status])
+}
+
+model DraftTuningDataset {
+  id                     String                      @id @default(cuid())
+  version                Int                         @unique
+  baseModel              String
+  status                 String                      @default("BUILDING")
+  trainingExampleCount   Int                         @default(0)
+  validationExampleCount Int                         @default(0)
+  trainingGcsUri         String?
+  validationGcsUri       String?
+  manifestHash           String                      @unique
+  createdByAdminId       String
+  createdAt              DateTime                    @default(now())
+  readyAt                DateTime?
+  examples               DraftTuningDatasetExample[]
+  jobs                   DraftTuningJob[]
+
+  @@index([status, createdAt])
+}
+
+model DraftTuningDatasetExample {
+  id        String               @id @default(cuid())
+  datasetId String
+  dataset   DraftTuningDataset   @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+  exampleId String
+  example   DraftTrainingExample @relation(fields: [exampleId], references: [id], onDelete: Restrict)
+  split     String
+  position  Int
+
+  @@unique([datasetId, exampleId])
+  @@unique([datasetId, split, position])
+  @@index([exampleId])
+}
+
+model DraftTuningJob {
+  id                String             @id @default(cuid())
+  datasetId         String
+  dataset           DraftTuningDataset @relation(fields: [datasetId], references: [id], onDelete: Restrict)
+  vertexJobName     String?            @unique
+  displayName       String
+  baseModel         String
+  region            String
+  status            String             @default("SUBMITTING")
+  tunedModelName    String?
+  tunedEndpointName String?
+  experimentName    String?
+  metricsJson       String             @default("{}")
+  errorCode         String?
+  errorMessage      String?
+  createdByAdminId  String
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  completedAt       DateTime?
+  release           DraftModelRelease?
+
+  @@index([status, createdAt])
+}
+
+model DraftModelRelease {
+  id                 String         @id @default(cuid())
+  tuningJobId        String         @unique
+  tuningJob          DraftTuningJob @relation(fields: [tuningJobId], references: [id], onDelete: Restrict)
+  modelName          String
+  endpointName       String
+  status             String         @default("CANDIDATE")
+  evaluationJson     String         @default("{}")
+  activatedByAdminId String?
+  activatedAt        DateTime?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@index([status, createdAt])
+}
