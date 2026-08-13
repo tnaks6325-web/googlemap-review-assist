@@ -35,6 +35,14 @@ describe("Vercel production build safety", () => {
     expect(bootstrapScript).toContain('process.env.TEST_ADMIN_BOOTSTRAP_PASSWORD');
   });
 
+  it("creates the initial test admin atomically without replacing an existing password", () => {
+    const bootstrapScript = readFileSync("scripts/bootstrap-test-admin.ts", "utf8");
+
+    expect(bootstrapScript).toContain("prisma.admin.upsert(");
+    expect(bootstrapScript).toContain("update: {},");
+    expect(bootstrapScript).not.toContain("prisma.admin.findUnique(");
+  });
+
   it("keeps the virtual-reviewer migration explicitly additive and separate from deployment", () => {
     const migration = readFileSync("prisma/production-review-draft-personas.sql", "utf8");
 

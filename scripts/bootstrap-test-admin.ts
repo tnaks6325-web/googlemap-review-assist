@@ -28,16 +28,12 @@ async function main() {
     throw new Error("TEST_ADMIN_BOOTSTRAP_USERNAME must be a 3-64 character lowercase username");
   }
 
-  const existing = await prisma.admin.findUnique({ where: { email: username } });
-  if (existing) {
-    console.log("test admin bootstrap skipped: account already exists");
-    return;
-  }
-
-  await prisma.admin.create({
-    data: { email: username, password: hashPassword(password) },
+  await prisma.admin.upsert({
+    where: { email: username },
+    update: {},
+    create: { email: username, password: hashPassword(password) },
   });
-  console.log("test admin bootstrap completed");
+  console.log("test admin bootstrap completed or already present");
 }
 
 main()
