@@ -3,7 +3,7 @@ import Link from "next/link";
 import { AdminLogout } from "@/components/admin/AdminLogout";
 import { cn } from "@/lib/cn";
 
-type AdminSection = "overview" | "campaigns" | "reviewProofs" | "reviewers" | "settlements" | "fineTuning" | "errors";
+type AdminSection = "overview" | "campaigns" | "reviewProofs" | "reviewers" | "settlements" | "fineTuning" | "reviewStyles" | "errors";
 
 interface AdminShellProps {
   current: AdminSection;
@@ -14,6 +14,7 @@ interface AdminShellProps {
 }
 
 const navigation: Array<{ id: AdminSection; href: string; label: string; description: string }> = [
+  { id: "reviewStyles", href: "/admin/review-styles", label: "가상 리뷰어 스타일", description: "리뷰어별 학습 원고와 참고 링크" },
   { id: "fineTuning", href: "/admin/fine-tuning", label: "원고 파인튜닝", description: "학습 자료와 Vertex 모델 운영" },
   { id: "overview", href: "/admin", label: "운영 현황", description: "대기 업무와 운영 신호" },
   { id: "campaigns", href: "/admin/campaigns", label: "캠페인 운영", description: "접수 반영과 장소 자료" },

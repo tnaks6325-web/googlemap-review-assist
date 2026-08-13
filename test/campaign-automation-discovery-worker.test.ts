@@ -56,4 +56,56 @@ describe("신규 캠페인 발견 워커", () => {
     expect(campaign.active).toBe(false);
     expect(job.status).toBe("PENDING");
   });
+  it("creates a new campaign when the same place arrives with a new receipt ID", async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const businessName = `restart business ${suffix}`;
+    const placeId = `ChIJ-restart-${suffix}`;
+    const row = (receiptId: string) => ({
+      rowNumber: 6,
+      status: "READY" as const,
+      receiptId,
+      advertiserName: `restart advertiser ${suffix}`,
+      businessName,
+      searchKeyword: businessName,
+      landingUrl: "https://maps.google.com/?cid=8899",
+      startDate: "2031-01-02",
+      endDate: "2031-01-31",
+      totalQuota: 5,
+      dailyQuota: 1,
+      guideKeywords: [],
+      examplePhrases: [],
+      googlePlace: {
+        status: "RESOLVED" as const,
+        placeId,
+        name: businessName,
+        address: "Seoul test-ro 1",
+        url: "https://maps.google.com/?cid=8899",
+        rating: 4.8,
+        reviewCount: 10,
+        matchConfidence: 100,
+      },
+    });
+    const firstRun = await upsertDailyCampaignAutomationRun(new Date("2031-01-01T08:00:00.000Z"));
+    const secondRun = await upsertDailyCampaignAutomationRun(new Date("2031-01-02T08:00:00.000Z"));
+
+    await processCampaignAutomationDiscoveryJob(
+      { payloadJson: JSON.stringify({ runId: firstRun.run.id, runKey: firstRun.run.runKey }) },
+      async () => ({ spreadsheetId: "sheet-restart", sheetName: "campaigns", rows: [row(`CMP-restart-1-${suffix}`)] }),
+    );
+    const firstSource = await prisma.sheetCampaignSource.findFirstOrThrow({ where: { receiptId: `CMP-restart-1-${suffix}` } });
+    await prisma.campaignAutomationRun.updateMany({ where: { campaignId: firstSource.campaignId! }, data: { status: "NEEDS_REVIEW" } });
+
+    await processCampaignAutomationDiscoveryJob(
+      { payloadJson: JSON.stringify({ runId: secondRun.run.id, runKey: secondRun.run.runKey }) },
+      async () => ({ spreadsheetId: "sheet-restart", sheetName: "campaigns", rows: [row(`CMP-restart-2-${suffix}`)] }),
+    );
+
+    const sources = await prisma.sheetCampaignSource.findMany({
+      where: { receiptId: { in: [`CMP-restart-1-${suffix}`, `CMP-restart-2-${suffix}`] } },
+      orderBy: { receiptId: "asc" },
+    });
+    expect(sources).toHaveLength(2);
+    expect(sources[0].campaignId).not.toBe(sources[1].campaignId);
+    expect(await prisma.campaign.count({ where: { business: { googlePlaceId: placeId } } })).toBe(2);
+  });
 });

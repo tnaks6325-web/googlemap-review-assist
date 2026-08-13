@@ -25,9 +25,9 @@ function errorResponse(error: unknown) {
   return err("FINE_TUNING_OPERATION_FAILED", "파인튜닝 작업을 완료하지 못했습니다.", 500);
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   if (!(await getAdminId())) return err("UNAUTHORIZED", "관리자 로그인이 필요합니다.", 401);
-  try { return ok(await getFineTuningDashboard()); } catch (error) { return errorResponse(error); }
+  try { return ok(await getFineTuningDashboard(new URL(req.url).searchParams.get("personaId"))); } catch (error) { return errorResponse(error); }
 }
 
 export async function POST(req: Request) {
@@ -43,7 +43,7 @@ export async function POST(req: Request) {
       case "create-example": return ok(await createManualTrainingExample(adminId, body), 201);
       case "update-example": return ok(await updateTrainingExample(adminId, String(body.id ?? ""), body));
       case "import-revisions": return ok(await importAdminRevisions(adminId));
-      case "build-dataset": return ok(await buildFineTuningDataset(adminId), 201);
+      case "build-dataset": return ok(await buildFineTuningDataset(adminId, typeof body.personaId === "string" ? body.personaId : null), 201);
       case "start-job": return ok(await startFineTuningJob(adminId, String(body.datasetId ?? "")), 201);
       case "sync-job": return ok(await syncFineTuningJob(String(body.id ?? "")));
       case "cancel-job": return ok(await cancelFineTuningJob(String(body.id ?? "")));

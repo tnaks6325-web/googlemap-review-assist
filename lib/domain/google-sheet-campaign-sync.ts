@@ -17,6 +17,11 @@ export interface GoogleSheetCampaignSyncResult {
 export interface GoogleSheetCampaignSyncOptions {
   active?: boolean;
   autoNaver?: boolean;
+  /**
+   * A new sheet receipt is a new commercial campaign even if it points at a
+   * business that already has a past or review-required campaign.
+   */
+  createNewCampaign?: boolean;
 }
 
 const OPERATOR_IMPORT_OWNER_EMAIL = "operator-import@google-review.local";
@@ -122,6 +127,7 @@ export async function syncGoogleMapReviewCampaignRows(
   const result: GoogleSheetCampaignSyncResult = { imported: 0, updated: 0, skipped: 0, campaignIds: [], errors: [] };
   const active = options.active ?? true;
   const autoNaver = options.autoNaver ?? true;
+  const createNewCampaign = options.createNewCampaign ?? false;
   const owner = await ensureOperatorImportOwner();
 
   for (const row of rows) {
@@ -168,10 +174,12 @@ export async function syncGoogleMapReviewCampaignRows(
     }
 
     const name = campaignNameForRow(row);
-    const existingCampaign = await prisma.campaign.findFirst({
-      where: { businessId: business.id, name },
-      select: { id: true },
-    });
+    const existingCampaign = createNewCampaign
+      ? null
+      : await prisma.campaign.findFirst({
+          where: { businessId: business.id, name },
+          select: { id: true },
+        });
 
     const campaign = existingCampaign
       ? await prisma.campaign.update({

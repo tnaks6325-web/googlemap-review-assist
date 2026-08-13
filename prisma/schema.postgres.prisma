@@ -613,8 +613,26 @@ model OtpChallenge {
 }
 
 // ---------- 원고 생성 모델 파인튜닝 ----------
+model ReviewDraftPersona {
+  id                String                 @id @default(cuid())
+  name              String                 @unique
+  styleInstruction  String
+  examplesJson      String                 @default("[]")
+  referenceUrlsJson String                 @default("[]")
+  active            Boolean                @default(true)
+  version           Int                    @default(1)
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  trainingExamples  DraftTrainingExample[]
+  datasets          DraftTuningDataset[]
+
+  @@index([active, createdAt])
+}
+
 model DraftTrainingExample {
   id                  String                      @id @default(cuid())
+  personaId           String?
+  persona             ReviewDraftPersona?         @relation(fields: [personaId], references: [id], onDelete: SetNull)
   sourceType          String
   sourceRef           String?                     @unique
   industry            String?
@@ -634,10 +652,13 @@ model DraftTrainingExample {
 
   @@index([status, split, createdAt])
   @@index([sourceType, status])
+  @@index([personaId, status, split, createdAt])
 }
 
 model DraftTuningDataset {
   id                     String                      @id @default(cuid())
+  personaId              String?
+  persona                ReviewDraftPersona?         @relation(fields: [personaId], references: [id], onDelete: SetNull)
   version                Int                         @unique
   baseModel              String
   status                 String                      @default("BUILDING")
@@ -653,6 +674,7 @@ model DraftTuningDataset {
   jobs                   DraftTuningJob[]
 
   @@index([status, createdAt])
+  @@index([personaId, status, createdAt])
 }
 
 model DraftTuningDatasetExample {
