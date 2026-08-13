@@ -6,16 +6,17 @@ import { listReviewDraftPersonas } from "@/lib/domain/review-draft-personas";
 
 export const runtime = "nodejs";
 
-export default async function AdminReviewStylesPage() {
+export default async function AdminReviewStylesPage({ searchParams }: { searchParams: Promise<{ advancedPersonaId?: string }> }) {
   if (!(await getAdminId())) redirect("/admin/login");
   const personas = await listReviewDraftPersonas();
+  const advancedPersonaId = (await searchParams).advancedPersonaId ?? null;
   return (
     <AdminShell
       current="reviewStyles"
-      title="가상 리뷰어 스타일"
-      description="학습용 원고와 참고 링크를 가상 리뷰어별로 관리합니다. 참고 링크는 저장·표시만 하며 서버가 열람하지 않습니다."
+      title="가상 리뷰어 관리"
+      description="캐릭터별 기본 스타일 원고를 관리하고, 필요할 때만 카드 안에서 고급 Vertex 튜닝을 진행합니다."
     >
-      <AdminReviewDraftPersonaLibrary initialPersonas={personas} />
+      <AdminReviewDraftPersonaLibrary initialPersonas={personas} initialAdvancedPersonaId={advancedPersonaId} />
     </AdminShell>
   );
 }
