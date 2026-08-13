@@ -10,6 +10,10 @@ const workerWorkflow = readFileSync(
   new URL("../.github/workflows/campaign-automation-worker.yml", import.meta.url),
   "utf8",
 );
+const testWorkerWorkflow = readFileSync(
+  new URL("../.github/workflows/campaign-automation-test-worker.yml", import.meta.url),
+  "utf8",
+);
 
 describe("GitHub Actions 캠페인 자동화 스케줄", () => {
   it("Vercel Hobby 배포를 막는 분 단위 Vercel Cron을 등록하지 않는다", () => {
@@ -29,5 +33,13 @@ describe("GitHub Actions 캠페인 자동화 스케줄", () => {
     expect(workerWorkflow).toContain("/api/internal/jobs/process");
     expect(workerWorkflow).toContain('{"limit":1}');
     expect(workerWorkflow).toContain("workflow_dispatch:");
+  });
+
+  it("테스트 서버 작업자는 별도 비밀값과 테스트 서버 URL만 사용한다", () => {
+    expect(testWorkerWorkflow).toContain("secrets.TEST_CRON_SECRET");
+    expect(testWorkerWorkflow).toContain("https://testserver-googlemap.vercel.app/api/internal/jobs/process");
+    expect(testWorkerWorkflow).toContain('cron: "*/5 * * * *"');
+    expect(testWorkerWorkflow).toContain('{"limit":1}');
+    expect(testWorkerWorkflow).not.toContain("googlemap-review-assist.vercel.app");
   });
 });
