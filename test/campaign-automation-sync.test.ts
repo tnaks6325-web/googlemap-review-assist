@@ -45,4 +45,61 @@ describe("자동화용 시트 캠페인 반영", () => {
     const campaign = await prisma.campaign.findUniqueOrThrow({ where: { id: result.campaignIds[0] } });
     expect(campaign.active).toBe(false);
   });
+
+  it("preserves each quota for distinct receipt IDs and updates only a repeated receipt", async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const businessName = `quota history ${suffix}`;
+    const placeId = `ChIJ-quota-${suffix}`;
+    const row = (totalQuota: number, receiptId: string) => ({
+      rowNumber: 6,
+      status: "READY" as const,
+      receiptId,
+      advertiserName: `advertiser ${suffix}`,
+      businessName,
+      searchKeyword: businessName,
+      landingUrl: "https://maps.google.com/?cid=1000",
+      startDate: "2031-01-02",
+      endDate: "2031-01-31",
+      totalQuota,
+      dailyQuota: 5,
+      guide: "quota history guide",
+      guideKeywords: [],
+      examplePhrases: [],
+      examplePhraseCount: 0,
+      excludedDays: [],
+      errors: [],
+      warnings: [],
+      googlePlace: {
+        status: "RESOLVED" as const,
+        providerConfigured: true,
+        input: businessName,
+        placeId,
+        name: businessName,
+        address: "Seoul test-ro 1",
+        url: "https://maps.google.com/?cid=1000",
+        rating: 4.8,
+        reviewCount: 10,
+        matchConfidence: 100,
+        message: null,
+      },
+    });
+    const options = {
+      createNewCampaign: true,
+      sourceTracking: { spreadsheetId: `sheet-${suffix}`, sheetName: "campaigns" },
+    };
+
+    const first = await syncGoogleMapReviewCampaignRows([row(25, `CMP-1-${suffix}`)], options);
+    const second = await syncGoogleMapReviewCampaignRows([row(50, `CMP-2-${suffix}`)], options);
+    const repeatedSecond = await syncGoogleMapReviewCampaignRows([row(55, `CMP-2-${suffix}`)], options);
+
+    expect(first.imported).toBe(1);
+    expect(second.imported).toBe(1);
+    expect(repeatedSecond.updated).toBe(1);
+    const campaigns = await prisma.campaign.findMany({
+      where: { business: { googlePlaceId: placeId } },
+      select: { totalQuota: true },
+      orderBy: { totalQuota: "asc" },
+    });
+    expect(campaigns).toEqual([{ totalQuota: 25 }, { totalQuota: 55 }]);
+  });
 });

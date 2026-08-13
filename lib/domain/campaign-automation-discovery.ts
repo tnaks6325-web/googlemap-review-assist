@@ -28,7 +28,7 @@ export interface CampaignAutomationDiscoveryInput {
 }
 
 interface CampaignAutomationDiscoveryDependencies {
-  syncRow: (row: CampaignAutomationDiscoveryRow) => Promise<{ campaignId: string }>;
+  syncRow: (row: CampaignAutomationDiscoveryRow, existingCampaignId?: string | null) => Promise<{ campaignId: string }>;
   enqueueSetup: (payload: CampaignAutomationSetupPayload) => Promise<unknown>;
 }
 
@@ -82,7 +82,7 @@ export async function processCampaignAutomationDiscovery(
       continue;
     }
 
-    const synced = await dependencies.syncRow(row);
+    const synced = await dependencies.syncRow(row, sourceResult.source.campaignId);
     const source = await prisma.sheetCampaignSource.update({
       where: { id: sourceResult.source.id },
       data: { campaignId: synced.campaignId },

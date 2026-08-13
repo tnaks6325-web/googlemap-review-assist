@@ -348,7 +348,15 @@ export async function POST(req: Request) {
         )
       : { rows: googleRows, skippedExistingCampaigns: 0 };
     const rows = dryRun ? await addNaverPlacePreviews(filteredGoogleRows.rows, PLACE_PREVIEW_LIMIT) : filteredGoogleRows.rows;
-    const sync = dryRun ? null : await syncGoogleMapReviewCampaignRows(rows);
+    const sync = dryRun
+      ? null
+      : await syncGoogleMapReviewCampaignRows(rows, {
+          createNewCampaign: true,
+          sourceTracking: {
+            spreadsheetId,
+            sheetName: sheet.range.match(/'?([^'!]+)'?!/)?.[1] ?? "광고요청시트",
+          },
+        });
     return ok({
       dryRun,
       source: {

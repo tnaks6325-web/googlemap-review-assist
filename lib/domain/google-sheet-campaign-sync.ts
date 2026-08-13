@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { findBestNaverPlaceSnapshotForCampaign } from "@/lib/domain/admin-campaign-naver";
 import { generateCodes, generateUniqueSlug } from "@/lib/domain/codes";
 import { saveExternalPlace } from "@/lib/domain/external-place-save";
+import { upsertSheetCampaignSource } from "@/lib/domain/campaign-automation-state";
 import type { ExternalPlaceSnapshot } from "@/lib/domain/external-place-providers";
 import type { SheetImportDryRunRow } from "@/lib/domain/google-sheet-import";
 
@@ -22,6 +23,11 @@ export interface GoogleSheetCampaignSyncOptions {
    * business that already has a past or review-required campaign.
    */
   createNewCampaign?: boolean;
+  existingCampaignId?: string | null;
+  sourceTracking?: {
+    spreadsheetId: string;
+    sheetName: string;
+  };
 }
 
 const OPERATOR_IMPORT_OWNER_EMAIL = "operator-import@google-review.local";
@@ -174,12 +180,41 @@ export async function syncGoogleMapReviewCampaignRows(
     }
 
     const name = campaignNameForRow(row);
-    const existingCampaign = createNewCampaign
-      ? null
-      : await prisma.campaign.findFirst({
-          where: { businessId: business.id, name },
-          select: { id: true },
-        });
+    const trackedSource = options.sourceTracking && row.receiptId
+      ? await upsertSheetCampaignSource({
+          spreadsheetId: options.sourceTracking.spreadsheetId,
+          sheetName: options.sourceTracking.sheetName,
+          receiptId: row.receiptId,
+          rowNumber: row.rowNumber,
+          advertiserName: row.advertiserName,
+          landingUrl: row.landingUrl,
+          startDate: row.startDate,
+          rowStatus: "READY",
+          rowPayload: row,
+        })
+      : null;
+    const existingCampaignId = options.existingCampaignId ?? trackedSource?.source.campaignId ?? null;
+    const existingCampaign = existingCampaignId
+      ? await prisma.campaign.findUnique({ where: { id: existingCampaignId }, select: { id: true } })
+      : trackedSource
+        ? await prisma.campaign.findFirst({
+            where: {
+              businessId: business.id,
+              name,
+              totalQuota: row.totalQuota,
+              dailyQuota: row.dailyQuota,
+              startDate: row.startDate,
+              endDate: row.endDate,
+              sheetCampaignSource: { is: null },
+            },
+            select: { id: true },
+          })
+        : createNewCampaign
+          ? null
+          : await prisma.campaign.findFirst({
+              where: { businessId: business.id, name },
+              select: { id: true },
+            });
 
     const campaign = existingCampaign
       ? await prisma.campaign.update({
@@ -206,6 +241,12 @@ export async function syncGoogleMapReviewCampaignRows(
         });
 
     await ensureCampaignCodes(campaign.id, row.totalQuota);
+    if (trackedSource && trackedSource.source.campaignId !== campaign.id) {
+      await prisma.sheetCampaignSource.update({
+        where: { id: trackedSource.source.id },
+        data: { campaignId: campaign.id },
+      });
+    }
     await prisma.campaignDraftGuidance.upsert({
       where: { campaignId: campaign.id },
       create: {
