@@ -1,4 +1,4 @@
-import type { AutomationRun } from "@prisma/client";
+import { type AutomationRun, type Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 
 export const CAMPAIGN_AUTOMATION_DISCOVERY_JOB = "CAMPAIGN_AUTOMATION_DISCOVERY";
@@ -7,6 +7,8 @@ export const CAMPAIGN_AUTOMATION_SETUP_JOB = "CAMPAIGN_AUTOMATION_SETUP";
 const DISCOVERY_MAX_ATTEMPTS = 4;
 const SETUP_MAX_ATTEMPTS = 3;
 
+type DbClient = typeof prisma | Prisma.TransactionClient;
+
 export interface CampaignAutomationSetupPayload {
   runId: string;
   runKey: string;
@@ -14,8 +16,11 @@ export interface CampaignAutomationSetupPayload {
   sourceId: string | null;
 }
 
-export async function enqueueCampaignAutomationDiscovery(run: Pick<AutomationRun, "id" | "runKey">) {
-  return prisma.operationalJob.upsert({
+export async function enqueueCampaignAutomationDiscovery(
+  run: Pick<AutomationRun, "id" | "runKey">,
+  db: DbClient = prisma,
+) {
+  return db.operationalJob.upsert({
     where: { dedupeKey: `campaign-automation-discovery:${run.runKey}` },
     create: {
       type: CAMPAIGN_AUTOMATION_DISCOVERY_JOB,
@@ -27,13 +32,13 @@ export async function enqueueCampaignAutomationDiscovery(run: Pick<AutomationRun
   });
 }
 
-export async function enqueueCampaignSetup(payload: CampaignAutomationSetupPayload) {
+export async function enqueueCampaignSetup(payload: CampaignAutomationSetupPayload, db: DbClient = prisma) {
   const cleanCampaignId = payload.campaignId.trim();
   if (!cleanCampaignId) throw new Error("Missing campaign automation campaign id");
   const cleanRunKey = payload.runKey.trim();
   if (!cleanRunKey) throw new Error("Missing campaign automation run key");
 
-  return prisma.operationalJob.upsert({
+  return db.operationalJob.upsert({
     where: { dedupeKey: `campaign-automation-setup:${cleanRunKey}:${cleanCampaignId}` },
     create: {
       type: CAMPAIGN_AUTOMATION_SETUP_JOB,

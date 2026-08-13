@@ -1127,6 +1127,37 @@ describe("campaign review draft generator", () => {
       })),
     });
     process.env.REVIEW_DRAFT_V2_ENABLED = "true";
+    process.env.REVIEW_DRAFT_PROVIDER = "gemini";
+    process.env.GEMINI_API_KEY = "test-gemini-api-key";
+    const draftByStyleId: Record<string, string> = {
+      "v2-01-plain-point_first": "좌석 구역과 이용 동선이 분명해 처음 확인하는 사람도 살피기 편했습니다. 대중교통 안내도 함께 확인할 수 있습니다.",
+      "v2-02-plain-detail_first": "운영 시간과 이용 안내가 화면에 차분하게 정리되어 있어 필요한 내용을 먼저 고르기 좋았어요. 예약 전 확인할 항목도 자연스럽게 살필 수 있어요.",
+    };
+    const fetchMock = vi.fn().mockImplementation(async (_url, init: RequestInit) => {
+      const schema = JSON.parse(String(init.body)).generationConfig.responseSchema;
+      const styleId = schema.properties.styleId.enum[0] as string;
+      const evidenceId = schema.properties.evidenceIds.items.enum[0] as string;
+      const reviewText = draftByStyleId[styleId];
+      if (!reviewText) throw new Error(`unexpected concurrent draft style: ${styleId}`);
+      return new Response(
+        JSON.stringify({
+          candidates: [{
+            content: {
+              parts: [{
+                text: JSON.stringify({
+                  reviewText,
+                  styleId,
+                  evidenceIds: [evidenceId],
+                  promptVersion: "review-diversity-v6",
+                }),
+              }],
+            },
+          }],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
 
     const [first, second] = await Promise.all([
       generateCampaignReviewDraftForAssignment(reviewer.id, receipt.id),
@@ -1139,6 +1170,7 @@ describe("campaign review draft generator", () => {
       select: { reviewDraftSequence: true },
     });
     expect(new Set(stored.map((row) => row.reviewDraftSequence)).size).toBe(2);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("uses a pending legacy fact card automatically without manual approval", async () => {
