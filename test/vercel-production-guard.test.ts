@@ -48,6 +48,18 @@ describe("Vercel production deployment guard", () => {
     expect(result.stdout).toContain("Allowing production deployment");
   });
 
+  it("allows a separately configured protected test branch", () => {
+    const result = runGuard({
+      VERCEL_ENV: "production",
+      VERCEL_GIT_COMMIT_REF: "test",
+      VERCEL_GIT_COMMIT_SHA: "bc9075d",
+      VERCEL_ALLOWED_PRODUCTION_BRANCH: "test",
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toContain("test");
+  });
+
   it("keeps preview deployments available for pull-request review", () => {
     const result = runGuard({
       VERCEL_ENV: "preview",
