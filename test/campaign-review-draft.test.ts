@@ -251,14 +251,14 @@ describe("campaign review draft generator", () => {
       provider: "template",
       promptVersion: "review-diversity-v6",
     });
-    expect(preview.items).toHaveLength(5);
-    expect(preview.metrics.styleCoverage).toBe(5);
+    expect(preview.items).toHaveLength(8);
+    expect(preview.metrics.styleCoverage).toBe(8);
     expect(nonSpaceLength(preview.text)).toBeGreaterThanOrEqual(30);
     expect(after.reviewDraftText).toBe(before.reviewDraftText);
     expect(after.reviewDraftVersion).toBe(before.reviewDraftVersion);
   });
 
-  it("limits the replacement reserve to the campaign quota when it is smaller than five", async () => {
+  it("adds the minimum replacement buffer when the campaign quota is smaller than five", async () => {
     const { campaign } = await createAssignment({
       googlePlace: true,
       naverPlace: true,
@@ -280,8 +280,8 @@ describe("campaign review draft generator", () => {
     const preview = await generateCampaignReviewDraftPreview(campaign.id);
     const history = await listCampaignPreparedDrafts(campaign.id);
 
-    expect(preview.items).toHaveLength(2);
-    expect(history.metrics.totalCount).toBe(2);
+    expect(preview.items).toHaveLength(5);
+    expect(history.metrics.totalCount).toBe(5);
   });
 
   it("keeps five existing drafts and stores only the remaining twenty passed drafts", () => {
@@ -431,7 +431,7 @@ describe("campaign review draft generator", () => {
     expect(progress).toEqual([1, 2, 3, 4, 5]);
   });
 
-  it("generates the five-draft reserve in one bounded batch", async () => {
+  it("generates the fallback campaign buffer through bounded style batches", async () => {
     const { campaign } = await createAssignment({
       googlePlace: true,
       naverPlace: true,
@@ -486,9 +486,9 @@ describe("campaign review draft generator", () => {
       progress.push(count);
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(preview.items).toHaveLength(5);
-    expect(progress).toEqual(Array.from({ length: 5 }, (_, index) => index + 1));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(preview.items).toHaveLength(8);
+    expect(progress).toEqual(Array.from({ length: 8 }, (_, index) => index + 1));
   });
 
   it("reports each completed matrix item while the preview is generated", async () => {
@@ -513,7 +513,7 @@ describe("campaign review draft generator", () => {
       progress.push(count);
     });
 
-    expect(progress).toEqual(Array.from({ length: 5 }, (_, index) => index + 1));
+    expect(progress).toEqual(Array.from({ length: 8 }, (_, index) => index + 1));
   });
 
   it("migrates legacy prepared drafts exactly once without deleting the originals", async () => {
@@ -787,7 +787,7 @@ describe("campaign review draft generator", () => {
     });
 
     expect(String(fetchMock.mock.calls[0]?.[0])).toContain(":streamGenerateContent?alt=sse&key=");
-    expect(progress).toEqual(Array.from({ length: 5 }, (_, index) => index + 1));
+    expect(progress).toEqual(Array.from({ length: 8 }, (_, index) => index + 1));
     const requestBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
     const prompt = requestBody.contents[0].parts[0].text;
     const itemSchema =
