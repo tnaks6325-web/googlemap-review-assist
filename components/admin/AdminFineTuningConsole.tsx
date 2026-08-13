@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import type { getFineTuningDashboard } from "@/lib/domain/draft-fine-tuning-admin";
 
-type Dashboard = Awaited<ReturnType<typeof getFineTuningDashboard>>;
+export type FineTuningDashboard = Awaited<ReturnType<typeof getFineTuningDashboard>>;
+type Dashboard = FineTuningDashboard;
 type Tab = "materials" | "datasets" | "jobs" | "models";
 
 const tabs: Array<{ id: Tab; label: string }> = [
@@ -12,6 +13,51 @@ const tabs: Array<{ id: Tab; label: string }> = [
   { id: "jobs", label: "튜닝 작업" },
   { id: "models", label: "모델 평가·운영" },
 ];
+
+export function AdminFineTuningPanel({ personaId, personaName }: { personaId: string; personaName: string }) {
+  const [data, setData] = useState<Dashboard | null>(null);
+  const [error, setError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const response = await fetch(`/api/admin/fine-tuning?personaId=${encodeURIComponent(personaId)}`, {
+          cache: "no-store",
+        });
+        const payload = (await response.json().catch(() => null)) as Dashboard | { error?: { message?: string } } | null;
+        if (!response.ok || !payload || !("scope" in payload)) {
+          throw new Error((payload as { error?: { message?: string } } | null)?.error?.message ?? "고급 튜닝 정보를 불러오지 못했습니다.");
+        }
+        if (!cancelled) setData(payload);
+      } catch (cause) {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : "고급 튜닝 정보를 불러오지 못했습니다.");
+      }
+    }
+
+    void load();
+    return () => { cancelled = true; };
+  }, [personaId, reloadKey]);
+
+  if (error) {
+    return (
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-red-200 pt-4 text-sm text-danger" role="alert">
+        <span>{error}</span>
+        <button type="button" onClick={() => { setData(null); setError(""); setReloadKey((value) => value + 1); }} className="rounded-field border border-red-200 px-3 py-2 text-sm font-bold">
+          다시 시도
+        </button>
+      </div>
+    );
+  }
+
+  if (!data) {
+    return <p className="mt-4 border-t border-line pt-4 text-sm text-ink-weak">{personaName}의 고급 튜닝 현황을 불러오는 중입니다.</p>;
+  }
+
+  return <AdminFineTuningConsole initialData={data} personaId={personaId} />;
+}
 
 export function AdminFineTuningConsole({ initialData, personaId }: { initialData: Dashboard; personaId: string | null }) {
   const [data, setData] = useState(initialData);
