@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { getCampaignOperationsAutomationLock } from "@/lib/domain/campaign-operations-lock";
+import {
+  CAMPAIGN_AUTOMATION_DISCOVERY_JOB,
+  CAMPAIGN_AUTOMATION_SETUP_JOB,
+} from "@/lib/domain/campaign-automation-jobs";
 
 describe("campaign operations automation lock", () => {
   it("locks operations while a campaign automation job is pending and exposes the current stage", async () => {
@@ -59,5 +63,56 @@ describe("campaign operations automation lock", () => {
       runKey: null,
       stage: null,
     });
+  });
+
+  it("does not globally lock other campaigns while one campaign setup job is active", async () => {
+    const state = await getCampaignOperationsAutomationLock({
+      operationalJob: {
+        count: async (args) => {
+          const jobTypes = (args as { where: { type: { in: string[] } } }).where.type.in;
+          return jobTypes.includes(CAMPAIGN_AUTOMATION_SETUP_JOB) ? 1 : 0;
+        },
+      },
+      automationRun: { findFirst: async () => null },
+      campaignAutomationRun: { count: async () => 1, findFirst: async () => null },
+    });
+
+    expect(state.isLocked).toBe(false);
+    expect(state.activeJobCount).toBe(0);
+  });
+
+  it("keeps the global lock while sheet discovery is active", async () => {
+    const state = await getCampaignOperationsAutomationLock({
+      operationalJob: {
+        count: async (args) => {
+          const jobTypes = (args as { where: { type: { in: string[] } } }).where.type.in;
+          return jobTypes.includes(CAMPAIGN_AUTOMATION_DISCOVERY_JOB) ? 1 : 0;
+        },
+      },
+      automationRun: { findFirst: async () => ({ runKey: "campaign-automation:active", updatedAt: new Date() }) },
+      campaignAutomationRun: { count: async () => 0, findFirst: async () => null },
+    });
+
+    expect(state.isLocked).toBe(true);
+    expect(state.activeJobCount).toBe(1);
+  });
+
+  it("keeps sheet imports locked while a campaign setup job is active", async () => {
+    const state = await getCampaignOperationsAutomationLock(
+      {
+        operationalJob: {
+          count: async (args) => {
+            const jobTypes = (args as { where: { type: { in: string[] } } }).where.type.in;
+            return jobTypes.includes(CAMPAIGN_AUTOMATION_SETUP_JOB) ? 1 : 0;
+          },
+        },
+        automationRun: { findFirst: async () => null },
+        campaignAutomationRun: { count: async () => 1, findFirst: async () => null },
+      },
+      "SHEET_IMPORT",
+    );
+
+    expect(state.isLocked).toBe(true);
+    expect(state.activeJobCount).toBe(1);
   });
 });

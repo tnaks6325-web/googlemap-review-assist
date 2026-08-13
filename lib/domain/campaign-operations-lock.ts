@@ -5,8 +5,15 @@ import {
 } from "@/lib/domain/campaign-automation-jobs";
 
 const ACTIVE_JOB_STATUSES = ["PENDING", "PROCESSING", "RETRY"];
+const GLOBAL_LOCK_JOB_TYPES = [CAMPAIGN_AUTOMATION_DISCOVERY_JOB];
+const SHEET_IMPORT_LOCK_JOB_TYPES = [
+  CAMPAIGN_AUTOMATION_DISCOVERY_JOB,
+  CAMPAIGN_AUTOMATION_SETUP_JOB,
+];
 const ACTIVE_RUN_STATUSES = ["QUEUED", "RUNNING"];
 const ACTIVE_CAMPAIGN_STATUSES = ["QUEUED", "PROCESSING", "RETRY"];
+
+export type CampaignOperationsLockScope = "GLOBAL" | "SHEET_IMPORT";
 
 type ActiveRun = { runKey: string; updatedAt: Date } | null;
 type ActiveCampaign = { stage: string; updatedAt: Date } | null;
@@ -31,11 +38,17 @@ export interface CampaignOperationsAutomationLock {
 
 export async function getCampaignOperationsAutomationLock(
   db: CampaignOperationsLockReader = prisma as unknown as CampaignOperationsLockReader,
+  scope: CampaignOperationsLockScope = "GLOBAL",
 ): Promise<CampaignOperationsAutomationLock> {
+  const jobTypes = scope === "SHEET_IMPORT" ? SHEET_IMPORT_LOCK_JOB_TYPES : GLOBAL_LOCK_JOB_TYPES;
   const [activeJobCount, activeRun, activeCampaignCount, activeCampaign] = await Promise.all([
     db.operationalJob.count({
       where: {
-        type: { in: [CAMPAIGN_AUTOMATION_DISCOVERY_JOB, CAMPAIGN_AUTOMATION_SETUP_JOB] },
+        // Discovery may change the whole campaign set from the sheet. A setup
+        // job is scoped to one campaign and protects itself against duplicates,
+        // so it must not make every other campaign read-only. Sheet imports are
+        // the exception because they can activate a campaign while setup runs.
+        type: { in: jobTypes },
         status: { in: ACTIVE_JOB_STATUSES },
       },
     }),
@@ -81,4 +94,8 @@ export async function getCampaignOperationsAutomationLock(
 
 export async function isCampaignOperationsLocked() {
   return (await getCampaignOperationsAutomationLock()).isLocked;
+}
+
+export async function isCampaignSheetImportLocked() {
+  return (await getCampaignOperationsAutomationLock(undefined, "SHEET_IMPORT")).isLocked;
 }

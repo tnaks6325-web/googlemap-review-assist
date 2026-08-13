@@ -294,7 +294,7 @@ export async function POST(req: Request) {
   const adminId = await getAdminId();
   if (!adminId) return err("UNAUTHORIZED", "관리자 로그인이 필요해요", 401);
 
-  const lockResponse = await campaignOperationsMutationLockResponse();
+  const lockResponse = await campaignOperationsMutationLockResponse("SHEET_IMPORT");
   if (lockResponse) return lockResponse;
 
   const ip = clientIp(req);
