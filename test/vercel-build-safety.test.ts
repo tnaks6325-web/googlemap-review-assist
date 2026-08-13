@@ -8,4 +8,12 @@ describe("Vercel production build safety", () => {
     expect(vercelBuildScript).toContain("Skipping automatic production PostgreSQL schema synchronization.");
     expect(vercelBuildScript).not.toContain('run("npx", ["prisma", "db", "push"');
   });
+
+  it("keeps the virtual-reviewer migration explicitly additive and separate from deployment", () => {
+    const migration = readFileSync("prisma/production-review-draft-personas.sql", "utf8");
+
+    expect(migration).toContain("CREATE TABLE IF NOT EXISTS");
+    expect(migration).toContain("ADD COLUMN IF NOT EXISTS");
+    expect(migration).not.toMatch(/DROP\s+(TABLE|COLUMN)/iu);
+  });
 });

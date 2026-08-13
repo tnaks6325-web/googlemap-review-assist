@@ -13,7 +13,7 @@ const tabs: Array<{ id: Tab; label: string }> = [
   { id: "models", label: "모델 평가·운영" },
 ];
 
-export function AdminFineTuningConsole({ initialData }: { initialData: Dashboard }) {
+export function AdminFineTuningConsole({ initialData, personaId }: { initialData: Dashboard; personaId: string | null }) {
   const [data, setData] = useState(initialData);
   const [tab, setTab] = useState<Tab>("materials");
   const [busy, setBusy] = useState<string | null>(null);
@@ -21,7 +21,8 @@ export function AdminFineTuningConsole({ initialData }: { initialData: Dashboard
   const [error, setError] = useState("");
 
   async function refresh() {
-    const response = await fetch("/api/admin/fine-tuning", { cache: "no-store" });
+    const query = personaId ? `?personaId=${encodeURIComponent(personaId)}` : "";
+    const response = await fetch(`/api/admin/fine-tuning${query}`, { cache: "no-store" });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload?.error?.message ?? "현황을 불러오지 못했습니다.");
     setData(payload);
@@ -31,7 +32,7 @@ export function AdminFineTuningConsole({ initialData }: { initialData: Dashboard
     const actionName = String(body.action);
     setBusy(actionName); setNotice(""); setError("");
     try {
-      const response = await fetch("/api/admin/fine-tuning", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      const response = await fetch("/api/admin/fine-tuning", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...body, ...(personaId ? { personaId } : {}) }) });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload?.error?.message ?? "작업을 완료하지 못했습니다.");
       await refresh();
@@ -54,6 +55,7 @@ export function AdminFineTuningConsole({ initialData }: { initialData: Dashboard
   }
 
   return <div className="space-y-6">
+    <p className="rounded-xl border border-brand/20 bg-brand-tint px-4 py-3 text-sm font-semibold text-brand">현재 범위: {data.scope.personaName}{personaId ? " · 이 가상 리뷰어에만 학습 데이터셋·활성 모델이 적용됩니다." : " · 기존 전역 파인튜닝 데이터입니다."}</p>
     <section className="grid gap-4 xl:grid-cols-[260px_minmax(0,1fr)_300px]">
       <Metric label="학습 완성도" value={`${data.readiness.score}/100`} detail={data.readiness.gaps.length ? data.readiness.gaps.join(" · ") : "데이터셋 생성 기준 충족"} />
       <Metric label="준비 현황" value={`훈련 ${data.counts.approvedTrain}/100 · 검증 ${data.counts.approvedValidation}/20`} detail={`승인 대기 ${data.counts.pending}건 · ${data.improvementPlan.nextPriority}`} />

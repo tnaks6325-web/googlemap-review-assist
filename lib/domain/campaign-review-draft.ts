@@ -25,6 +25,12 @@ import {
   retrieveReviewStyleExamples,
   type DraftCorrectionExample,
 } from "@/lib/domain/review-draft-language";
+import {
+  listReviewDraftPersonas,
+  personaForDraftSequence,
+  reviewDraftPersonaExamplesForPrompt,
+  type ReviewDraftPersona,
+} from "@/lib/domain/review-draft-personas";
 
 export const REVIEW_DRAFT_MIN_SOURCE_GROUPS = 2;
 export const REVIEW_DRAFT_MAX_REGENERATIONS = 3;
@@ -804,6 +810,7 @@ async function geminiDraft(
   provider: ReviewDraftProvider,
   model: string,
   apiKey: string | undefined,
+  persona?: ReviewDraftPersona,
 ) {
   const requiredGuideKeyword = requiredGuideKeywordForSequence(context, 0);
   const prompt = [
@@ -823,6 +830,7 @@ async function geminiDraft(
       : null,
     "- 원고 텍스트만 출력",
     "",
+    persona ? renderPersonaStyle(persona) : "",
     renderPromptContext(context),
     renderCorrectionReferences(context),
   ].join("\n");
@@ -832,6 +840,7 @@ async function geminiDraft(
       provider,
       model,
       apiKey,
+      personaId: persona?.id,
       method: "generateContent",
       body: {
         contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -941,6 +950,7 @@ function v2Prompt(
   slot: ReviewDraftStyleSlot,
   existingDrafts: string[],
   retryFeedback: string[],
+  persona?: ReviewDraftPersona,
 ) {
   const requiredGuideKeyword = requiredGuideKeywordForSequence(context, slot.index);
   return [
@@ -967,12 +977,23 @@ function v2Prompt(
           .map((draft, index) => `${index + 1}. ${draft}`)
           .join("\n")}`
       : "",
+    persona ? renderPersonaStyle(persona) : "",
     renderEvidenceContext(context),
     renderStyleReferences(context),
     renderCorrectionReferences(context),
   ]
     .filter(Boolean)
     .join("\n\n");
+}
+
+function renderPersonaStyle(persona: ReviewDraftPersona) {
+  const examples = reviewDraftPersonaExamplesForPrompt(persona.examples);
+  return [
+    `가상 리뷰어 스타일: ${persona.name}`,
+    persona.styleInstruction ? `문체 지침: ${persona.styleInstruction}` : "",
+    "학습 원고는 문체의 리듬과 어조만 참고하고, 문장이나 고유 표현을 복사하지 마세요. 원고에 있는 방문 사실을 현재 리뷰의 사실로 사용하지 마세요.",
+    examples.length ? `문체 참고 원고:\n${examples.map((example, index) => `${index + 1}. ${example}`).join("\n")}` : "",
+  ].filter(Boolean).join("\n");
 }
 
 async function geminiStructuredDraft(
@@ -983,15 +1004,17 @@ async function geminiStructuredDraft(
   provider: ReviewDraftProvider,
   model: string,
   apiKey?: string,
+  persona?: ReviewDraftPersona,
 ) {
   const request = async () => {
     const response = await requestGeminiGeneration({
       provider,
       model,
       apiKey,
+      personaId: persona?.id,
       method: "generateContent",
       body: {
-          contents: [{ role: "user", parts: [{ text: v2Prompt(context, slot, existingDrafts, retryFeedback) }] }],
+          contents: [{ role: "user", parts: [{ text: v2Prompt(context, slot, existingDrafts, retryFeedback, persona) }] }],
           generationConfig: {
             maxOutputTokens: 500,
             responseMimeType: "application/json",
@@ -1081,6 +1104,7 @@ async function generateV2DraftText(
   context: DraftContext,
   sequence: number,
   existingDrafts: string[],
+  persona?: ReviewDraftPersona,
 ) {
   if (context.approvedEvidence.length === 0) {
     throw new CampaignReviewDraftError(
@@ -1110,6 +1134,7 @@ async function generateV2DraftText(
           provider,
           model,
           apiKey,
+          persona,
         );
       } else {
         throw new CampaignReviewDraftError(
@@ -1189,6 +1214,7 @@ function matrixPrompt(
   context: DraftContext,
   selectedSlots: readonly ReviewDraftStyleSlot[],
   existingDrafts: readonly string[],
+  persona?: ReviewDraftPersona,
 ) {
   const slots = selectedSlots.map((slot) => ({
     slot: slot.index,
@@ -1232,6 +1258,7 @@ function matrixPrompt(
           .map((draft, index) => `${index + 1}. ${draft}`)
           .join("\n")}`
       : "",
+    persona ? renderPersonaStyle(persona) : "",
     renderEvidenceContext(context),
     renderStyleReferences(context),
     renderCorrectionReferences(context),
@@ -1351,6 +1378,7 @@ async function geminiMatrixBatch(
   model: string,
   apiKey?: string,
   onProgress?: (generatedCount: number, targetCount: number) => void,
+  persona?: ReviewDraftPersona,
 ) {
   let reportedCount = 0;
   const reportProgress = (generatedCount: number, targetCount: number) => {
@@ -1363,11 +1391,12 @@ async function geminiMatrixBatch(
       provider,
       model,
       apiKey,
+      personaId: persona?.id,
       method: "streamGenerateContent",
       body: {
           contents: [{
             role: "user",
-            parts: [{ text: matrixPrompt(context, slots, existingDrafts) }],
+            parts: [{ text: matrixPrompt(context, slots, existingDrafts, persona) }],
           }],
           generationConfig: {
             maxOutputTokens: REVIEW_DRAFT_MATRIX_MAX_OUTPUT_TOKENS,
@@ -1440,6 +1469,7 @@ async function geminiMatrixDrafts(
   slots: readonly ReviewDraftStyleSlot[],
   onProgress?: (generatedCount: number, targetCount: number) => void,
   existingDrafts: readonly string[] = [],
+  persona?: ReviewDraftPersona,
 ) {
   const batches: ReviewDraftStyleSlot[][] = [];
   for (
@@ -1474,6 +1504,7 @@ async function geminiMatrixDrafts(
           totalReported += generatedCount - previousCount;
           onProgress?.(totalReported, slots.length);
         },
+        persona,
       );
     }
   };
@@ -1517,6 +1548,7 @@ async function generateMatrixPreviewItems(
   onProgress?: (generatedCount: number, targetCount: number) => void,
   existingDrafts: readonly string[] = [],
   slots: readonly ReviewDraftStyleSlot[] = REVIEW_DRAFT_STYLE_SLOTS.slice(0, Math.max(1, targetCount)),
+  persona?: ReviewDraftPersona,
 ) {
   const selectedSlots = slots.length
     ? slots
@@ -1535,7 +1567,7 @@ async function generateMatrixPreviewItems(
     provider === "template"
       ? selectedSlots.map((slot) => templateStructuredDraft(context, slot, 0))
       : provider === "vertex" || (provider === "gemini" && apiKey)
-        ? await geminiMatrixDrafts(context, provider, model, apiKey, selectedSlots, onProgress, existingDrafts)
+        ? await geminiMatrixDrafts(context, provider, model, apiKey, selectedSlots, onProgress, existingDrafts, persona)
         : null;
   if (!structured) {
     throw new CampaignReviewDraftError(
@@ -1823,11 +1855,17 @@ export async function generateCampaignReviewDraftPreview(
     business: campaign.business,
   });
   assertDraftContextReady(context);
+  const previewPersona = personaForDraftSequence(
+    await listReviewDraftPersonas(),
+    campaign.nextReviewDraftSequence,
+  );
   const items = await generateMatrixPreviewItems(
     context,
     Math.min(targetCount - currentUnassignedDraftCount, REVIEW_DRAFT_STYLE_SLOTS.length),
     onProgress,
     existingPassedDraftRows.map((row) => row.text),
+    undefined,
+    previewPersona,
   );
   const diversity = analyzeDraftDiversity(items.map((item) => item.text));
   const evidenceUsed = new Set(items.flatMap((item) => item.evidenceIds));
@@ -2175,7 +2213,7 @@ export async function deleteCampaignPreparedDraft(
   return { deletedId: draft.id };
 }
 
-async function generateDraftText(context: DraftContext) {
+async function generateDraftText(context: DraftContext, persona?: ReviewDraftPersona) {
   const provider = resolveReviewDraftProvider();
   const model = envValue("REVIEW_DRAFT_MODEL") || DEFAULT_REVIEW_DRAFT_MODEL;
   const apiKey = envValue("GEMINI_API_KEY");
@@ -2192,7 +2230,7 @@ async function generateDraftText(context: DraftContext) {
   }
 
   try {
-    return { text: await geminiDraft(context, provider, model, apiKey), provider, model };
+    return { text: await geminiDraft(context, provider, model, apiKey, persona), provider, model };
   } catch (e) {
     if (e instanceof CampaignReviewDraftError) throw e;
     throw new CampaignReviewDraftError(
@@ -2484,6 +2522,10 @@ export async function generateCampaignReviewDraftForAssignment(
   const sequence = useV2
     ? await reserveReviewDraftSequence(receipt, db)
     : receipt.reviewDraftSequence;
+  const persona = personaForDraftSequence(
+    await listReviewDraftPersonas(),
+    sequence ?? 0,
+  );
   const generated = useV2
     ? await generateV2DraftText(
         context,
@@ -2492,8 +2534,9 @@ export async function generateCampaignReviewDraftForAssignment(
           ...(existingDraft && options.regenerate ? [existingDraft] : []),
           ...(await recentCampaignDrafts(receipt.campaignId, receipt.id, db)),
         ],
+        persona,
       )
-    : await generateDraftText(context);
+    : await generateDraftText(context, persona);
   const v2Metadata = useV2
     ? (generated as Awaited<ReturnType<typeof generateV2DraftText>>)
     : null;

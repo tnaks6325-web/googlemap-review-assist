@@ -34,6 +34,7 @@ export async function processCampaignAutomationDiscoveryJob(
         const result = await syncGoogleMapReviewCampaignRows([row as SheetImportDryRunRow], {
           active: false,
           autoNaver: false,
+          createNewCampaign: true,
         });
         const campaignId = result.campaignIds[0];
         if (!campaignId) throw new Error("Campaign import did not return a campaign id");

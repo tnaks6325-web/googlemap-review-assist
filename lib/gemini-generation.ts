@@ -29,11 +29,19 @@ export function isReviewDraftProviderConfigured(env: ProviderEnvironment = proce
   }
 }
 
-export async function requestGeminiGeneration({ provider, model, apiKey, method, body, timeoutMs }: {
-  provider: ReviewDraftProvider; model: string; apiKey?: string; method: "generateContent" | "streamGenerateContent"; body: unknown; timeoutMs: number;
+export async function requestGeminiGeneration({ provider, model, apiKey, method, body, timeoutMs, personaId }: {
+  provider: ReviewDraftProvider; model: string; apiKey?: string; method: "generateContent" | "streamGenerateContent"; body: unknown; timeoutMs: number; personaId?: string | null;
 }) {
   if (provider === "vertex") {
-    const active = await prisma.draftModelRelease.findFirst({ where: { status: "ACTIVE" }, orderBy: { activatedAt: "desc" }, select: { endpointName: true } });
+    const scopedReleaseWhere = personaId
+      ? { status: "ACTIVE", tuningJob: { dataset: { personaId } } }
+      : { status: "ACTIVE", tuningJob: { dataset: { personaId: null } } };
+    // A historical global release is retained as a compatibility fallback when
+    // a selected persona has not completed its own Vertex tuning yet.
+    const active = await prisma.draftModelRelease.findFirst({ where: scopedReleaseWhere, orderBy: { activatedAt: "desc" }, select: { endpointName: true } })
+      ?? (personaId
+        ? await prisma.draftModelRelease.findFirst({ where: { status: "ACTIVE", tuningJob: { dataset: { personaId: null } } }, orderBy: { activatedAt: "desc" }, select: { endpointName: true } })
+        : null);
     if (active) return requestVertexTunedEndpoint(active.endpointName, method, body, timeoutMs);
     return requestVertexAi(method, body, timeoutMs, { ...process.env, REVIEW_DRAFT_MODEL: model });
   }

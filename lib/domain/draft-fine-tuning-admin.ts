@@ -19,6 +19,20 @@ import {
   uploadTuningJsonl,
 } from "@/lib/vertex-ai-tuning";
 
+function cleanPersonaId(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim().slice(0, 100) : null;
+}
+
+async function fineTuningScope(personaId: string | null) {
+  if (!personaId) return { personaId: null, personaName: "전역 원고 모델" };
+  const persona = await prisma.reviewDraftPersona.findUnique({
+    where: { id: personaId },
+    select: { id: true, name: true },
+  });
+  if (!persona) throw new DraftFineTuningError("REVIEW_DRAFT_PERSONA_NOT_FOUND", "가상 리뷰어를 찾을 수 없습니다.", 404);
+  return { personaId: persona.id, personaName: persona.name };
+}
+
 function parseStringArray(value: string) {
   try {
     const parsed: unknown = JSON.parse(value);
@@ -50,7 +64,10 @@ export function trainingExampleStatusUpdate(status: unknown, adminId: string) {
     : { status, approvedByAdminId: null, approvedAt: null };
 }
 
-export async function getFineTuningDashboard() {
+export async function getFineTuningDashboard(personaId?: string | null) {
+  const scope = await fineTuningScope(cleanPersonaId(personaId));
+  const exampleWhere = { personaId: scope.personaId };
+  const datasetWhere = { personaId: scope.personaId };
   const [
     examples,
     pendingCount,
@@ -64,16 +81,16 @@ export async function getFineTuningDashboard() {
     releases,
     activeIndustries,
   ] = await Promise.all([
-    prisma.draftTrainingExample.findMany({ orderBy: { createdAt: "desc" }, take: 200 }),
-    prisma.draftTrainingExample.count({ where: { status: "PENDING" } }),
-    prisma.draftTrainingExample.count({ where: { status: "APPROVED", split: "TRAIN" } }),
-    prisma.draftTrainingExample.count({ where: { status: "APPROVED", split: "VALIDATION" } }),
-    prisma.draftTrainingExample.count({ where: { status: "APPROVED", sourceType: "ADMIN_REVISION" } }),
-    prisma.draftTrainingExample.groupBy({ by: ["industry"], where: { status: "APPROVED", industry: { not: null } } }),
-    prisma.draftTrainingExample.groupBy({ by: ["styleLabel"], where: { status: "APPROVED", styleLabel: { not: null } } }),
-    prisma.draftTuningDataset.findMany({ orderBy: { version: "desc" }, take: 30 }),
-    prisma.draftTuningJob.findMany({ orderBy: { createdAt: "desc" }, take: 30, include: { dataset: { select: { version: true } } } }),
-    prisma.draftModelRelease.findMany({ orderBy: { createdAt: "desc" }, take: 30, include: { tuningJob: { select: { status: true, displayName: true } } } }),
+    prisma.draftTrainingExample.findMany({ where: exampleWhere, orderBy: { createdAt: "desc" }, take: 200 }),
+    prisma.draftTrainingExample.count({ where: { ...exampleWhere, status: "PENDING" } }),
+    prisma.draftTrainingExample.count({ where: { ...exampleWhere, status: "APPROVED", split: "TRAIN" } }),
+    prisma.draftTrainingExample.count({ where: { ...exampleWhere, status: "APPROVED", split: "VALIDATION" } }),
+    prisma.draftTrainingExample.count({ where: { ...exampleWhere, status: "APPROVED", sourceType: "ADMIN_REVISION" } }),
+    prisma.draftTrainingExample.groupBy({ by: ["industry"], where: { ...exampleWhere, status: "APPROVED", industry: { not: null } } }),
+    prisma.draftTrainingExample.groupBy({ by: ["styleLabel"], where: { ...exampleWhere, status: "APPROVED", styleLabel: { not: null } } }),
+    prisma.draftTuningDataset.findMany({ where: datasetWhere, orderBy: { version: "desc" }, take: 30 }),
+    prisma.draftTuningJob.findMany({ where: { dataset: datasetWhere }, orderBy: { createdAt: "desc" }, take: 30, include: { dataset: { select: { version: true } } } }),
+    prisma.draftModelRelease.findMany({ where: { tuningJob: { dataset: datasetWhere } }, orderBy: { createdAt: "desc" }, take: 30, include: { tuningJob: { select: { status: true, displayName: true } } } }),
     prisma.campaignDraftGuidance.findMany({
       where: { campaign: { active: true }, industry: { not: null } },
       select: { industry: true },
@@ -96,6 +113,7 @@ export async function getFineTuningDashboard() {
   const projectId = process.env.VERTEX_AI_PROJECT_ID?.trim() ?? "";
 
   return {
+    scope,
     readiness: calculateFineTuningReadiness(readinessInput),
     improvementPlan: buildFineTuningImprovementPlan({ ...readinessInput, bucketConfigured }),
     counts: { pending: pendingCount, approvedTrain: approvedTrainCount, approvedValidation: approvedValidationCount },
@@ -117,6 +135,7 @@ export async function getFineTuningDashboard() {
 }
 
 export async function createManualTrainingExample(adminId: string, raw: Record<string, unknown>) {
+  const scope = await fineTuningScope(cleanPersonaId(raw.personaId));
   const validated = validateTrainingExampleInput({
     sourceType: "MANUAL",
     industry: typeof raw.industry === "string" ? raw.industry : null,
@@ -127,7 +146,7 @@ export async function createManualTrainingExample(adminId: string, raw: Record<s
   const styleLabel = typeof raw.styleLabel === "string" ? raw.styleLabel.trim().slice(0, 80) || null : null;
   try {
     return await prisma.draftTrainingExample.create({
-      data: { ...validated, styleLabel, status: "PENDING", createdByAdminId: adminId },
+      data: { ...validated, personaId: scope.personaId, styleLabel, status: "PENDING", createdByAdminId: adminId },
     });
   } catch (error) {
     if (String(error).includes("Unique constraint")) {
@@ -200,8 +219,9 @@ export async function importAdminRevisions(adminId: string) {
   return { imported, skipped };
 }
 
-export async function buildFineTuningDataset(adminId: string) {
-  const examples = await prisma.draftTrainingExample.findMany({ where: { status: "APPROVED" }, orderBy: { id: "asc" } });
+export async function buildFineTuningDataset(adminId: string, personaId?: string | null) {
+  const scope = await fineTuningScope(cleanPersonaId(personaId));
+  const examples = await prisma.draftTrainingExample.findMany({ where: { status: "APPROVED", personaId: scope.personaId }, orderBy: { id: "asc" } });
   const train = examples.filter((item) => item.split === "TRAIN");
   const validation = examples.filter((item) => item.split === "VALIDATION");
   if (train.length < 100 || validation.length < 20) {
@@ -212,7 +232,7 @@ export async function buildFineTuningDataset(adminId: string) {
   const manifestHash = createHash("sha256").update(examples.map((item) => `${item.id}:${item.contentHash}:${item.split}`).join("\n")).digest("hex");
   const dataset = await prisma.draftTuningDataset.create({
     data: {
-      version, baseModel: DRAFT_FINE_TUNING_BASE_MODEL, manifestHash, createdByAdminId: adminId,
+      version, personaId: scope.personaId, baseModel: DRAFT_FINE_TUNING_BASE_MODEL, manifestHash, createdByAdminId: adminId,
       trainingExampleCount: train.length, validationExampleCount: validation.length,
       examples: { create: examples.map((item, index) => ({ exampleId: item.id, split: item.split, position: index })) },
     },
@@ -237,7 +257,7 @@ export async function startFineTuningJob(adminId: string, datasetId: string) {
   if (!dataset || dataset.status !== "READY" || !dataset.trainingGcsUri || !dataset.validationGcsUri) {
     throw new DraftFineTuningError("DATASET_NOT_READY", "준비 완료된 데이터셋을 선택해 주세요.", 409);
   }
-  const displayName = `review-draft-v${dataset.version}-${new Date().toISOString().slice(0, 10)}`;
+  const displayName = `review-draft${dataset.personaId ? `-${dataset.personaId.slice(-8)}` : ""}-v${dataset.version}-${new Date().toISOString().slice(0, 10)}`;
   const local = await prisma.draftTuningJob.create({ data: { datasetId, displayName, baseModel: DRAFT_FINE_TUNING_BASE_MODEL, region: DRAFT_FINE_TUNING_REGION, createdByAdminId: adminId } });
   try {
     const vertex = await createVertexTuningJob({ displayName, trainingGcsUri: dataset.trainingGcsUri, validationGcsUri: dataset.validationGcsUri });
@@ -286,12 +306,12 @@ export async function saveModelEvaluation(releaseId: string, raw: Record<string,
 
 export async function activateModelRelease(adminId: string, releaseId: string, confirmed: boolean) {
   if (!confirmed) throw new DraftFineTuningError("MODEL_ACTIVATION_CONFIRMATION_REQUIRED", "운영 모델 적용을 확인해 주세요.");
-  const release = await prisma.draftModelRelease.findUnique({ where: { id: releaseId }, include: { tuningJob: true } });
+  const release = await prisma.draftModelRelease.findUnique({ where: { id: releaseId }, include: { tuningJob: { include: { dataset: { select: { personaId: true } } } } } });
   if (!release) throw new DraftFineTuningError("MODEL_RELEASE_NOT_FOUND", "모델 릴리스를 찾을 수 없습니다.", 404);
   const evaluation = evaluationSummary(release.evaluationJson);
   assertReleaseCanActivate({ jobStatus: release.tuningJob.status as Parameters<typeof assertReleaseCanActivate>[0]["jobStatus"], ...evaluation });
   return prisma.$transaction(async (tx) => {
-    await tx.draftModelRelease.updateMany({ where: { status: "ACTIVE" }, data: { status: "REJECTED" } });
+    await tx.draftModelRelease.updateMany({ where: { status: "ACTIVE", tuningJob: { dataset: { personaId: release.tuningJob.dataset.personaId } } }, data: { status: "REJECTED" } });
     return tx.draftModelRelease.update({ where: { id: releaseId }, data: { status: "ACTIVE", activatedByAdminId: adminId, activatedAt: new Date() } });
   });
 }
