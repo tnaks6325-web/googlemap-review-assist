@@ -13,7 +13,7 @@ async function createState() {
   const campaign = await prisma.campaign.create({
     data: { businessId: business.id, slug: await generateUniqueSlug(), name: `재시도 캠페인 ${suffix}`, active: false },
   });
-  const { run } = await upsertDailyCampaignAutomationRun(new Date(`2026-08-0${sequence}T08:00:00.000Z`));
+  const { run } = await upsertDailyCampaignAutomationRun(new Date(`2038-09-0${sequence}T08:00:00.000Z`));
   await prisma.campaignAutomationRun.create({ data: { automationRunId: run.id, campaignId: campaign.id, status: "PROCESSING" } });
   return { run, campaign };
 }

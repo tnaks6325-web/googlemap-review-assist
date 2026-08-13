@@ -108,6 +108,7 @@ export function AdminCampaignOperationsTable({
     text: string;
     hasError: boolean;
   } | null>(null);
+  const [manualSetupCampaignId, setManualSetupCampaignId] = useState<string | null>(null);
   const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(
     null,
   );
@@ -191,6 +192,36 @@ export function AdminCampaignOperationsTable({
       automationRunning.current = false;
       setAutomationLoading(false);
       setAutomationProgress(null);
+    }
+  };
+
+  const runManualSetup = async (campaignId: string) => {
+    if (automationLocked) return;
+    setManualSetupCampaignId(campaignId);
+    setAutomationMessage(null);
+    try {
+      const response = await fetch(`/api/admin/campaigns/${campaignId}/manual-setup`, {
+        method: "POST",
+      });
+      const body = (await response.json().catch(() => null)) as {
+        error?: { message?: string };
+      } | null;
+      if (!response.ok) {
+        setAutomationMessage({
+          text: body?.error?.message ?? "수동 세팅 작업을 시작하지 못했습니다.",
+          hasError: true,
+        });
+        return;
+      }
+      setAutomationMessage({
+        text: "수동 세팅 작업을 시작했습니다. 자동화 상태에서 진행 상황을 확인할 수 있습니다.",
+        hasError: false,
+      });
+      router.refresh();
+    } catch {
+      setAutomationMessage({ text: "네트워크 오류로 수동 세팅을 시작하지 못했습니다.", hasError: true });
+    } finally {
+      setManualSetupCampaignId(null);
     }
   };
 
@@ -315,6 +346,9 @@ export function AdminCampaignOperationsTable({
                     sourcePercent={sourcePercent}
                     status={campaignStatus}
                     automationLocked={automationLocked}
+                    manualSetupEligible={campaign.manualSetupEligible}
+                    manualSetupLoading={manualSetupCampaignId === campaign.id}
+                    onManualSetup={() => void runManualSetup(campaign.id)}
                     onToggle={() =>
                       setExpandedCampaignId(expanded ? null : campaign.id)
                     }
@@ -358,6 +392,9 @@ function CampaignRows({
   sourcePercent,
   status,
   automationLocked,
+  manualSetupEligible,
+  manualSetupLoading,
+  onManualSetup,
   onToggle,
 }: {
   campaign: AdminCampaignOperationsRow;
@@ -365,6 +402,9 @@ function CampaignRows({
   sourcePercent: number;
   status: ReturnType<typeof operationalCampaignStatus>;
   automationLocked: boolean;
+  manualSetupEligible: boolean;
+  manualSetupLoading: boolean;
+  onManualSetup: () => void;
   onToggle: () => void;
 }) {
   const googleMapsUrl = safeGoogleMapsUrl(campaign.googleMapsUrl);
@@ -478,6 +518,15 @@ function CampaignRows({
         </TableCell>
         <TableCell align="right">
           <div className="flex justify-end gap-1.5">
+            <button
+              type="button"
+              onClick={onManualSetup}
+              disabled={automationLocked || !manualSetupEligible || manualSetupLoading}
+              title={!manualSetupEligible ? "시트 반영이 완료된 캠페인에서만 수동 세팅을 적용할 수 있습니다." : undefined}
+              className="h-9 rounded-[9px] border border-brand/30 bg-brand-tint px-3 text-xs font-bold text-brand transition hover:border-brand disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {manualSetupLoading ? "요청 중" : manualSetupEligible ? "수동 세팅 적용" : "시트 반영 필요"}
+            </button>
             <AdminCampaignDraftPreview
               campaignId={campaign.id}
               businessName={campaign.businessName}
