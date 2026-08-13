@@ -8,6 +8,7 @@ import { AdminCampaignDraftGuidance } from "@/components/admin/AdminCampaignDraf
 import { AdminCampaignNaverCandidates } from "@/components/admin/AdminCampaignNaverCandidates";
 import { AdminCampaignRewardPoints } from "@/components/admin/AdminCampaignRewardPoints";
 import { AdminCampaignReviewSubmissions } from "@/components/admin/AdminCampaignReviewSubmissions";
+import { useAdminMobileWorkspace } from "@/components/admin/useAdminMobileWorkspace";
 import { Button } from "@/components/ui";
 import {
   adminCampaignAutomationPlan,
@@ -112,6 +113,7 @@ export function AdminCampaignOperationsTable({
   const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(
     null,
   );
+  const mobileWorkspace = useAdminMobileWorkspace();
 
   const filteredCampaigns = useMemo(
     () => filterAdminCampaignRows(campaigns, query, status),
@@ -298,7 +300,7 @@ export function AdminCampaignOperationsTable({
       </div>
 
       <div className="mt-3 overflow-hidden rounded-[14px] border border-line bg-surface shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
-        <div className="admin-mobile-only space-y-2.5 p-3">
+        {mobileWorkspace ? <div className="space-y-2.5 p-3">
           {filteredCampaigns.map((campaign) => {
             const campaignStatus = operationalCampaignStatus(campaign);
             const expanded = expandedCampaignId === campaign.id;
@@ -319,9 +321,9 @@ export function AdminCampaignOperationsTable({
               />
             );
           })}
-        </div>
+        </div> : (
 
-        <div className="admin-desktop-only overflow-x-auto">
+        <div className="overflow-x-auto">
           <table className="w-full min-w-[1450px] table-fixed border-separate border-spacing-0">
             <caption className="sr-only">
               관리자 캠페인 운영 상태 및 자료 연결 현황
@@ -380,7 +382,7 @@ export function AdminCampaignOperationsTable({
               })}
             </tbody>
           </table>
-        </div>
+        </div>)}
 
         {filteredCampaigns.length === 0 ? (
           <div className="border-t border-line px-5 py-12 text-center">

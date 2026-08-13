@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useAdminMobileWorkspace } from "@/components/admin/useAdminMobileWorkspace";
 
 export interface AdminCampaignAutomationStatusRow {
   campaignId: string;
@@ -77,6 +78,7 @@ export function AdminCampaignAutomationStatus({
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [filter, setFilter] = useState<AutomationStatusFilter>("ALL");
+  const mobileWorkspace = useAdminMobileWorkspace();
 
   if (!rows.length) return null;
 
@@ -137,7 +139,7 @@ export function AdminCampaignAutomationStatus({
         </div>
         <p className="text-xs text-ink-weak">총 {filteredRows.length}건 · 한 화면에 최대 15건</p>
       </div>
-      <div className="admin-mobile-only mt-3 space-y-2.5">
+      {mobileWorkspace ? <div className="mt-3 space-y-2.5">
         {filteredRows.map((row) => {
           const retryable = !readOnly && ["NEEDS_REVIEW", "FAILED"].includes(row.status);
           return (
@@ -156,9 +158,9 @@ export function AdminCampaignAutomationStatus({
             선택한 상태의 자동화 항목이 없습니다.
           </p>
         ) : null}
-      </div>
+      </div> : (
 
-      <div className="admin-desktop-only mt-3 max-h-[660px] overflow-x-auto overflow-y-auto overscroll-contain rounded-[10px] border border-line">
+      <div className="mt-3 max-h-[660px] overflow-x-auto overflow-y-auto overscroll-contain rounded-[10px] border border-line">
         <table className="w-full min-w-[900px] text-left text-xs">
           <caption className="sr-only">캠페인 자동화 상태와 재시도</caption>
           <thead className="sticky top-0 z-10 border-b border-line bg-surface-alt text-ink-weak">
@@ -194,7 +196,7 @@ export function AdminCampaignAutomationStatus({
             ) : null}
           </tbody>
         </table>
-      </div>
+      </div>)}
     </section>
   );
 }

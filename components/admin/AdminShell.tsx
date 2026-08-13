@@ -1,8 +1,14 @@
 "use client";
 
-import { useSyncExternalStore, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { AdminLogout } from "@/components/admin/AdminLogout";
+import {
+  nextAdminDisplayMode,
+  setAdminDisplayMode,
+  type AdminDisplayMode,
+  useAdminDisplayMode,
+} from "@/components/admin/useAdminMobileWorkspace";
 import { cn } from "@/lib/cn";
 
 type AdminSection = "overview" | "campaigns" | "reviewProofs" | "settlements" | "reviewStyles" | "errors";
@@ -15,30 +21,7 @@ interface AdminShellProps {
   wideContent?: boolean;
 }
 
-export type AdminDisplayMode = "desktop" | "mobile";
-
-const ADMIN_DISPLAY_MODE_STORAGE_KEY = "admin-display-mode";
-const ADMIN_DISPLAY_MODE_CHANGE_EVENT = "admin-display-mode-change";
-
-export function nextAdminDisplayMode(mode: AdminDisplayMode): AdminDisplayMode {
-  return mode === "desktop" ? "mobile" : "desktop";
-}
-
-function getAdminDisplayModeSnapshot(): AdminDisplayMode {
-  if (typeof window === "undefined") return "desktop";
-  return window.localStorage.getItem(ADMIN_DISPLAY_MODE_STORAGE_KEY) === "mobile"
-    ? "mobile"
-    : "desktop";
-}
-
-function subscribeToAdminDisplayMode(onStoreChange: () => void) {
-  window.addEventListener("storage", onStoreChange);
-  window.addEventListener(ADMIN_DISPLAY_MODE_CHANGE_EVENT, onStoreChange);
-  return () => {
-    window.removeEventListener("storage", onStoreChange);
-    window.removeEventListener(ADMIN_DISPLAY_MODE_CHANGE_EVENT, onStoreChange);
-  };
-}
+export { nextAdminDisplayMode } from "@/components/admin/useAdminMobileWorkspace";
 
 const navigation: Array<{ id: AdminSection; href: string; label: string; description: string }> = [
   { id: "reviewStyles", href: "/admin/review-styles", label: "가상 리뷰어 관리", description: "기본 스타일 원고와 선택형 고급 튜닝" },
@@ -135,17 +118,12 @@ export function AdminShell({
   children,
   wideContent = false,
 }: AdminShellProps) {
-  const displayMode = useSyncExternalStore<AdminDisplayMode>(
-    subscribeToAdminDisplayMode,
-    getAdminDisplayModeSnapshot,
-    () => "desktop",
-  );
+  const displayMode = useAdminDisplayMode();
   const mobileMode = displayMode === "mobile";
 
   const toggleDisplayMode = () => {
     const nextMode = nextAdminDisplayMode(displayMode);
-    window.localStorage.setItem(ADMIN_DISPLAY_MODE_STORAGE_KEY, nextMode);
-    window.dispatchEvent(new Event(ADMIN_DISPLAY_MODE_CHANGE_EVENT));
+    setAdminDisplayMode(nextMode);
   };
 
   return (

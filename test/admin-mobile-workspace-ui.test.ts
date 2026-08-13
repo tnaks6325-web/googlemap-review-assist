@@ -31,12 +31,10 @@ describe("admin mobile workspace presentation", () => {
     expect(globalsSource).toContain(".admin-desktop-only");
   });
 
-  it("replaces dense administration tables with mobile cards while keeping the desktop tables", () => {
-    expect(automationSource).toContain("admin-mobile-only");
-    expect(automationSource).toContain("admin-desktop-only");
+  it("renders one active mobile or desktop representation so hidden editors cannot drift", () => {
+    expect(automationSource).toContain("useAdminMobileWorkspace");
     expect(automationSource).toContain("MobileAutomationStatusCard");
-    expect(campaignSource).toContain("admin-mobile-only");
-    expect(campaignSource).toContain("admin-desktop-only");
+    expect(campaignSource).toContain("useAdminMobileWorkspace");
     expect(campaignSource).toContain("MobileCampaignCard");
   });
 });
