@@ -47,6 +47,7 @@ function stageLabel(stage: string) {
     DISCOVERED: "신규 등록 확인",
     IMPORTING: "캠페인 반영",
     RETRY_REQUESTED: "관리자 재시도 예약",
+    MANUAL_REQUESTED: "관리자 수동 세팅 요청",
     NAVER_PLACE: "네이버 플레이스 연결",
     REFERENCE_EMPTY: "참고자료 수집",
     DRAFT_EVIDENCE: "원고 사실카드 분석",

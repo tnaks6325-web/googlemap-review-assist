@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 const protectedMutationRoutes = [
   "../app/api/admin/campaigns/[campaignId]/route.ts",
   "../app/api/admin/campaigns/[campaignId]/automation/retry/route.ts",
+  "../app/api/admin/campaigns/[campaignId]/manual-setup/route.ts",
   "../app/api/admin/campaigns/[campaignId]/blog-references/route.ts",
   "../app/api/admin/campaigns/[campaignId]/draft-evidence/route.ts",
   "../app/api/admin/campaigns/[campaignId]/draft-guidance/route.ts",

@@ -9,6 +9,10 @@ const pageSource = readFileSync(
   new URL("../app/admin/campaigns/page.tsx", import.meta.url),
   "utf8",
 );
+const operationsSource = readFileSync(
+  new URL("../components/admin/AdminCampaignOperationsTable.tsx", import.meta.url),
+  "utf8",
+);
 
 describe("관리자 캠페인 자동화 상태 UI", () => {
   it("단계, 실패 원인, 재시도 동작을 운영자에게 제공한다", () => {
@@ -32,5 +36,10 @@ describe("관리자 캠페인 자동화 상태 UI", () => {
     expect(componentSource).toContain("READY");
     expect(componentSource).toContain("max-h-[660px]");
     expect(componentSource).toContain("overflow-y-auto");
+  });
+
+  it("campaign list exposes a manual setup action for each campaign", () => {
+    expect(operationsSource).toContain("수동 세팅 적용");
+    expect(operationsSource).toContain("/manual-setup");
   });
 });
