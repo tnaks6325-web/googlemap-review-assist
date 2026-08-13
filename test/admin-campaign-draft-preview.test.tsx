@@ -76,12 +76,12 @@ describe("admin campaign prepared drafts", () => {
       />,
     );
 
-    expect(html).toContain("원고생성 3/5");
+    expect(html).toContain("원고생성 3/8");
     expect(html).toContain("원고보관함");
     expect(html).not.toContain("원고생성 테스트");
   });
 
-  it("caps the displayed reserve at a smaller campaign quota", () => {
+  it("표시 목표에 코드 총량과 최소 여분을 반영한다", () => {
     const html = renderToStaticMarkup(
       <AdminCampaignDraftPreview
         campaignId="campaign-1"
@@ -97,8 +97,8 @@ describe("admin campaign prepared drafts", () => {
       />,
     );
 
-    expect(html).toContain("원고생성 0/2");
-    expect(html).not.toContain("원고생성 0/5");
+    expect(html).toContain("원고생성 0/5");
+    expect(html).not.toContain("원고생성 0/2");
   });
 
   it("offers quality-excluded promotion and confirmed bulk deletion controls", () => {
@@ -274,13 +274,13 @@ describe("admin campaign prepared drafts", () => {
     expect(html).toContain("작성 9/25");
   });
 
-  it("continues generation rounds until 25 quality-passed unassigned drafts exist", async () => {
-    const storedCounts = [8, 18, 25];
+  it("continues generation rounds until a 50-code campaign has its 60-draft buffer", async () => {
+    const storedCounts = [25, 50, 60];
     let round = 0;
 
     const result = await runCampaignDraftAutofill({
-      initialUnassignedCount: 2,
-      targetCount: 25,
+      initialUnassignedCount: 0,
+      targetCount: 60,
       generateRound: async () => {
         round += 1;
       },
@@ -299,7 +299,7 @@ describe("admin campaign prepared drafts", () => {
     });
 
     expect(round).toBe(3);
-    expect(result.metrics.unassignedCount).toBe(25);
+    expect(result.metrics.unassignedCount).toBe(60);
   });
 
   it("retries a transient generation interruption without resetting stored progress", async () => {
