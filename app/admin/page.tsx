@@ -1,7 +1,6 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
+import { AdminSettlementBulkActions } from "@/components/admin/AdminSettlementBulkActions";
 import { AdminShell } from "@/components/admin/AdminShell";
-import { SettlementQueue } from "@/components/admin/SettlementQueue";
 import { Card } from "@/components/ui";
 import { getAdminId } from "@/lib/auth/session";
 import { getAbuseSignals, getPendingSettlements } from "@/lib/domain/admin";
@@ -23,12 +22,9 @@ export default async function AdminHome() {
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
         <section className="space-y-3">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-sm font-semibold text-ink-weak">정산 대기 ({pending.length})</h2>
-            <Link href="/admin/reviewers" className="text-sm font-semibold text-brand">
-              일괄 처리
-            </Link>
-          </div>
-          <SettlementQueue items={pending} />
+              <h2 className="text-sm font-semibold text-ink-weak">하나은행 지급 대기 ({pending.length})</h2>
+            </div>
+          <AdminSettlementBulkActions items={pending} />
         </section>
 
         <section className="space-y-3">
