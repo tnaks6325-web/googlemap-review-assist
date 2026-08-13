@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
 import { formatAdminDateTime } from "@/lib/admin-date-format";
@@ -60,7 +60,7 @@ function CheckChip({ label, value }: { label: string; value: ReviewProofCheckSta
 export function ReviewProofQueue({ items }: { items: ReviewProofItem[] }) {
   const router = useRouter();
   const noteRef = useRef<HTMLTextAreaElement>(null);
-  const [queue, setQueue] = useState(items);
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(() => new Set());
   const [activeId, setActiveId] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<"approve" | "reject" | null>(null);
   const [rejectOpen, setRejectOpen] = useState(false);
@@ -69,17 +69,20 @@ export function ReviewProofQueue({ items }: { items: ReviewProofItem[] }) {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [filter, setFilter] = useState<AdminReviewProofFilter>("ALL");
-  useEffect(() => setQueue(items), [items]);
+  const queue = useMemo(
+    () => items.filter((item) => !dismissedIds.has(item.id)),
+    [dismissedIds, items],
+  );
   const visibleItems = useMemo(() => filterAdminReviewProofs(queue, filter), [filter, queue]);
   const activeItem = activeId ? visibleItems.find((item) => item.id === activeId) ?? null : null;
   const activeReviewerLabel = activeItem ? reviewProofReviewerLabel(activeItem.reviewerName, activeItem.maskedPhone) : null;
-  const closeModal = () => { setActiveId(null); setRejectOpen(false); setRejectionNote(""); setSelectedTemplate(null); };
+  const closeModal = useCallback(() => { setActiveId(null); setRejectOpen(false); setRejectionNote(""); setSelectedTemplate(null); }, []);
   const openModal = (id: string) => { setError(null); setMessage(null); setActiveId(id); setRejectOpen(false); setRejectionNote(""); setSelectedTemplate(null); };
-  const move = (direction: "previous" | "next") => {
+  const move = useCallback((direction: "previous" | "next") => {
     if (!activeItem) return;
     const nextId = adjacentReviewProofId(visibleItems.map((item) => item.id), activeItem.id, direction);
     if (nextId) { setActiveId(nextId); setRejectOpen(false); setRejectionNote(""); setSelectedTemplate(null); }
-  };
+  }, [activeItem, visibleItems]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -90,7 +93,7 @@ export function ReviewProofQueue({ items }: { items: ReviewProofItem[] }) {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activeItem, visibleItems]);
+  }, [activeItem, closeModal, move]);
 
   const decide = async (action: "approve" | "reject") => {
     if (!activeItem || busyAction) return;
@@ -109,7 +112,7 @@ export function ReviewProofQueue({ items }: { items: ReviewProofItem[] }) {
       if (!res.ok) throw new Error(data?.error?.message ?? "검수 결과를 저장하지 못했습니다.");
       const ids = visibleItems.map((item) => item.id);
       const nextId = adjacentReviewProofId(ids, activeItem.id, "next") ?? adjacentReviewProofId(ids, activeItem.id, "previous");
-      setQueue((current) => current.filter((item) => item.id !== activeItem.id));
+      setDismissedIds((current) => new Set(current).add(activeItem.id));
       setActiveId(nextId);
       setRejectOpen(false); setRejectionNote(""); setSelectedTemplate(null);
       setMessage(action === "approve" ? "승인과 포인트 적립을 완료했습니다." : "반려 사유를 리뷰어에게 전송했습니다.");
