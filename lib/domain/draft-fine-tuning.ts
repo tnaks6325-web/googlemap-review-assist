@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 
-export const DRAFT_FINE_TUNING_BASE_MODEL = "gemini-3.5-flash";
+// The July 29 workflow used this as a fixed value. Vertex no longer supports that
+// model for supervised tuning, so retain the workflow with a currently supported base model.
+export const DRAFT_FINE_TUNING_BASE_MODEL = "gemini-2.5-flash";
 export const DRAFT_FINE_TUNING_REGION = "us-central1";
 export const DRAFT_FINE_TUNING_MIN_TRAIN_EXAMPLES = 100;
 export const DRAFT_FINE_TUNING_MIN_VALIDATION_EXAMPLES = 20;
