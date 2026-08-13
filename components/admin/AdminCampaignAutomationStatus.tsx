@@ -17,6 +17,19 @@ export interface AdminCampaignAutomationStatusRow {
   updatedAt: string;
 }
 
+type AutomationStatusFilter = "ALL" | "WAITING" | "NEEDS_REVIEW" | "COMPLETED";
+
+const automationStatusFilters: Array<{
+  key: AutomationStatusFilter;
+  label: string;
+  statuses?: string[];
+}> = [
+  { key: "ALL", label: "전체" },
+  { key: "WAITING", label: "대기", statuses: ["QUEUED", "PROCESSING", "RETRY"] },
+  { key: "NEEDS_REVIEW", label: "검토필요", statuses: ["NEEDS_REVIEW", "FAILED"] },
+  { key: "COMPLETED", label: "완료", statuses: ["READY"] },
+];
+
 function statusLabel(status: string) {
   const labels: Record<string, string> = {
     QUEUED: "대기",
@@ -62,8 +75,14 @@ export function AdminCampaignAutomationStatus({
   const router = useRouter();
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [filter, setFilter] = useState<AutomationStatusFilter>("ALL");
 
   if (!rows.length) return null;
+
+  const selectedFilter = automationStatusFilters.find((item) => item.key === filter);
+  const filteredRows = selectedFilter?.statuses
+    ? rows.filter((row) => selectedFilter.statuses?.includes(row.status))
+    : rows;
 
   const retry = async (campaignId: string) => {
     if (readOnly) return;
@@ -94,10 +113,33 @@ export function AdminCampaignAutomationStatus({
         </div>
         {message ? <p role="status" className="text-xs font-semibold text-ink-sub">{message}</p> : null}
       </div>
-      <div className="mt-3 overflow-x-auto">
+      <div className="mt-4 flex flex-col gap-3 border-t border-line pt-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="자동화 상태 필터">
+          {automationStatusFilters.map((item) => {
+            const active = item.key === filter;
+            return (
+              <button
+                key={item.key}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setFilter(item.key)}
+                className={`h-8 rounded-full px-3 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 ${
+                  active
+                    ? "bg-brand text-white shadow-[0_1px_2px_rgba(16,24,40,0.12)]"
+                    : "border border-line bg-surface text-ink-sub hover:border-brand/40 hover:text-brand"
+                }`}
+              >
+                {item.label}
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-xs text-ink-weak">총 {filteredRows.length}건 · 한 화면에 최대 15건</p>
+      </div>
+      <div className="mt-3 max-h-[660px] overflow-x-auto overflow-y-auto overscroll-contain rounded-[10px] border border-line">
         <table className="w-full min-w-[900px] text-left text-xs">
           <caption className="sr-only">캠페인 자동화 상태와 재시도</caption>
-          <thead className="border-y border-line bg-surface-alt text-ink-weak">
+          <thead className="sticky top-0 z-10 border-b border-line bg-surface-alt text-ink-weak">
             <tr>
               <th scope="col" className="px-3 py-2 font-bold">캠페인</th>
               <th scope="col" className="px-3 py-2 font-bold">상태</th>
@@ -108,7 +150,7 @@ export function AdminCampaignAutomationStatus({
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => {
+            {filteredRows.map((row) => {
               const retryable = !readOnly && ["NEEDS_REVIEW", "FAILED"].includes(row.status);
               return (
                 <tr key={row.campaignId} className="border-b border-line last:border-b-0">
@@ -121,6 +163,13 @@ export function AdminCampaignAutomationStatus({
                 </tr>
               );
             })}
+            {!filteredRows.length ? (
+              <tr>
+                <td colSpan={6} className="px-3 py-12 text-center text-sm text-ink-weak">
+                  선택한 상태의 자동화 항목이 없습니다.
+                </td>
+              </tr>
+            ) : null}
           </tbody>
         </table>
       </div>
