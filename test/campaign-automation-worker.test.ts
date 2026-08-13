@@ -17,7 +17,12 @@ async function createAutomationCampaign() {
 
 describe("캠페인 자동화 작업 워커", () => {
   it("수동 확인 결과를 캠페인별 상태에 저장하고 작업을 성공 종결한다", async () => {
-    const { run } = await upsertDailyCampaignAutomationRun(new Date("2026-08-02T08:00:00.000Z"));
+    const { run } = await upsertDailyCampaignAutomationRun(new Date("2040-08-02T08:00:00.000Z"));
+    await prisma.campaignAutomationRun.deleteMany({ where: { automationRunId: run.id } });
+    await prisma.automationRun.update({
+      where: { id: run.id },
+      data: { status: "RUNNING", completedAt: null, lastError: null },
+    });
     const campaign = await createAutomationCampaign();
     await prisma.campaignAutomationRun.create({
       data: { automationRunId: run.id, campaignId: campaign.id, stage: "NAVER_LINKING", status: "PROCESSING" },
