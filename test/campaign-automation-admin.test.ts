@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { prisma } from "@/lib/db";
 import { generateUniqueSlug } from "@/lib/domain/codes";
-import { retryCampaignAutomationSetup } from "@/lib/domain/campaign-automation-admin";
+import {
+  retryCampaignAutomationSetup,
+  startManualCampaignSetup,
+} from "@/lib/domain/campaign-automation-admin";
 import { CAMPAIGN_AUTOMATION_SETUP_JOB } from "@/lib/domain/campaign-automation-jobs";
 import { upsertDailyCampaignAutomationRun } from "@/lib/domain/campaign-automation-state";
 
@@ -51,6 +54,26 @@ async function createRetryableState() {
 }
 
 describe("관리자 캠페인 자동화 재시도", () => {
+  it("creates one queued setup job when an admin manually starts campaign setup", async () => {
+    const { campaign } = await createRetryableState();
+    await prisma.campaignAutomationRun.deleteMany({ where: { campaignId: campaign.id } });
+    await prisma.operationalJob.deleteMany({ where: { dedupeKey: { contains: campaign.id } } });
+
+    const result = await startManualCampaignSetup(campaign.id);
+
+    expect(result).toMatchObject({ campaignId: campaign.id, runKey: `manual-campaign-setup:${campaign.id}` });
+    await expect(
+      prisma.campaignAutomationRun.findUniqueOrThrow({
+        where: { automationRunId_campaignId: { automationRunId: result.runId, campaignId: campaign.id } },
+      }),
+    ).resolves.toMatchObject({ status: "QUEUED", stage: "MANUAL_REQUESTED", sourceId: null });
+    await expect(
+      prisma.operationalJob.findUniqueOrThrow({
+        where: { dedupeKey: `campaign-automation-setup:${result.runKey}:${campaign.id}` },
+      }),
+    ).resolves.toMatchObject({ type: CAMPAIGN_AUTOMATION_SETUP_JOB, status: "PENDING", attempts: 0 });
+  });
+
   it("실패한 설정 작업을 새 대기 작업으로 안전하게 재예약한다", async () => {
     const { campaign, run, dedupeKey } = await createRetryableState();
 
