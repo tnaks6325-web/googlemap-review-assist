@@ -6,7 +6,9 @@ const vercelBuildScript = readFileSync("scripts/vercel-build.mjs", "utf8");
 describe("Vercel production build safety", () => {
   it("does not synchronize the shared production schema during an application deploy", () => {
     expect(vercelBuildScript).toContain("Skipping automatic production PostgreSQL schema synchronization.");
-    expect(vercelBuildScript).not.toContain('run("npx", ["prisma", "db", "push"');
+    expect(vercelBuildScript).toContain("const isIsolatedTestServerSchemaSync");
+    expect(vercelBuildScript).toContain("if (isIsolatedTestServerSchemaSync)");
+    expect(vercelBuildScript).not.toContain("--accept-data-loss");
   });
 
   it("executes only the reviewed additive virtual-reviewer migration in production", () => {
@@ -14,6 +16,12 @@ describe("Vercel production build safety", () => {
     expect(vercelBuildScript).toContain('"db",');
     expect(vercelBuildScript).toContain('"execute",');
     expect(vercelBuildScript).toContain("prisma/production-review-draft-personas.sql");
+  });
+
+  it("allows schema synchronization only when the isolated test-server flag is explicit", () => {
+    expect(vercelBuildScript).toContain('process.env.ALLOW_TEST_DATABASE_SCHEMA_PUSH === "true"');
+    expect(vercelBuildScript).toContain('process.env.VERCEL_ALLOWED_PRODUCTION_BRANCH === "test"');
+    expect(vercelBuildScript).toContain('"push",');
   });
 
   it("keeps the virtual-reviewer migration explicitly additive and separate from deployment", () => {
