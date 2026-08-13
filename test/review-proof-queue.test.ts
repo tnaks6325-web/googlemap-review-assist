@@ -1,9 +1,15 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   adjacentReviewProofId,
   reviewProofDecisionBody,
   reviewProofReviewerLabel,
 } from "@/lib/review-proof-queue";
+
+const queueSource = readFileSync(
+  new URL("../components/admin/ReviewProofQueue.tsx", import.meta.url),
+  "utf8",
+);
 
 describe("review proof queue navigation", () => {
   it("moves to the adjacent pending proof and stops at each end", () => {
@@ -25,5 +31,10 @@ describe("review proof queue navigation", () => {
       action: "approve",
       note: "관리자 확인 완료",
     });
+  });
+
+  it("opens the inspection modal when a proof thumbnail is clicked", () => {
+    expect(queueSource).toContain("onClick={() => openModal(item.id)}");
+    expect(queueSource).not.toContain('target={item.hasProofImage ? "_blank" : undefined}');
   });
 });

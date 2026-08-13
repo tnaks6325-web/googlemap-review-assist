@@ -184,11 +184,12 @@ export function ReviewProofQueue({ items }: { items: ReviewProofItem[] }) {
               <Button className="h-11 px-4 text-sm" onClick={() => openModal(item.id)}>이미지 검수하기</Button>
             </div>
             <div className="mt-3 grid gap-3 sm:grid-cols-[180px_1fr]">
-              <a
-                href={item.hasProofImage ? `/api/admin/review-proofs/${item.id}` : "#"}
-                target={item.hasProofImage ? "_blank" : undefined}
-                rel={item.hasProofImage ? "noreferrer" : undefined}
-                className="block overflow-hidden rounded-card border border-line bg-canvas"
+              <button
+                type="button"
+                onClick={() => openModal(item.id)}
+                disabled={!item.hasProofImage}
+                aria-label={`${item.businessName} 리뷰 캡처 검수하기`}
+                className="block overflow-hidden rounded-card border border-line bg-canvas text-left disabled:cursor-not-allowed"
               >
                 {item.hasProofImage ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -196,7 +197,7 @@ export function ReviewProofQueue({ items }: { items: ReviewProofItem[] }) {
                 ) : (
                   <div className="flex h-44 items-center justify-center text-sm text-ink-weak">캡처 없음</div>
                 )}
-              </a>
+              </button>
               <div className="rounded-card bg-canvas p-3">
                 <p className="text-xs font-semibold text-ink-weak">생성 원고</p>
                 <p className="mt-2 line-clamp-6 text-sm leading-6 text-ink-sub">
