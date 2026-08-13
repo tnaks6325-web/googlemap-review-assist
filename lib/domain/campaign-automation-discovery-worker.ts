@@ -30,11 +30,12 @@ export async function processCampaignAutomationDiscoveryJob(
   const summary = await processCampaignAutomationDiscovery(
     { ...sheet, runId, runKey },
     {
-      syncRow: async (row) => {
+      syncRow: async (row, existingCampaignId) => {
         const result = await syncGoogleMapReviewCampaignRows([row as SheetImportDryRunRow], {
           active: false,
           autoNaver: false,
-          createNewCampaign: true,
+          createNewCampaign: !existingCampaignId,
+          existingCampaignId,
         });
         const campaignId = result.campaignIds[0];
         if (!campaignId) throw new Error("Campaign import did not return a campaign id");
