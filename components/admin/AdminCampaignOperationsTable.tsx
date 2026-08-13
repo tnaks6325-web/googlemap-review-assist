@@ -298,7 +298,30 @@ export function AdminCampaignOperationsTable({
       </div>
 
       <div className="mt-3 overflow-hidden rounded-[14px] border border-line bg-surface shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
-        <div className="overflow-x-auto">
+        <div className="admin-mobile-only space-y-2.5 p-3">
+          {filteredCampaigns.map((campaign) => {
+            const campaignStatus = operationalCampaignStatus(campaign);
+            const expanded = expandedCampaignId === campaign.id;
+            const sourcePercent = Math.min(campaign.draftSourceGroupCount * 25, 100);
+
+            return (
+              <MobileCampaignCard
+                key={campaign.id}
+                campaign={campaign}
+                expanded={expanded}
+                sourcePercent={sourcePercent}
+                status={campaignStatus}
+                automationLocked={automationLocked}
+                manualSetupEligible={campaign.manualSetupEligible}
+                manualSetupLoading={manualSetupCampaignId === campaign.id}
+                onManualSetup={() => void runManualSetup(campaign.id)}
+                onToggle={() => setExpandedCampaignId(expanded ? null : campaign.id)}
+              />
+            );
+          })}
+        </div>
+
+        <div className="admin-desktop-only overflow-x-auto">
           <table className="w-full min-w-[1450px] table-fixed border-separate border-spacing-0">
             <caption className="sr-only">
               관리자 캠페인 운영 상태 및 자료 연결 현황
@@ -383,6 +406,154 @@ export function AdminCampaignOperationsTable({
         )}
       </div>
     </section>
+  );
+}
+
+function MobileCampaignCard({
+  campaign,
+  expanded,
+  sourcePercent,
+  status,
+  automationLocked,
+  manualSetupEligible,
+  manualSetupLoading,
+  onManualSetup,
+  onToggle,
+}: {
+  campaign: AdminCampaignOperationsRow;
+  expanded: boolean;
+  sourcePercent: number;
+  status: ReturnType<typeof operationalCampaignStatus>;
+  automationLocked: boolean;
+  manualSetupEligible: boolean;
+  manualSetupLoading: boolean;
+  onManualSetup: () => void;
+  onToggle: () => void;
+}) {
+  const googleMapsUrl = safeGoogleMapsUrl(campaign.googleMapsUrl);
+
+  return (
+    <article className="overflow-hidden rounded-[12px] border border-line bg-surface shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
+      <div className="p-3.5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            {googleMapsUrl && !automationLocked ? (
+              <a
+                href={googleMapsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block truncate text-[15px] font-bold text-ink underline decoration-line-strong underline-offset-4"
+              >
+                {campaign.businessName}
+              </a>
+            ) : <p className="truncate text-[15px] font-bold text-ink">{campaign.businessName}</p>}
+            <p className="mt-1 truncate text-xs text-ink-weak">
+              {[campaign.category, campaign.address].filter(Boolean).join(" · ") || campaign.campaignName}
+            </p>
+          </div>
+          <StatusBadge status={status} />
+        </div>
+
+        <div className="mt-3 grid grid-cols-3 gap-2 rounded-[10px] bg-surface-alt p-2.5 text-xs">
+          <div>
+            <p className="text-ink-weak">오늘 배정</p>
+            <p className="mt-1 font-bold tabular-nums text-ink">{campaign.assignedTodayCount} / {campaign.dailyQuota ?? "-"}</p>
+          </div>
+          <div>
+            <p className="text-ink-weak">코드</p>
+            <p className="mt-1 font-bold tabular-nums text-ink">{campaign.issuedCodeCount.toLocaleString("ko-KR")}개</p>
+          </div>
+          <div>
+            <p className="text-ink-weak">리뷰 검수</p>
+            <p className="mt-1 font-bold tabular-nums text-ink">{campaign.submittedReviewCount} / {campaign.passedReviewCount}</p>
+          </div>
+        </div>
+
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-2 text-[11px] text-ink-weak">
+              <span>원고 자료 {campaign.draftSourceGroupCount}/4</span>
+              <span>{campaign.canGenerateReviewDraft ? "준비 완료" : "자료 보완"}</span>
+            </div>
+            <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-line">
+              <span
+                className={campaign.canGenerateReviewDraft ? "block h-full rounded-full bg-success" : "block h-full rounded-full bg-brand"}
+                style={{ width: `${sourcePercent}%` }}
+              />
+            </div>
+          </div>
+          <div className="flex gap-1" aria-label="연결 채널">
+            <SourceChip label="G" title="Google 장소" connected={campaign.draftSourceGroups.googlePlace} />
+            <SourceChip label="N" title="Naver 장소" connected={campaign.draftSourceGroups.naverPlace} warning={campaign.naverPlace?.matchStatus === "NEEDS_REVIEW"} />
+          </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={onManualSetup}
+            disabled={automationLocked || !manualSetupEligible || manualSetupLoading}
+            title={!manualSetupEligible ? "시트 반영이 완료된 캠페인에서만 수동 세팅을 적용할 수 있습니다." : undefined}
+            className="h-10 rounded-[9px] border border-brand/30 bg-brand-tint px-3 text-sm font-bold text-brand transition hover:border-brand disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {manualSetupLoading ? "요청 중" : manualSetupEligible ? "수동 세팅 적용" : "시트 반영 필요"}
+          </button>
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded={expanded}
+            aria-controls={`campaign-mobile-detail-${campaign.id}`}
+            className="h-10 rounded-[9px] border border-line bg-surface px-3 text-sm font-bold text-ink-sub transition hover:border-line-strong hover:bg-surface-alt"
+          >
+            {expanded ? "상세 닫기" : "상세 보기"}
+          </button>
+        </div>
+      </div>
+
+      {expanded ? (
+        <div id={`campaign-mobile-detail-${campaign.id}`} className="border-t border-line bg-[#f8fbff] p-3.5">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <AdminCampaignDraftPreview
+              campaignId={campaign.id}
+              businessName={campaign.businessName}
+              totalQuota={campaign.totalQuota}
+              initialMetrics={campaign.preparedDraftMetrics}
+              readOnly={automationLocked}
+            />
+            <AdminCampaignReviewSubmissions
+              campaignId={campaign.id}
+              businessName={campaign.businessName}
+              initialCount={campaign.submittedReviewCount}
+              initialPassedCount={campaign.passedReviewCount}
+              readOnly={automationLocked}
+            />
+          </div>
+          {automationLocked ? (
+            <p className="rounded-[10px] border border-brand/20 bg-brand-tint px-3 py-3 text-sm font-semibold leading-6 text-ink-sub">
+              자동화 진행 중에는 상세 정보만 확인할 수 있습니다. 원고보관함·리뷰제출함의 상세 열람은 계속 가능합니다.
+            </p>
+          ) : (
+            <>
+              <AdminCampaignRewardPoints campaignId={campaign.id} initialRewardPoints={campaign.rewardPoints} />
+              <div className="mt-3 space-y-3">
+                <AdminCampaignNaverCandidates
+                  key={`${campaign.id}:${campaign.naverPlace?.externalId ?? "unlinked"}:${campaign.naverPlace?.matchStatus ?? "none"}`}
+                  campaignId={campaign.id}
+                  initialPlace={campaign.naverPlace}
+                  hasGooglePlace={campaign.hasGooglePlace}
+                />
+                <AdminCampaignBlogReferences
+                  campaignId={campaign.id}
+                  initialReferences={campaign.blogReferences}
+                  initialCount={campaign.blogReferenceCount}
+                />
+                <AdminCampaignDraftGuidance campaignId={campaign.id} initialGuidance={campaign.draftGuidance} />
+              </div>
+            </>
+          )}
+        </div>
+      ) : null}
+    </article>
   );
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useSyncExternalStore, type ReactNode } from "react";
 import Link from "next/link";
 import { AdminLogout } from "@/components/admin/AdminLogout";
 import { cn } from "@/lib/cn";
@@ -18,9 +18,26 @@ interface AdminShellProps {
 export type AdminDisplayMode = "desktop" | "mobile";
 
 const ADMIN_DISPLAY_MODE_STORAGE_KEY = "admin-display-mode";
+const ADMIN_DISPLAY_MODE_CHANGE_EVENT = "admin-display-mode-change";
 
 export function nextAdminDisplayMode(mode: AdminDisplayMode): AdminDisplayMode {
   return mode === "desktop" ? "mobile" : "desktop";
+}
+
+function getAdminDisplayModeSnapshot(): AdminDisplayMode {
+  if (typeof window === "undefined") return "desktop";
+  return window.localStorage.getItem(ADMIN_DISPLAY_MODE_STORAGE_KEY) === "mobile"
+    ? "mobile"
+    : "desktop";
+}
+
+function subscribeToAdminDisplayMode(onStoreChange: () => void) {
+  window.addEventListener("storage", onStoreChange);
+  window.addEventListener(ADMIN_DISPLAY_MODE_CHANGE_EVENT, onStoreChange);
+  return () => {
+    window.removeEventListener("storage", onStoreChange);
+    window.removeEventListener(ADMIN_DISPLAY_MODE_CHANGE_EVENT, onStoreChange);
+  };
 }
 
 const navigation: Array<{ id: AdminSection; href: string; label: string; description: string }> = [
@@ -69,10 +86,12 @@ function AdminDisplayModeSwitch({
   mode,
   onToggle,
   compact = false,
+  minimal = false,
 }: {
   mode: AdminDisplayMode;
   onToggle: () => void;
   compact?: boolean;
+  minimal?: boolean;
 }) {
   const mobile = mode === "mobile";
   const nextModeLabel = mobile ? "PC 모드" : "모바일 모드";
@@ -81,7 +100,7 @@ function AdminDisplayModeSwitch({
     <div className={cn("flex items-center", compact ? "gap-2" : "justify-between gap-3")}>
       {!compact ? <span className="text-xs font-semibold text-ink-sub">화면 모드</span> : null}
       <div className="flex items-center gap-2">
-        <span className={cn("text-xs font-semibold", mobile ? "text-ink-weak" : "text-brand")}>PC 모드</span>
+        {!minimal ? <span className={cn("text-xs font-semibold", mobile ? "text-ink-weak" : "text-brand")}>PC 모드</span> : null}
         <button
           type="button"
           role="switch"
@@ -101,7 +120,9 @@ function AdminDisplayModeSwitch({
             )}
           />
         </button>
-        <span className={cn("text-xs font-semibold", mobile ? "text-brand" : "text-ink-weak")}>모바일 모드</span>
+        <span className={cn("text-xs font-semibold", mobile ? "text-brand" : "text-ink-weak")}>
+          {minimal ? (mobile ? "모바일" : "PC") : "모바일 모드"}
+        </span>
       </div>
     </div>
   );
@@ -114,20 +135,17 @@ export function AdminShell({
   children,
   wideContent = false,
 }: AdminShellProps) {
-  const [displayMode, setDisplayMode] = useState<AdminDisplayMode>("desktop");
+  const displayMode = useSyncExternalStore<AdminDisplayMode>(
+    subscribeToAdminDisplayMode,
+    getAdminDisplayModeSnapshot,
+    () => "desktop",
+  );
   const mobileMode = displayMode === "mobile";
 
-  useEffect(() => {
-    const storedMode = window.localStorage.getItem(ADMIN_DISPLAY_MODE_STORAGE_KEY);
-    if (storedMode === "mobile") setDisplayMode("mobile");
-  }, []);
-
   const toggleDisplayMode = () => {
-    setDisplayMode((currentMode) => {
-      const nextMode = nextAdminDisplayMode(currentMode);
-      window.localStorage.setItem(ADMIN_DISPLAY_MODE_STORAGE_KEY, nextMode);
-      return nextMode;
-    });
+    const nextMode = nextAdminDisplayMode(displayMode);
+    window.localStorage.setItem(ADMIN_DISPLAY_MODE_STORAGE_KEY, nextMode);
+    window.dispatchEvent(new Event(ADMIN_DISPLAY_MODE_CHANGE_EVENT));
   };
 
   return (
@@ -163,33 +181,46 @@ export function AdminShell({
         </aside>
 
         <div className="min-w-0 flex-1">
-          <header className={cn(
-            "border-b border-line bg-surface",
-            mobileMode
-              ? "sticky top-0 z-20 block shadow-[0_8px_18px_rgba(25,31,40,0.06)]"
-              : "lg:hidden",
-          )}>
-            <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-5 sm:py-4">
+          <header className="admin-mobile-only sticky top-0 z-20 border-b border-line bg-surface shadow-[0_8px_18px_rgba(25,31,40,0.06)]">
+            <div className="flex items-center justify-between gap-3 px-4 py-3 sm:px-5">
               <Link href="/admin" className="text-sm font-bold text-ink">
                 리뷰 캠페인 운영
               </Link>
-              <AdminLogout />
+              <div className="flex items-center gap-3">
+                <AdminDisplayModeSwitch mode={displayMode} onToggle={toggleDisplayMode} compact minimal />
+                <AdminLogout />
+              </div>
             </div>
-            <div className="border-t border-line px-4 py-2 sm:px-5">
-              <AdminDisplayModeSwitch mode={displayMode} onToggle={toggleDisplayMode} compact />
-            </div>
-            <nav className="flex min-h-12 gap-5 overflow-x-auto px-4 sm:px-5" aria-label="관리자 메뉴">
-              {navigation.map((item) => (
-                <NavigationLink key={item.id} item={item} current={current} compact />
-              ))}
-            </nav>
+            <details className="border-t border-line bg-surface-alt/80">
+              <summary className="flex h-11 cursor-pointer list-none items-center justify-between px-4 text-sm font-semibold text-ink marker:content-none sm:px-5">
+                <span>현재 메뉴 · {navigation.find((item) => item.id === current)?.label}</span>
+                <span aria-hidden="true" className="text-ink-weak">메뉴</span>
+              </summary>
+              <nav className="grid grid-cols-2 gap-2 border-t border-line bg-surface p-3 sm:px-5" aria-label="관리자 메뉴">
+                {navigation.map((item) => {
+                  const active = item.id === current;
+                  return (
+                    <Link
+                      key={item.id}
+                      href={item.href}
+                      className={cn(
+                        "rounded-[10px] px-3 py-2.5 text-sm font-semibold transition-colors",
+                        active ? "bg-brand-tint text-brand" : "bg-surface-alt text-ink-sub hover:bg-brand-tint hover:text-brand",
+                      )}
+                    >
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </nav>
+            </details>
           </header>
 
           <div
             className={cn(
               "mx-auto",
               mobileMode
-                ? "max-w-[760px] px-4 py-5 sm:px-5 sm:py-6"
+                ? "max-w-[680px] px-4 py-5 sm:px-5 sm:py-6"
                 : cn("px-5 py-7 lg:px-8 lg:py-9", wideContent ? "max-w-[1680px]" : "max-w-[1440px]"),
             )}
           >
