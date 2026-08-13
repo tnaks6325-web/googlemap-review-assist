@@ -180,7 +180,7 @@ export async function syncGoogleMapReviewCampaignRows(
     }
 
     const name = campaignNameForRow(row);
-    const trackedSource = options.sourceTracking && row.receiptId
+    const trackedSource = options.sourceTracking
       ? await upsertSheetCampaignSource({
           spreadsheetId: options.sourceTracking.spreadsheetId,
           sheetName: options.sourceTracking.sheetName,
