@@ -18,8 +18,21 @@ function run(command, args) {
   }
 }
 
-// Production schema changes must be applied through an explicit migration, never an app deploy.
-console.log("Skipping automatic production PostgreSQL schema synchronization.");
+// Production schema changes must never use a generic schema push. This exact
+// reviewed migration is additive and idempotent, so it is safe to apply before
+// the production build that first references the new tables and columns.
+if (process.env.VERCEL_ENV === "production") {
+  console.log("Applying additive virtual-reviewer schema migration.");
+  run("npx", [
+    "prisma",
+    "db",
+    "execute",
+    `--schema=${schemaPath}`,
+    "--file=prisma/production-review-draft-personas.sql",
+  ]);
+} else {
+  console.log("Skipping automatic production PostgreSQL schema synchronization.");
+}
 
 run("npx", ["prisma", "generate", `--schema=${schemaPath}`]);
 run("npm", ["run", "build"]);

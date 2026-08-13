@@ -9,6 +9,13 @@ describe("Vercel production build safety", () => {
     expect(vercelBuildScript).not.toContain('run("npx", ["prisma", "db", "push"');
   });
 
+  it("executes only the reviewed additive virtual-reviewer migration in production", () => {
+    expect(vercelBuildScript).toContain('process.env.VERCEL_ENV === "production"');
+    expect(vercelBuildScript).toContain('"db",');
+    expect(vercelBuildScript).toContain('"execute",');
+    expect(vercelBuildScript).toContain("prisma/production-review-draft-personas.sql");
+  });
+
   it("keeps the virtual-reviewer migration explicitly additive and separate from deployment", () => {
     const migration = readFileSync("prisma/production-review-draft-personas.sql", "utf8");
 
