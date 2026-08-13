@@ -54,7 +54,10 @@ export async function getCampaignOperationsAutomationLock(
     }),
   ]);
 
-  const isLocked = activeJobCount > 0 || activeRun !== null || activeCampaignCount > 0;
+  // Automation-run rows are retained as an operator history. A queued row can
+  // remain after its job was completed or removed, so only a live queue job may
+  // make the campaign management UI read-only.
+  const isLocked = activeJobCount > 0;
   if (!isLocked) {
     return {
       isLocked: false,
