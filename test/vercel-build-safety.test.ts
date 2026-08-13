@@ -24,6 +24,17 @@ describe("Vercel production build safety", () => {
     expect(vercelBuildScript).toContain('"push",');
   });
 
+  it("runs test-admin bootstrap only inside the explicitly isolated test deployment", () => {
+    expect(vercelBuildScript).toContain('"scripts/bootstrap-test-admin.ts"');
+
+    const bootstrapScript = readFileSync("scripts/bootstrap-test-admin.ts", "utf8");
+    expect(bootstrapScript).toContain('process.env.VERCEL_ENV === "production"');
+    expect(bootstrapScript).toContain('process.env.VERCEL_ALLOWED_PRODUCTION_BRANCH === "test"');
+    expect(bootstrapScript).toContain('process.env.ALLOW_TEST_DATABASE_SCHEMA_PUSH === "true"');
+    expect(bootstrapScript).toContain('process.env.TEST_ADMIN_BOOTSTRAP_USERNAME');
+    expect(bootstrapScript).toContain('process.env.TEST_ADMIN_BOOTSTRAP_PASSWORD');
+  });
+
   it("keeps the virtual-reviewer migration explicitly additive and separate from deployment", () => {
     const migration = readFileSync("prisma/production-review-draft-personas.sql", "utf8");
 

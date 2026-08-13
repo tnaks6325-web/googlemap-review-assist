@@ -49,4 +49,9 @@ if (process.env.VERCEL_ENV === "production") {
 }
 
 run("npx", ["prisma", "generate", `--schema=${schemaPath}`]);
+
+if (isIsolatedTestServerSchemaSync) {
+  run("npx", ["tsx", "scripts/bootstrap-test-admin.ts"]);
+}
+
 run("npm", ["run", "build"]);
