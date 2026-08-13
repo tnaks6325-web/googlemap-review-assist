@@ -54,7 +54,8 @@ describe("신규 캠페인 자동화 정책", () => {
         activeReferenceCount: 1,
         evidenceCount: 6,
         evidenceFacetCount: 3,
-        unassignedQualityDraftCount: 5,
+        totalQuota: 5,
+        unassignedQualityDraftCount: 8,
         campaignPeriodValid: true,
       }),
     ).toEqual({ ready: true, reasons: [] });
@@ -67,7 +68,8 @@ describe("신규 캠페인 자동화 정책", () => {
         activeReferenceCount: 1,
         evidenceCount: 6,
         evidenceFacetCount: 3,
-        unassignedQualityDraftCount: 25,
+        totalQuota: 25,
+        unassignedQualityDraftCount: 30,
         campaignPeriodValid: true,
       }),
     ).toEqual({ ready: true, reasons: [] });
@@ -80,7 +82,8 @@ describe("신규 캠페인 자동화 정책", () => {
         activeReferenceCount: 1,
         evidenceCount: 6,
         evidenceFacetCount: 3,
-        unassignedQualityDraftCount: 4,
+        totalQuota: 5,
+        unassignedQualityDraftCount: 7,
         campaignPeriodValid: true,
       }),
     ).toEqual({ ready: false, reasons: ["PREPARED_DRAFT_TARGET_NOT_MET"] });
@@ -94,7 +97,7 @@ describe("신규 캠페인 자동화 정책", () => {
         evidenceCount: 6,
         evidenceFacetCount: 3,
         totalQuota: 2,
-        unassignedQualityDraftCount: 2,
+        unassignedQualityDraftCount: 5,
         campaignPeriodValid: true,
       }),
     ).toEqual({ ready: true, reasons: [] });
