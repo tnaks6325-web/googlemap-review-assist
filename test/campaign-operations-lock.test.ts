@@ -39,4 +39,25 @@ describe("campaign operations automation lock", () => {
       updatedAt: null,
     });
   });
+
+  it("does not let a stale queued automation history block operations after its job is gone", async () => {
+    const state = await getCampaignOperationsAutomationLock({
+      operationalJob: { count: async () => 0 },
+      automationRun: {
+        findFirst: async () => ({ runKey: "campaign-automation:stale", updatedAt: new Date("2026-08-14T00:00:00.000Z") }),
+      },
+      campaignAutomationRun: {
+        count: async () => 1,
+        findFirst: async () => ({ stage: "IMPORTING", updatedAt: new Date("2026-08-14T00:00:00.000Z") }),
+      },
+    });
+
+    expect(state).toMatchObject({
+      isLocked: false,
+      activeJobCount: 0,
+      activeCampaignCount: 0,
+      runKey: null,
+      stage: null,
+    });
+  });
 });

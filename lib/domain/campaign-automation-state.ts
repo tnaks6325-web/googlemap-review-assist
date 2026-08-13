@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { campaignAutomationRunKey, campaignSourceKey } from "@/lib/domain/campaign-automation-policy";
 
-type DbClient = typeof prisma;
+type DbClient = typeof prisma | Prisma.TransactionClient;
 
 export interface SheetCampaignSourceInput {
   spreadsheetId: string;
