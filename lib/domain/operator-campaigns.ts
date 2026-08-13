@@ -94,6 +94,7 @@ export interface AdminCampaignRow extends PublicCampaignCard {
   };
   blogReferences: AdminCampaignBlogReference[];
   hasGooglePlace: boolean;
+  manualSetupEligible: boolean;
   naverPlace: AdminConnectedNaverPlace | null;
 }
 
@@ -189,6 +190,7 @@ async function fetchCampaigns(includeInactive = false) {
         },
       },
       draftGuidance: true,
+      sheetCampaignSource: { select: { sourceStatus: true } },
       _count: { select: { codes: true, blogReferences: true } },
     },
   });
@@ -514,6 +516,7 @@ export async function listAdminCampaigns(): Promise<AdminCampaignRow[]> {
       draftSourceGroups: draftSummary.sourceGroups,
       blogReferences: campaign.blogReferences.map(toAdminCampaignBlogReference),
       hasGooglePlace: Boolean(googlePlace),
+      manualSetupEligible: campaign.sheetCampaignSource?.sourceStatus === "READY",
       naverPlace: toAdminNaverPlace(campaign),
     };
   });

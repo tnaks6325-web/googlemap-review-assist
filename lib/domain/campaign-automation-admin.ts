@@ -13,6 +13,7 @@ export class CampaignAutomationAdminError extends Error {
     public readonly code:
       | "AUTOMATION_NOT_FOUND"
       | "CAMPAIGN_NOT_FOUND"
+      | "CAMPAIGN_SOURCE_NOT_READY"
       | "AUTOMATION_IN_PROGRESS"
       | "AUTOMATION_NOT_RETRYABLE",
     message: string,
@@ -31,10 +32,16 @@ export async function startManualCampaignSetup(campaignId: string) {
   return prisma.$transaction(async (tx) => {
     const campaign = await tx.campaign.findUnique({
       where: { id: cleanCampaignId },
-      select: { id: true, sheetCampaignSource: { select: { id: true } } },
+      select: { id: true, sheetCampaignSource: { select: { id: true, sourceStatus: true } } },
     });
     if (!campaign) {
       throw new CampaignAutomationAdminError("CAMPAIGN_NOT_FOUND", "캠페인을 찾을 수 없습니다.");
+    }
+    if (campaign.sheetCampaignSource?.sourceStatus !== "READY") {
+      throw new CampaignAutomationAdminError(
+        "CAMPAIGN_SOURCE_NOT_READY",
+        "시트 반영이 완료된 캠페인에서만 수동 세팅을 적용할 수 있습니다.",
+      );
     }
 
     const activeState = await tx.campaignAutomationRun.findFirst({
@@ -46,11 +53,9 @@ export async function startManualCampaignSetup(campaignId: string) {
     }
 
     const now = new Date();
-    const runKey = `${MANUAL_SETUP_RUN_PREFIX}:${campaign.id}`;
-    const run = await tx.automationRun.upsert({
-      where: { runKey },
-      create: { runKey, status: "RUNNING", startedAt: now },
-      update: { status: "RUNNING", startedAt: now, completedAt: null, lastError: null },
+    const runKey = `${MANUAL_SETUP_RUN_PREFIX}:${campaign.id}:${now.getTime()}`;
+    const run = await tx.automationRun.create({
+      data: { runKey, status: "RUNNING", startedAt: now },
     });
     const sourceId = campaign.sheetCampaignSource?.id ?? null;
     await tx.campaignAutomationRun.upsert({
