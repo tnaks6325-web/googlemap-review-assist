@@ -101,6 +101,8 @@ export function AdminCampaignOperationsTable({
   const autoLinkStarted = useRef(false);
   const autoLinkPromise = useRef<Promise<number> | null>(null);
   const automationRunning = useRef(false);
+  const topTableScrollRef = useRef<HTMLDivElement | null>(null);
+  const bottomTableScrollRef = useRef<HTMLDivElement | null>(null);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<AdminCampaignStatusFilter>("all");
   const [automationLoading, setAutomationLoading] = useState(false);
@@ -133,6 +135,10 @@ export function AdminCampaignOperationsTable({
     () => filterAdminCampaignRows(campaigns, query, status),
     [campaigns, query, status],
   );
+
+  const syncTableScroll = (source: HTMLDivElement, target: HTMLDivElement | null) => {
+    if (target && target.scrollLeft !== source.scrollLeft) target.scrollLeft = source.scrollLeft;
+  };
 
   const runNaverAutoLink = useCallback((campaignIds: string[]) => {
     if (autoLinkPromise.current) return autoLinkPromise.current;
@@ -373,9 +379,21 @@ export function AdminCampaignOperationsTable({
               />
             );
           })}
-        </div> : (
+        </div> : (<>
 
-        <div className="overflow-x-auto">
+        <div
+          ref={topTableScrollRef}
+          onScroll={(event) => syncTableScroll(event.currentTarget, bottomTableScrollRef.current)}
+          aria-label="캠페인 목록 가로 스크롤"
+          className="h-5 overflow-x-auto border-b border-line"
+        >
+          <div className="h-px min-w-[1450px]" />
+        </div>
+        <div
+          ref={bottomTableScrollRef}
+          onScroll={(event) => syncTableScroll(event.currentTarget, topTableScrollRef.current)}
+          className="overflow-x-auto"
+        >
           <table className="w-full min-w-[1450px] table-fixed border-separate border-spacing-0">
             <caption className="sr-only">
               관리자 캠페인 운영 상태 및 자료 연결 현황
@@ -394,7 +412,7 @@ export function AdminCampaignOperationsTable({
             </colgroup>
             <thead>
               <tr className="bg-surface-alt">
-                <TableHeading>캠페인</TableHeading>
+                <TableHeading stickyLeft>캠페인</TableHeading>
                 <TableHeading>운영 상태</TableHeading>
                 <TableHeading>오늘 배정 / 일 한도</TableHeading>
                 <TableHeading>지급</TableHeading>
@@ -437,7 +455,7 @@ export function AdminCampaignOperationsTable({
               })}
             </tbody>
           </table>
-        </div>)}
+        </div></>)}
 
         {filteredCampaigns.length === 0 ? (
           <div className="border-t border-line px-5 py-12 text-center">
@@ -657,7 +675,7 @@ function CampaignRows({
   return (
     <>
       <tr className="group h-[92px]">
-        <td className="border-t border-line px-4 py-4 group-first:border-t-0">
+        <td className="sticky left-0 z-10 border-t border-line bg-surface px-4 py-4 shadow-[2px_0_5px_rgba(16,24,40,0.06)] group-first:border-t-0">
           {googleMapsUrl && !automationLocked ? (
             <a
               href={googleMapsUrl}
@@ -832,16 +850,18 @@ function CampaignRows({
 function TableHeading({
   children,
   align = "left",
+  stickyLeft = false,
 }: {
   children: React.ReactNode;
   align?: "left" | "right";
+  stickyLeft?: boolean;
 }) {
   return (
     <th
       scope="col"
       className={`h-11 border-b border-line px-4 text-[11px] font-bold text-ink-weak ${
         align === "right" ? "text-right" : "text-left"
-      }`}
+      } ${stickyLeft ? "sticky left-0 z-20 bg-surface-alt shadow-[2px_0_5px_rgba(16,24,40,0.06)]" : ""}`}
     >
       {children}
     </th>
