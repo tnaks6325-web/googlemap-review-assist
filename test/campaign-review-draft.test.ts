@@ -830,7 +830,7 @@ describe("campaign review draft generator", () => {
     );
   });
 
-  it("generates and stores a 30 to 200 non-space character draft from place data and a substantive source", async () => {
+  it("generates and stores a 10 to 200 non-space character draft from place data and a substantive source", async () => {
     const { reviewer, business, receipt } = await createAssignment({ googlePlace: true, naverPlace: true, googleReview: true });
 
     const result = await generateCampaignReviewDraftForAssignment(reviewer.id, receipt.id);
@@ -1309,7 +1309,7 @@ describe("campaign review draft generator", () => {
     })).resolves.toMatchObject({ adminId, beforeText: originalText, afterText: editedText });
   });
 
-  it("keeps the 30-to-200 character storage boundary even with a warning override", async () => {
+  it("keeps the 10-to-200 character storage boundary even with a warning override", async () => {
     const { campaign } = await createAssignment({ googlePlace: true, googleReview: true });
     const batch = await prisma.campaignPreparedDraftBatch.create({
       data: {
@@ -1335,6 +1335,12 @@ describe("campaign review draft generator", () => {
         qualityPassed: false,
       },
     });
+
+    await expect(updateCampaignPreparedDraft(campaign.id, draft.id, {
+      text: "abcdefghij",
+      adminId: `admin-${uniq()}`,
+      force: true,
+    })).resolves.toMatchObject({ text: "abcdefghij", status: "UNASSIGNED" });
 
     await expect(updateCampaignPreparedDraft(campaign.id, draft.id, {
       text: "너무 짧아요.",

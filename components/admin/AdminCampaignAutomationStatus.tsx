@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { useAdminMobileWorkspace } from "@/components/admin/useAdminMobileWorkspace";
 
 export interface AdminCampaignAutomationStatusRow {
   campaignId: string;
@@ -77,6 +78,7 @@ export function AdminCampaignAutomationStatus({
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [filter, setFilter] = useState<AutomationStatusFilter>("ALL");
+  const mobileWorkspace = useAdminMobileWorkspace();
 
   if (!rows.length) return null;
 
@@ -137,6 +139,27 @@ export function AdminCampaignAutomationStatus({
         </div>
         <p className="text-xs text-ink-weak">총 {filteredRows.length}건 · 한 화면에 최대 15건</p>
       </div>
+      {mobileWorkspace ? <div className="mt-3 space-y-2.5">
+        {filteredRows.map((row) => {
+          const retryable = !readOnly && ["NEEDS_REVIEW", "FAILED"].includes(row.status);
+          return (
+            <MobileAutomationStatusCard
+              key={row.campaignId}
+              row={row}
+              retryable={retryable}
+              retrying={retryingId === row.campaignId}
+              retryDisabled={retryingId !== null}
+              onRetry={() => void retry(row.campaignId)}
+            />
+          );
+        })}
+        {!filteredRows.length ? (
+          <p className="rounded-[10px] border border-dashed border-line px-3 py-8 text-center text-sm text-ink-weak">
+            선택한 상태의 자동화 항목이 없습니다.
+          </p>
+        ) : null}
+      </div> : (
+
       <div className="mt-3 max-h-[660px] overflow-x-auto overflow-y-auto overscroll-contain rounded-[10px] border border-line">
         <table className="w-full min-w-[900px] text-left text-xs">
           <caption className="sr-only">캠페인 자동화 상태와 재시도</caption>
@@ -173,7 +196,67 @@ export function AdminCampaignAutomationStatus({
             ) : null}
           </tbody>
         </table>
-      </div>
+      </div>)}
     </section>
+  );
+}
+
+function MobileAutomationStatusCard({
+  row,
+  retryable,
+  retrying,
+  retryDisabled,
+  onRetry,
+}: {
+  row: AdminCampaignAutomationStatusRow;
+  retryable: boolean;
+  retrying: boolean;
+  retryDisabled: boolean;
+  onRetry: () => void;
+}) {
+  const statusTone = retryable
+    ? "bg-amber-50 text-amber-700"
+    : row.status === "READY"
+      ? "bg-success-tint text-success"
+      : "bg-brand-tint text-brand";
+  const retryNote = row.lastError ?? (row.nextRetryAt ? `다음 재시도 ${dateTime(row.nextRetryAt)}` : null);
+
+  return (
+    <article className="rounded-[12px] border border-line bg-surface p-3.5 shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-bold text-ink">{row.businessName}</p>
+          <p className="mt-0.5 truncate text-xs text-ink-weak">{row.campaignName}</p>
+        </div>
+        <span className={`shrink-0 rounded-full px-2 py-1 text-[11px] font-bold ${statusTone}`}>
+          {statusLabel(row.status)}
+        </span>
+      </div>
+      <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-line pt-3 text-xs">
+        <div>
+          <dt className="text-ink-weak">현재 단계</dt>
+          <dd className="mt-1 font-semibold text-ink-sub">{stageLabel(row.stage)}</dd>
+        </div>
+        <div>
+          <dt className="text-ink-weak">업데이트</dt>
+          <dd className="mt-1 font-semibold text-ink-sub">{dateTime(row.updatedAt)}</dd>
+        </div>
+        <div className="col-span-2">
+          <dt className="text-ink-weak">시도</dt>
+          <dd className="mt-1 font-semibold text-ink-sub">{row.attempts}/{row.maxAttempts}</dd>
+        </div>
+      </dl>
+      {retryNote ? <p className="mt-3 rounded-[8px] bg-surface-alt px-2.5 py-2 text-xs leading-5 text-ink-sub">{retryNote}</p> : null}
+      {retryable ? (
+        <button
+          type="button"
+          onClick={onRetry}
+          disabled={retryDisabled}
+          className="mt-3 h-10 w-full rounded-[9px] border border-brand/30 bg-brand-tint px-3 text-sm font-bold text-brand transition hover:border-brand disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {retrying ? "예약 중" : "재시도"}
+        </button>
+      ) : null}
+    </article>
   );
 }

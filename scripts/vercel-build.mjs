@@ -18,6 +18,20 @@ function run(command, args) {
   }
 }
 
+const isIsolatedTestServerSchemaSync =
+  process.env.VERCEL_ENV === "production" &&
+  process.env.VERCEL_ALLOWED_PRODUCTION_BRANCH === "test" &&
+  process.env.ALLOW_TEST_DATABASE_SCHEMA_PUSH === "true";
+
+// The isolated test server has its own empty database. Its schema can be
+// synchronized without a destructive data-loss flag, so Prisma fails safely if a future
+// change would remove data. Shared production keeps its reviewed additive
+// migration-only policy below.
+if (isIsolatedTestServerSchemaSync) {
+  console.log("Synchronizing the isolated test-server PostgreSQL schema.");
+  run("npx", ["prisma", "db", "push", `--schema=${schemaPath}`]);
+}
+
 // Production schema changes must never use a generic schema push. This exact
 // reviewed migration is additive and idempotent, so it is safe to apply before
 // the production build that first references the new tables and columns.
@@ -43,4 +57,9 @@ if (process.env.VERCEL_ENV === "production") {
 }
 
 run("npx", ["prisma", "generate", `--schema=${schemaPath}`]);
+
+if (isIsolatedTestServerSchemaSync) {
+  run("npx", ["tsx", "scripts/bootstrap-test-admin.ts"]);
+}
+
 run("npm", ["run", "build"]);
