@@ -74,7 +74,7 @@ export default async function AdminCampaignsPage() {
     >
       <section
         aria-label="캠페인 운영 요약"
-        className="mb-5 grid overflow-hidden rounded-[14px] border border-line bg-surface shadow-[0_1px_2px_rgba(16,24,40,0.04)] sm:grid-cols-2 xl:grid-cols-4"
+        className="mb-5 grid grid-cols-2 overflow-hidden rounded-[14px] border border-line bg-surface shadow-[0_1px_2px_rgba(16,24,40,0.04)] xl:grid-cols-4"
       >
         <Metric
           label="진행 중 캠페인"
@@ -145,7 +145,7 @@ function Metric({
   warning?: boolean;
 }) {
   return (
-    <div className="min-h-24 border-b border-line p-5 last:border-b-0 sm:nth-[odd]:border-r xl:border-b-0 xl:border-r xl:last:border-r-0">
+    <div className="min-h-24 border-b border-line p-4 last:border-b-0 odd:border-r xl:border-b-0 xl:border-r xl:last:border-r-0 lg:p-5">
       <p className="text-xs text-ink-weak">{label}</p>
       <p className="mt-1.5 text-2xl font-bold tabular-nums text-ink">
         {value}

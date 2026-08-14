@@ -37,4 +37,9 @@ describe("review proof queue navigation", () => {
     expect(queueSource).toContain("onClick={() => openModal(item.id)}");
     expect(queueSource).not.toContain('target={item.hasProofImage ? "_blank" : undefined}');
   });
+
+  it("derives the visible queue from incoming items without synchronously copying props into state", () => {
+    expect(queueSource).not.toContain("useEffect(() => setQueue(items), [items])");
+    expect(queueSource).toContain("dismissedIds");
+  });
 });
