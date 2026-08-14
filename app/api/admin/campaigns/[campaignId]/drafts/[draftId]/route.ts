@@ -65,7 +65,9 @@ export async function PATCH(req: Request, { params }: DraftRouteContext) {
   if (body?.force !== undefined && typeof body.force !== "boolean") {
     return err("INVALID_DRAFT_OVERRIDE", "경고 무시 여부를 확인해 주세요", 400);
   }
-  const { campaignId, draftId } = await params;
+  const { campaignId: rawCampaignId, draftId: rawDraftId } = await params;
+  const campaignId = rawCampaignId.trim();
+  const draftId = rawDraftId.trim();
   try {
     const draft = await prisma.campaignPreparedDraft.findFirst({
       where: { id: draftId, campaignId },
