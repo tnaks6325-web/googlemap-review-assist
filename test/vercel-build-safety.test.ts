@@ -55,6 +55,7 @@ describe("Vercel production build safety", () => {
   it("keeps the campaign automation control migration additive", () => {
     const migration = readFileSync("prisma/production-campaign-automation-control.sql", "utf8");
     expect(migration).toContain("CREATE TABLE IF NOT EXISTS");
+    expect(migration).toContain('ADD COLUMN IF NOT EXISTS "automationEnabled"');
     expect(migration).not.toMatch(/DROP\s+(TABLE|COLUMN)/iu);
   });
 });

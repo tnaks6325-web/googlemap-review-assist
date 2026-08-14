@@ -7,3 +7,5 @@ CREATE TABLE IF NOT EXISTS "CampaignAutomationControl" (
   "updatedAt" TIMESTAMP(3) NOT NULL,
   CONSTRAINT "CampaignAutomationControl_pkey" PRIMARY KEY ("id")
 );
+
+ALTER TABLE "Campaign" ADD COLUMN IF NOT EXISTS "automationEnabled" BOOLEAN NOT NULL DEFAULT true;
