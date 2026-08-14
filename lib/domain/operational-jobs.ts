@@ -127,6 +127,27 @@ export async function processCampaignAutomationSetupJob(
     return "SKIPPED" as const;
   }
 
+  if (!isManualCampaignAutomationRun(payload.runKey ?? "")) {
+    const campaign = await prisma.campaign.findUnique({
+      where: { id: campaignId },
+      select: { automationEnabled: true },
+    });
+    if (!campaign?.automationEnabled) {
+      await prisma.campaignAutomationRun.updateMany({
+        where: { automationRunId: runId, campaignId },
+        data: {
+          status: "NEEDS_REVIEW",
+          stage: "AUTOMATION_PAUSED",
+          completedAt: new Date(),
+          lockedAt: null,
+          lastError: "이 캠페인의 자동화가 꺼져 있습니다.",
+        },
+      });
+      await settleCampaignAutomationRun(runId);
+      return "SKIPPED" as const;
+    }
+  }
+
   const result = await setupCampaign(campaignId);
   const completedAt = new Date();
   if (result.status === "NEEDS_REVIEW") {
