@@ -582,9 +582,9 @@ function MobileCampaignCard({
             onClick={onManualSetup}
             disabled={automationLocked || !manualSetupEligible || manualSetupLoading}
             title={!manualSetupEligible ? "시트 반영이 완료된 캠페인에서만 수동 세팅을 적용할 수 있습니다." : undefined}
-            className="h-10 rounded-[9px] border border-brand/30 bg-brand-tint px-3 text-sm font-bold text-brand transition hover:border-brand disabled:cursor-not-allowed disabled:opacity-60"
+            className="h-10 min-w-24 whitespace-nowrap rounded-[9px] border border-brand/30 bg-brand-tint px-3 text-sm font-bold text-brand transition hover:border-brand disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {manualSetupLoading ? "요청 중" : manualSetupEligible ? "수동 세팅 적용" : "시트 반영 필요"}
+            {manualSetupLoading ? "요청 중" : manualSetupEligible ? "직접세팅" : "시트 반영 필요"}
           </button>
           <button
             type="button"
@@ -795,9 +795,9 @@ function CampaignRows({
               onClick={onManualSetup}
               disabled={automationLocked || !manualSetupEligible || manualSetupLoading}
               title={!manualSetupEligible ? "시트 반영이 완료된 캠페인에서만 수동 세팅을 적용할 수 있습니다." : undefined}
-              className="h-9 rounded-[9px] border border-brand/30 bg-brand-tint px-3 text-xs font-bold text-brand transition hover:border-brand disabled:cursor-not-allowed disabled:opacity-60"
+              className="h-9 min-w-24 whitespace-nowrap rounded-[9px] border border-brand/30 bg-brand-tint px-3 text-xs font-bold text-brand transition hover:border-brand disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {manualSetupLoading ? "요청 중" : manualSetupEligible ? "수동 세팅 적용" : "시트 반영 필요"}
+              {manualSetupLoading ? "요청 중" : manualSetupEligible ? "직접세팅" : "시트 반영 필요"}
             </button>
             <AdminCampaignDraftPreview
               campaignId={campaign.id}
