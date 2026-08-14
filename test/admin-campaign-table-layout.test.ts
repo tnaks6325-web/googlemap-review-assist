@@ -70,4 +70,10 @@ describe("admin campaign table layout", () => {
     expect(componentSource).toContain('automationProgress ?? "원클릭 세팅"');
     expect(componentSource).not.toContain('automationProgress ?? "네이버 자동보정 + 참고자료 수집"');
   });
+
+  it("labels direct setup without allowing the action text to wrap", () => {
+    expect(componentSource).toContain('"직접세팅"');
+    expect(componentSource).toContain("min-w-24 whitespace-nowrap");
+    expect(componentSource).not.toContain('"수동 세팅 적용"');
+  });
 });
