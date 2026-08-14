@@ -432,7 +432,7 @@ function ensureDraftLength(
     limitSentenceCount(normalizeGeneratedDraft(text)),
     context,
   );
-  if (nonSpaceLength(draft) < 30) {
+  if (nonSpaceLength(draft) < 10) {
     draft = neutralFallbackDraft(context);
   }
   if (nonSpaceLength(draft) > 200) {
@@ -440,7 +440,7 @@ function ensureDraftLength(
   }
   draft = ensureTerminalPunctuation(draft, 200);
   const length = nonSpaceLength(draft);
-  if (length < 30 || length > 200) {
+  if (length < 10 || length > 200) {
     throw new CampaignReviewDraftError(
       "INVALID_GENERATED_DRAFT",
       "생성된 원고 길이가 기준에 맞지 않습니다.",
@@ -817,7 +817,7 @@ async function geminiDraft(
     "아래 참고자료만 바탕으로 Google 지도 방문 리뷰 원고를 작성하세요.",
     "규칙:",
     "- 한국어 자연스러운 방문 후기체",
-    "- 공백 제외 30~200자",
+    "- 공백 제외 10~200자",
     "- 1~3문장",
     "- 참고자료 또는 관리자 입력 사실에 없는 메뉴, 가격, 효과, 방문 경험을 만들지 말 것",
     "- 업종과 맞지 않는 일반 표현을 쓰지 말 것. 특히 의료·뷰티 업종에는 음식, 메뉴, 식사, 데이트, 매장 분위기 표현 금지",

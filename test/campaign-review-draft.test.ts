@@ -830,7 +830,7 @@ describe("campaign review draft generator", () => {
     );
   });
 
-  it("generates and stores a 30 to 200 non-space character draft from place data and a substantive source", async () => {
+  it("generates and stores a 10 to 200 non-space character draft from place data and a substantive source", async () => {
     const { reviewer, business, receipt } = await createAssignment({ googlePlace: true, naverPlace: true, googleReview: true });
 
     const result = await generateCampaignReviewDraftForAssignment(reviewer.id, receipt.id);
