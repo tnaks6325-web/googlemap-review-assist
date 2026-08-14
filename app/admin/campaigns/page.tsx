@@ -8,12 +8,14 @@ import {
   type AdminCampaignAutomationStatusRow,
 } from "@/components/admin/AdminCampaignAutomationStatus";
 import { AdminCampaignOperationsLockStatus } from "@/components/admin/AdminCampaignOperationsLockStatus";
+import { CampaignAutomationModeToggle } from "@/components/admin/CampaignAutomationModeToggle";
 import { GoogleSheetConnectionStatus } from "@/components/admin/GoogleSheetConnectionStatus";
 import { AdminShell } from "@/components/admin/AdminShell";
 import { SheetImportDryRun } from "@/components/admin/SheetImportDryRun";
 import { operationalCampaignStatus } from "@/lib/admin-campaign-table";
 import { getAdminId } from "@/lib/auth/session";
 import { listAdminCampaignAutomationStatuses } from "@/lib/domain/campaign-automation-admin";
+import { getCampaignAutomationControl } from "@/lib/domain/campaign-automation-control";
 import { getCampaignOperationsAutomationLock } from "@/lib/domain/campaign-operations-lock";
 import { listAdminCampaigns } from "@/lib/domain/operator-campaigns";
 import { readGoogleSpreadsheetTitle } from "@/lib/google-sheets";
@@ -28,11 +30,12 @@ export default async function AdminCampaignsPage() {
   const adminId = await getAdminId();
   if (!adminId) redirect("/admin/login");
 
-  const [campaigns, spreadsheetTitle, automationStatuses, automationLock] = await Promise.all([
+  const [campaigns, spreadsheetTitle, automationStatuses, automationLock, automationControl] = await Promise.all([
     listAdminCampaigns(),
     readGoogleSpreadsheetTitle(SPREADSHEET_ID).catch(() => null),
     listAdminCampaignAutomationStatuses(),
     getCampaignOperationsAutomationLock(),
+    getCampaignAutomationControl(),
   ]);
   const activeCount = campaigns.filter((campaign) => campaign.active).length;
   const assignedCount = campaigns.reduce(
@@ -94,6 +97,8 @@ export default async function AdminCampaignsPage() {
         />
       </section>
 
+      <CampaignAutomationModeToggle enabled={automationControl.enabled} />
+
       <AdminCampaignOperationsLockStatus state={automationLock} />
 
       {!automationLock.isLocked ? <section className="mb-7 rounded-[13px] border border-blue-200 bg-blue-50/60 p-4">
@@ -123,7 +128,7 @@ export default async function AdminCampaignsPage() {
 
       <AdminCampaignAutomationStatus rows={automationStatusRows} readOnly={automationLock.isLocked} />
 
-      <AdminCampaignOperationsTable campaigns={tableCampaigns} automationLocked={automationLock.isLocked} />
+      <AdminCampaignOperationsTable campaigns={tableCampaigns} automationLocked={automationLock.isLocked} automationEnabled={automationControl.enabled} />
     </AdminShell>
   );
 }

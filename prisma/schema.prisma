@@ -9,6 +9,12 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model CampaignAutomationControl {
+  id        String   @id
+  enabled   Boolean  @default(false)
+  updatedAt DateTime @updatedAt
+}
+
 // ---------- 사장님 / 매장 ----------
 model Owner {
   id         String     @id @default(cuid())

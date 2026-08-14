@@ -11,6 +11,7 @@ import {
   CAMPAIGN_AUTOMATION_DISCOVERY_JOB,
   CAMPAIGN_AUTOMATION_SETUP_JOB,
 } from "@/lib/domain/campaign-automation-jobs";
+import { isCampaignAutomationEnabled, isManualCampaignAutomationRun } from "@/lib/domain/campaign-automation-control";
 import { processCampaignAutomationDiscoveryJob } from "@/lib/domain/campaign-automation-discovery-worker";
 import {
   setupCampaignWithCurrentProviders,
@@ -117,10 +118,14 @@ export async function processCampaignAutomationSetupJob(
   job: { id: string; payloadJson: string },
   setupCampaign: (campaignId: string) => Promise<CampaignAutomationSetupResult> = setupCampaignWithCurrentProviders,
 ) {
-  const payload = JSON.parse(job.payloadJson) as { runId?: string; campaignId?: string };
+  const payload = JSON.parse(job.payloadJson) as { runId?: string; runKey?: string; campaignId?: string };
   const runId = payload.runId?.trim();
   const campaignId = payload.campaignId?.trim();
   if (!runId || !campaignId) throw new Error("Missing campaign automation setup payload");
+
+  if (payload.runKey && !(await isCampaignAutomationEnabled()) && !isManualCampaignAutomationRun(payload.runKey)) {
+    return "SKIPPED" as const;
+  }
 
   const result = await setupCampaign(campaignId);
   const completedAt = new Date();
@@ -208,6 +213,14 @@ export async function processOperationalJobs(limit = 10) {
 
     const claimedJob = { ...job, attempts: job.attempts + 1 };
     try {
+      if (job.type === CAMPAIGN_AUTOMATION_DISCOVERY_JOB && !(await isCampaignAutomationEnabled())) {
+        summary.skipped += 1;
+        await prisma.operationalJob.update({
+          where: { id: job.id },
+          data: { status: "COMPLETED", completedAt: new Date(), lockedAt: null, lastError: "Campaign automation is disabled" },
+        });
+        continue;
+      }
       const result =
         job.type === REVIEW_PROOF_ANALYSIS_JOB
           ? await processReviewProofAnalysis(claimedJob)
