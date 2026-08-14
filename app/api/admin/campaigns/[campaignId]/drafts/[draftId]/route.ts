@@ -69,9 +69,9 @@ export async function PATCH(req: Request, { params }: DraftRouteContext) {
   try {
     const draft = await prisma.campaignPreparedDraft.findFirst({
       where: { id: draftId, campaignId },
-      select: { status: true },
+      select: { qualityPassed: true },
     });
-    if (body?.action === "PROMOTE_TO_UNASSIGNED" || draft?.status === "QUALITY_EXCLUDED") {
+    if (body?.action === "PROMOTE_TO_UNASSIGNED" || draft?.qualityPassed === false) {
       const rateLimitResponse = await authorizeRateLimitedMutation(req, "promote", authorization);
       if (typeof rateLimitResponse !== "string") return rateLimitResponse;
     }
