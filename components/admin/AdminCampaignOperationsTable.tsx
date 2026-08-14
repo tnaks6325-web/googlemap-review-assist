@@ -91,9 +91,11 @@ async function requestBlogReferenceCollection(campaignId: string) {
 export function AdminCampaignOperationsTable({
   campaigns,
   automationLocked = false,
+  automationEnabled = false,
 }: {
   campaigns: AdminCampaignOperationsRow[];
   automationLocked?: boolean;
+  automationEnabled?: boolean;
 }) {
   const router = useRouter();
   const autoLinkStarted = useRef(false);
@@ -139,7 +141,7 @@ export function AdminCampaignOperationsTable({
   }, []);
 
   useEffect(() => {
-    if (automationLocked) return;
+    if (automationLocked || !automationEnabled) return;
     if (autoLinkStarted.current) return;
     autoLinkStarted.current = true;
 
@@ -155,10 +157,10 @@ export function AdminCampaignOperationsTable({
     return () => {
       cancelled = true;
     };
-  }, [automationLocked, campaigns, router, runNaverAutoLink]);
+  }, [automationEnabled, automationLocked, campaigns, router, runNaverAutoLink]);
 
   const runAllAutomation = async () => {
-    if (automationLocked) return;
+    if (automationLocked || !automationEnabled) return;
     const plan = adminCampaignAutomationPlan(campaigns);
     automationRunning.current = true;
     setAutomationLoading(true);
@@ -256,7 +258,7 @@ export function AdminCampaignOperationsTable({
             type="button"
             variant="secondary"
             loading={automationLoading}
-            disabled={automationLocked || automationLoading || campaigns.length === 0}
+            disabled={automationLocked || !automationEnabled || automationLoading || campaigns.length === 0}
             onClick={runAllAutomation}
             className="h-10 shrink-0 whitespace-nowrap px-3 text-xs"
           >
