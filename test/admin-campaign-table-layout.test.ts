@@ -35,6 +35,15 @@ describe("admin campaign table layout", () => {
     expect(componentSource).toContain('<tr className="group h-[92px]">');
   });
 
+  it("pins the campaign column and provides synced horizontal scrollbars above and below the list", () => {
+    expect(componentSource).toContain("topTableScrollRef");
+    expect(componentSource).toContain("bottomTableScrollRef");
+    expect(componentSource).toContain("syncTableScroll");
+    expect(componentSource).toContain('aria-label="캠페인 목록 가로 스크롤"');
+    expect(componentSource).toContain("sticky left-0 z-10");
+    expect(componentSource).toContain("<TableHeading stickyLeft>캠페인</TableHeading>");
+  });
+
   it("keeps the operational status badge on one horizontal line", () => {
     expect(componentSource).toContain(
       "inline-flex min-h-6 whitespace-nowrap items-center rounded-full",
