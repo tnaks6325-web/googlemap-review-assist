@@ -41,8 +41,8 @@ describe("관리자 캠페인 자동화 상태 UI", () => {
     expect(componentSource).toContain("aria-expanded={expanded}");
   });
 
-  it("campaign list exposes a manual setup action for each campaign", () => {
-    expect(operationsSource).toContain("수동 세팅 적용");
+  it("campaign list exposes a direct setup action for each campaign", () => {
+    expect(operationsSource).toContain("직접세팅");
     expect(operationsSource).toContain("/manual-setup");
   });
 });
