@@ -11,11 +11,12 @@ describe("Vercel production build safety", () => {
     expect(vercelBuildScript).not.toContain("--accept-data-loss");
   });
 
-  it("executes only the reviewed additive virtual-reviewer migration in production", () => {
+  it("executes the reviewed additive production migrations", () => {
     expect(vercelBuildScript).toContain('process.env.VERCEL_ENV === "production"');
     expect(vercelBuildScript).toContain('"db",');
     expect(vercelBuildScript).toContain('"execute",');
     expect(vercelBuildScript).toContain("prisma/production-review-draft-personas.sql");
+    expect(vercelBuildScript).toContain("prisma/production-campaign-automation.sql");
   });
 
   it("allows schema synchronization only when the isolated test-server flag is explicit", () => {
@@ -48,6 +49,14 @@ describe("Vercel production build safety", () => {
 
     expect(migration).toContain("CREATE TABLE IF NOT EXISTS");
     expect(migration).toContain("ADD COLUMN IF NOT EXISTS");
+    expect(migration).not.toMatch(/DROP\s+(TABLE|COLUMN)/iu);
+  });
+
+  it("keeps the campaign automation migration explicitly additive", () => {
+    const migration = readFileSync("prisma/production-campaign-automation.sql", "utf8");
+
+    expect(migration).toContain('CREATE TABLE IF NOT EXISTS "CampaignAutomationControl"');
+    expect(migration).toContain('ADD COLUMN IF NOT EXISTS "automationEnabled"');
     expect(migration).not.toMatch(/DROP\s+(TABLE|COLUMN)/iu);
   });
 });

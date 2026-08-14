@@ -32,17 +32,24 @@ if (isIsolatedTestServerSchemaSync) {
   run("npx", ["prisma", "db", "push", `--schema=${schemaPath}`]);
 }
 
-// Production schema changes must never use a generic schema push. This exact
-// reviewed migration is additive and idempotent, so it is safe to apply before
-// the production build that first references the new tables and columns.
+// Production schema changes must never use a generic schema push. These exact
+// reviewed migrations are additive and idempotent, so they are safe to apply
+// before the production build that first references their tables and columns.
 if (process.env.VERCEL_ENV === "production") {
-  console.log("Applying additive virtual-reviewer schema migration.");
+  console.log("Applying reviewed additive production schema migrations.");
   run("npx", [
     "prisma",
     "db",
     "execute",
     `--schema=${schemaPath}`,
     "--file=prisma/production-review-draft-personas.sql",
+  ]);
+  run("npx", [
+    "prisma",
+    "db",
+    "execute",
+    `--schema=${schemaPath}`,
+    "--file=prisma/production-campaign-automation.sql",
   ]);
 } else {
   console.log("Skipping automatic production PostgreSQL schema synchronization.");
