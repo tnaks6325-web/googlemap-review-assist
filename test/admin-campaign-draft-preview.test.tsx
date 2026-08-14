@@ -32,6 +32,8 @@ describe("admin campaign prepared drafts", () => {
     expect(routeSource).toContain("CampaignReviewDraftWarningError");
     expect(routeSource).toContain("warnings: error.warnings");
     expect(routeSource).toContain("force: body.force === true");
+    expect(routeSource).toContain('if (action === "update") return adminId;');
+    expect(routeSource).toContain("admin:prepared-draft:${action}:${adminId}:${clientIp(req)}");
   });
 
   it("protects the quality-excluded bulk delete route with admin authorization", () => {

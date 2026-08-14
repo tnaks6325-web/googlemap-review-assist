@@ -26,6 +26,10 @@ async function authorizeMutation(req: Request, action: string) {
   if (!adminId) return err("UNAUTHORIZED", "관리자 로그인이 필요해요", 401);
   const lockResponse = await campaignOperationsMutationLockResponse();
   if (lockResponse) return lockResponse;
+  // Editing a draft is an operator workflow and can require many consecutive
+  // saves. Keep the rate limit for destructive actions, but do not throttle
+  // the editor's PATCH save operation.
+  if (action === "update") return adminId;
   const allowed = await rateLimit(
     `admin:prepared-draft:${action}:${adminId}:${clientIp(req)}`,
     120,
