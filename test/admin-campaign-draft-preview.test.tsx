@@ -33,7 +33,7 @@ describe("admin campaign prepared drafts", () => {
     expect(routeSource).toContain("warnings: error.warnings");
     expect(routeSource).toContain("force: body.force === true");
     expect(routeSource).toContain("const authorization = await authorizeMutation(req);");
-    expect(routeSource).toContain('draft?.status === "QUALITY_EXCLUDED"');
+    expect(routeSource).toContain("draft?.qualityPassed === false");
     expect(routeSource).toContain('authorizeRateLimitedMutation(req, "promote", authorization)');
     expect(routeSource).toContain("admin:prepared-draft:${action}:${adminId}:${clientIp(req)}");
   });
