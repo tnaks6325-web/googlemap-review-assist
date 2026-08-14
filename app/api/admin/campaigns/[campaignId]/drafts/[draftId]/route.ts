@@ -26,6 +26,10 @@ async function authorizeMutation(req: Request, action: string) {
   if (!adminId) return err("UNAUTHORIZED", "관리자 로그인이 필요해요", 401);
   const lockResponse = await campaignOperationsMutationLockResponse();
   if (lockResponse) return lockResponse;
+  // Editing a draft is an operator workflow and can require many consecutive
+  // saves. Keep the rate limit for destructive actions, but do not throttle
+  // the editor's PATCH save operation.
+  if (action === "update") return adminId;
   const allowed = await rateLimit(
     `admin:prepared-draft:${action}:${adminId}:${clientIp(req)}`,
     120,
@@ -51,12 +55,12 @@ function mutationError(error: unknown, fallbackCode: string, fallbackMessage: st
 }
 
 export async function PATCH(req: Request, { params }: DraftRouteContext) {
-  const authorization = await authorizeMutation(req, "update");
-  if (typeof authorization !== "string") return authorization;
-
   const body = (await req.json().catch(() => null)) as
     | { text?: unknown; action?: unknown; force?: unknown }
     | null;
+  const action = body?.action === "PROMOTE_TO_UNASSIGNED" ? "promote" : "update";
+  const authorization = await authorizeMutation(req, action);
+  if (typeof authorization !== "string") return authorization;
   if (body?.force !== undefined && typeof body.force !== "boolean") {
     return err("INVALID_DRAFT_OVERRIDE", "경고 무시 여부를 확인해 주세요", 400);
   }
