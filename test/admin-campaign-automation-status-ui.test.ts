@@ -27,19 +27,22 @@ describe("관리자 캠페인 자동화 상태 UI", () => {
     expect(pageSource).toContain("AdminCampaignAutomationStatus");
   });
 
-  it("상태별 필터와 최대 15행 스크롤 목록으로 자동화 상태를 탐색할 수 있다", () => {
+  it("상태별 필터와 접기/펼치기, 최대 10행 목록으로 자동화 상태를 탐색할 수 있다", () => {
     expect(componentSource).toContain('"대기"');
     expect(componentSource).toContain('"검토필요"');
     expect(componentSource).toContain('"완료"');
     expect(componentSource).toContain("QUEUED");
     expect(componentSource).toContain("NEEDS_REVIEW");
     expect(componentSource).toContain("READY");
-    expect(componentSource).toContain("max-h-[660px]");
-    expect(componentSource).toContain("overflow-y-auto");
+    expect(componentSource).toContain("EXPANDED_ROW_LIMIT = 10");
+    expect(componentSource).toContain("visibleRows");
+    expect(componentSource).toContain('"접기"');
+    expect(componentSource).toContain('"펼치기"');
+    expect(componentSource).toContain("aria-expanded={expanded}");
   });
 
-  it("campaign list exposes a manual setup action for each campaign", () => {
-    expect(operationsSource).toContain("수동 세팅 적용");
+  it("campaign list exposes a direct setup action for each campaign", () => {
+    expect(operationsSource).toContain("직접세팅");
     expect(operationsSource).toContain("/manual-setup");
   });
 });

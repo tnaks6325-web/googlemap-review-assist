@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { campaignAutomationRunKey } from "@/lib/domain/campaign-automation-policy";
 
 const CONTROL_ID = "global";
 const MANUAL_SETUP_RUN_PREFIX = "manual-campaign-setup";
@@ -58,6 +59,25 @@ export async function setCampaignAutomationEnabled(enabled: boolean) {
         },
       });
     }
+  } else {
+    // An OFF action completes the current discovery job. If automation is turned
+    // back on that same day, restore only that admin-paused job so the daily
+    // trigger's idempotency key does not defer automation until tomorrow.
+    await prisma.operationalJob.updateMany({
+      where: {
+        dedupeKey: `campaign-automation-discovery:${campaignAutomationRunKey()}`,
+        status: "COMPLETED",
+        lastError: "Campaign automation paused by administrator",
+      },
+      data: {
+        status: "PENDING",
+        attempts: 0,
+        runAt: new Date(),
+        lockedAt: null,
+        completedAt: null,
+        lastError: null,
+      },
+    });
   }
 
   return { enabled: control.enabled, configured: true, updatedAt: control.updatedAt };

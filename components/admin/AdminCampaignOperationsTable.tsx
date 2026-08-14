@@ -101,6 +101,8 @@ export function AdminCampaignOperationsTable({
   const autoLinkStarted = useRef(false);
   const autoLinkPromise = useRef<Promise<number> | null>(null);
   const automationRunning = useRef(false);
+  const topTableScrollRef = useRef<HTMLDivElement | null>(null);
+  const bottomTableScrollRef = useRef<HTMLDivElement | null>(null);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<AdminCampaignStatusFilter>("all");
   const [automationLoading, setAutomationLoading] = useState(false);
@@ -112,15 +114,31 @@ export function AdminCampaignOperationsTable({
     hasError: boolean;
   } | null>(null);
   const [manualSetupCampaignId, setManualSetupCampaignId] = useState<string | null>(null);
+  const [automationToggleCampaignId, setAutomationToggleCampaignId] = useState<string | null>(null);
+  const [campaignAutomationEnabled, setCampaignAutomationEnabled] = useState<Record<string, boolean>>(
+    () => Object.fromEntries(campaigns.map((campaign) => [campaign.id, campaign.automationEnabled])),
+  );
   const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(
     null,
   );
   const mobileWorkspace = useAdminMobileWorkspace();
 
+  const automationCampaigns = useMemo(
+    () => campaigns.map((campaign) => ({
+      ...campaign,
+      automationEnabled: campaignAutomationEnabled[campaign.id] ?? campaign.automationEnabled,
+    })),
+    [campaignAutomationEnabled, campaigns],
+  );
+
   const filteredCampaigns = useMemo(
     () => filterAdminCampaignRows(campaigns, query, status),
     [campaigns, query, status],
   );
+
+  const syncTableScroll = (source: HTMLDivElement, target: HTMLDivElement | null) => {
+    if (target && target.scrollLeft !== source.scrollLeft) target.scrollLeft = source.scrollLeft;
+  };
 
   const runNaverAutoLink = useCallback((campaignIds: string[]) => {
     if (autoLinkPromise.current) return autoLinkPromise.current;
@@ -145,7 +163,7 @@ export function AdminCampaignOperationsTable({
     if (autoLinkStarted.current) return;
     autoLinkStarted.current = true;
 
-    const campaignIds = automaticNaverCampaignIds(campaigns);
+    const campaignIds = automaticNaverCampaignIds(automationCampaigns);
     if (!campaignIds.length) return;
 
     let cancelled = false;
@@ -157,11 +175,11 @@ export function AdminCampaignOperationsTable({
     return () => {
       cancelled = true;
     };
-  }, [automationEnabled, automationLocked, campaigns, router, runNaverAutoLink]);
+  }, [automationCampaigns, automationEnabled, automationLocked, router, runNaverAutoLink]);
 
   const runAllAutomation = async () => {
     if (automationLocked || !automationEnabled) return;
-    const plan = adminCampaignAutomationPlan(campaigns);
+    const plan = adminCampaignAutomationPlan(automationCampaigns);
     automationRunning.current = true;
     setAutomationLoading(true);
     setAutomationMessage(null);
@@ -226,6 +244,41 @@ export function AdminCampaignOperationsTable({
       setAutomationMessage({ text: "네트워크 오류로 수동 세팅을 시작하지 못했습니다.", hasError: true });
     } finally {
       setManualSetupCampaignId(null);
+    }
+  };
+
+  const toggleCampaignAutomation = async (campaign: AdminCampaignOperationsRow) => {
+    const current = campaignAutomationEnabled[campaign.id] ?? campaign.automationEnabled;
+    const next = !current;
+    setAutomationToggleCampaignId(campaign.id);
+    setAutomationMessage(null);
+    try {
+      const response = await fetch(`/api/admin/campaigns/${campaign.id}/automation`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ enabled: next }),
+      });
+      const body = (await response.json().catch(() => null)) as {
+        campaign?: { automationEnabled?: boolean };
+        error?: { message?: string };
+      } | null;
+      if (!response.ok || typeof body?.campaign?.automationEnabled !== "boolean") {
+        setAutomationMessage({
+          text: body?.error?.message ?? "캠페인 자동화를 변경하지 못했습니다.",
+          hasError: true,
+        });
+        return;
+      }
+      setCampaignAutomationEnabled((values) => ({ ...values, [campaign.id]: body.campaign!.automationEnabled! }));
+      setAutomationMessage({
+        text: body.campaign.automationEnabled ? `${campaign.businessName} 자동화를 켰습니다.` : `${campaign.businessName} 자동화를 껐습니다. 수동 세팅은 계속 사용할 수 있습니다.`,
+        hasError: false,
+      });
+      router.refresh();
+    } catch {
+      setAutomationMessage({ text: "네트워크 오류로 캠페인 자동화를 변경하지 못했습니다.", hasError: true });
+    } finally {
+      setAutomationToggleCampaignId(null);
     }
   };
 
@@ -318,19 +371,35 @@ export function AdminCampaignOperationsTable({
                 automationLocked={automationLocked}
                 manualSetupEligible={campaign.manualSetupEligible}
                 manualSetupLoading={manualSetupCampaignId === campaign.id}
+                automationEnabled={campaignAutomationEnabled[campaign.id] ?? campaign.automationEnabled}
+                automationToggleLoading={automationToggleCampaignId === campaign.id}
                 onManualSetup={() => void runManualSetup(campaign.id)}
+                onAutomationToggle={() => void toggleCampaignAutomation(campaign)}
                 onToggle={() => setExpandedCampaignId(expanded ? null : campaign.id)}
               />
             );
           })}
-        </div> : (
+        </div> : (<>
 
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1450px] table-fixed border-separate border-spacing-0">
+        <div
+          ref={topTableScrollRef}
+          onScroll={(event) => syncTableScroll(event.currentTarget, bottomTableScrollRef.current)}
+          aria-label="캠페인 목록 가로 스크롤"
+          className="h-5 overflow-x-auto border-b border-line"
+        >
+          <div className="h-px min-w-[1730px]" />
+        </div>
+        <div
+          ref={bottomTableScrollRef}
+          onScroll={(event) => syncTableScroll(event.currentTarget, topTableScrollRef.current)}
+          className="overflow-x-auto"
+        >
+          <table className="w-full min-w-[1730px] table-fixed border-separate border-spacing-0">
             <caption className="sr-only">
               관리자 캠페인 운영 상태 및 자료 연결 현황
             </caption>
             <colgroup>
+              <col className="w-[90px]" />
               <col className="w-[300px]" />
               <col className="w-[104px]" />
               <col className="w-[150px]" />
@@ -339,12 +408,13 @@ export function AdminCampaignOperationsTable({
               <col className="w-[130px]" />
               <col className="w-[80px]" />
               <col className="w-[110px]" />
-              <col className="w-[110px]" />
-              <col className="w-[300px]" />
+              <col className="w-[120px]" />
+              <col className="w-[480px]" />
             </colgroup>
             <thead>
               <tr className="bg-surface-alt">
-                <TableHeading>캠페인</TableHeading>
+                <TableHeading stickyLeft>자동</TableHeading>
+                <TableHeading stickyLeft stickyOffset="left-[90px]">캠페인</TableHeading>
                 <TableHeading>운영 상태</TableHeading>
                 <TableHeading>오늘 배정 / 일 한도</TableHeading>
                 <TableHeading>지급</TableHeading>
@@ -375,7 +445,10 @@ export function AdminCampaignOperationsTable({
                     automationLocked={automationLocked}
                     manualSetupEligible={campaign.manualSetupEligible}
                     manualSetupLoading={manualSetupCampaignId === campaign.id}
+                    automationEnabled={campaignAutomationEnabled[campaign.id] ?? campaign.automationEnabled}
+                    automationToggleLoading={automationToggleCampaignId === campaign.id}
                     onManualSetup={() => void runManualSetup(campaign.id)}
+                    onAutomationToggle={() => void toggleCampaignAutomation(campaign)}
                     onToggle={() =>
                       setExpandedCampaignId(expanded ? null : campaign.id)
                     }
@@ -384,7 +457,7 @@ export function AdminCampaignOperationsTable({
               })}
             </tbody>
           </table>
-        </div>)}
+        </div></>)}
 
         {filteredCampaigns.length === 0 ? (
           <div className="border-t border-line px-5 py-12 text-center">
@@ -421,7 +494,10 @@ function MobileCampaignCard({
   automationLocked,
   manualSetupEligible,
   manualSetupLoading,
+  automationEnabled,
+  automationToggleLoading,
   onManualSetup,
+  onAutomationToggle,
   onToggle,
 }: {
   campaign: AdminCampaignOperationsRow;
@@ -431,7 +507,10 @@ function MobileCampaignCard({
   automationLocked: boolean;
   manualSetupEligible: boolean;
   manualSetupLoading: boolean;
+  automationEnabled: boolean;
+  automationToggleLoading: boolean;
   onManualSetup: () => void;
+  onAutomationToggle: () => void;
   onToggle: () => void;
 }) {
   const googleMapsUrl = safeGoogleMapsUrl(campaign.googleMapsUrl);
@@ -493,14 +572,19 @@ function MobileCampaignCard({
         </div>
 
         <div className="mt-3 grid grid-cols-2 gap-2">
+          <CampaignAutomationToggle
+            enabled={automationEnabled}
+            loading={automationToggleLoading}
+            onToggle={onAutomationToggle}
+          />
           <button
             type="button"
             onClick={onManualSetup}
             disabled={automationLocked || !manualSetupEligible || manualSetupLoading}
             title={!manualSetupEligible ? "시트 반영이 완료된 캠페인에서만 수동 세팅을 적용할 수 있습니다." : undefined}
-            className="h-10 rounded-[9px] border border-brand/30 bg-brand-tint px-3 text-sm font-bold text-brand transition hover:border-brand disabled:cursor-not-allowed disabled:opacity-60"
+            className="h-10 min-w-24 whitespace-nowrap rounded-[9px] border border-brand/30 bg-brand-tint px-3 text-sm font-bold text-brand transition hover:border-brand disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {manualSetupLoading ? "요청 중" : manualSetupEligible ? "수동 세팅 적용" : "시트 반영 필요"}
+            {manualSetupLoading ? "요청 중" : manualSetupEligible ? "직접세팅" : "시트 반영 필요"}
           </button>
           <button
             type="button"
@@ -569,7 +653,10 @@ function CampaignRows({
   automationLocked,
   manualSetupEligible,
   manualSetupLoading,
+  automationEnabled,
+  automationToggleLoading,
   onManualSetup,
+  onAutomationToggle,
   onToggle,
 }: {
   campaign: AdminCampaignOperationsRow;
@@ -579,7 +666,10 @@ function CampaignRows({
   automationLocked: boolean;
   manualSetupEligible: boolean;
   manualSetupLoading: boolean;
+  automationEnabled: boolean;
+  automationToggleLoading: boolean;
   onManualSetup: () => void;
+  onAutomationToggle: () => void;
   onToggle: () => void;
 }) {
   const googleMapsUrl = safeGoogleMapsUrl(campaign.googleMapsUrl);
@@ -587,7 +677,14 @@ function CampaignRows({
   return (
     <>
       <tr className="group h-[92px]">
-        <td className="border-t border-line px-4 py-4 group-first:border-t-0">
+        <td className="sticky left-0 z-20 border-t border-line bg-surface px-3 py-4 text-center group-first:border-t-0">
+          <CampaignAutomationToggle
+            enabled={automationEnabled}
+            loading={automationToggleLoading}
+            onToggle={onAutomationToggle}
+          />
+        </td>
+        <td className="sticky left-[90px] z-10 border-t border-line bg-surface px-4 py-4 shadow-[2px_0_5px_rgba(16,24,40,0.06)] group-first:border-t-0">
           {googleMapsUrl && !automationLocked ? (
             <a
               href={googleMapsUrl}
@@ -692,15 +789,15 @@ function CampaignRows({
           />
         </TableCell>
         <TableCell align="right">
-          <div className="flex justify-end gap-1.5">
+          <div className="flex flex-nowrap items-center justify-end gap-1.5 [&>*]:shrink-0">
             <button
               type="button"
               onClick={onManualSetup}
               disabled={automationLocked || !manualSetupEligible || manualSetupLoading}
               title={!manualSetupEligible ? "시트 반영이 완료된 캠페인에서만 수동 세팅을 적용할 수 있습니다." : undefined}
-              className="h-9 rounded-[9px] border border-brand/30 bg-brand-tint px-3 text-xs font-bold text-brand transition hover:border-brand disabled:cursor-not-allowed disabled:opacity-60"
+              className="h-9 min-w-24 whitespace-nowrap rounded-[9px] border border-brand/30 bg-brand-tint px-3 text-xs font-bold text-brand transition hover:border-brand disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {manualSetupLoading ? "요청 중" : manualSetupEligible ? "수동 세팅 적용" : "시트 반영 필요"}
+              {manualSetupLoading ? "요청 중" : manualSetupEligible ? "직접세팅" : "시트 반영 필요"}
             </button>
             <AdminCampaignDraftPreview
               campaignId={campaign.id}
@@ -723,7 +820,7 @@ function CampaignRows({
       </tr>
       {expanded ? (
         <tr id={`campaign-detail-${campaign.id}`}>
-          <td colSpan={10} className="border-t border-line bg-[#f8fbff] p-4">
+          <td colSpan={11} className="border-t border-line bg-[#f8fbff] p-4">
             {automationLocked ? <p className="rounded-[10px] border border-brand/20 bg-brand-tint px-4 py-3 text-sm font-semibold text-ink-sub">자동화 진행 중에는 상세 정보만 확인할 수 있습니다. 원고보관함·리뷰제출함의 상세 열람은 계속 가능합니다.</p> : <><AdminCampaignRewardPoints
               campaignId={campaign.id}
               initialRewardPoints={campaign.rewardPoints}
@@ -756,19 +853,55 @@ function CampaignRows({
 function TableHeading({
   children,
   align = "left",
+  stickyLeft = false,
+  stickyOffset = "left-0",
 }: {
   children: React.ReactNode;
   align?: "left" | "right";
+  stickyLeft?: boolean;
+  stickyOffset?: "left-0" | "left-[90px]";
 }) {
   return (
     <th
       scope="col"
       className={`h-11 border-b border-line px-4 text-[11px] font-bold text-ink-weak ${
         align === "right" ? "text-right" : "text-left"
-      }`}
+      } ${stickyLeft ? `sticky ${stickyOffset} z-30 bg-surface-alt shadow-[2px_0_5px_rgba(16,24,40,0.06)]` : ""}`}
     >
       {children}
     </th>
+  );
+}
+
+function CampaignAutomationToggle({
+  enabled,
+  loading,
+  onToggle,
+}: {
+  enabled: boolean;
+  loading: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={enabled}
+      aria-label={`캠페인 자동화 ${enabled ? "끄기" : "켜기"}`}
+      disabled={loading}
+      onClick={onToggle}
+      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full p-0.5 transition-colors duration-300 [transition-timing-function:cubic-bezier(0.7,0,0.9,0.4)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success/50 disabled:cursor-not-allowed disabled:opacity-60 ${
+        enabled ? "bg-success" : "bg-line-strong"
+      }`}
+    >
+      <span
+        aria-hidden="true"
+        className={`size-5 rounded-full bg-surface shadow-[0_1px_2px_rgba(16,24,40,0.28)] transition-transform duration-300 [transition-timing-function:cubic-bezier(0.7,0,0.9,0.4)] ${
+          enabled ? "translate-x-5" : "translate-x-0"
+        }`}
+      />
+      <span className="sr-only">{loading ? "저장 중" : enabled ? "자동화 켜짐" : "자동화 꺼짐"}</span>
+    </button>
   );
 }
 

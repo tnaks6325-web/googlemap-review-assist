@@ -107,12 +107,23 @@ describe("admin campaign table", () => {
           hasGooglePlace: true,
           naverPlace: { matchStatus: "LINKED" },
           blogReferenceCount: 0,
+          automationEnabled: false,
         },
       ]),
     ).toEqual({
       naverCampaignIds: ["campaign-1"],
-      referenceCampaignIds: ["campaign-1", "campaign-3"],
+      referenceCampaignIds: ["campaign-1"],
     });
+  });
+
+  it("excludes campaigns with automatic processing turned off", () => {
+    expect(automaticNaverCampaignIds([{
+      id: "campaign-paused",
+      businessId: "business-paused",
+      hasGooglePlace: true,
+      naverPlace: null,
+      automationEnabled: false,
+    }])).toEqual([]);
   });
 
   it("marks an active campaign requiring source review as needing attention", () => {

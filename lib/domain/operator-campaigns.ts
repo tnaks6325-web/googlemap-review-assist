@@ -68,6 +68,7 @@ export interface AdminConnectedNaverPlace {
 export interface AdminCampaignRow extends PublicCampaignCard {
   businessId: string;
   active: boolean;
+  automationEnabled: boolean;
   assignedCount: number;
   paidPointAmount: number;
   menuCount: number;
@@ -127,6 +128,7 @@ type CampaignForPresentation = Pick<
   | "slug"
   | "name"
   | "active"
+  | "automationEnabled"
   | "businessId"
   | "createdAt"
   | "totalQuota"
@@ -492,6 +494,7 @@ export async function listAdminCampaigns(): Promise<AdminCampaignRow[]> {
       ...toPublicCampaign(campaign, stats, now, draftSummary.canGenerateReviewDraft),
       businessId: campaign.businessId,
       active: campaign.active,
+      automationEnabled: campaign.automationEnabled,
       assignedCount: stats.assignedCount,
       paidPointAmount: stats.paidPointAmount,
       menuCount: campaign.business._count.menus,

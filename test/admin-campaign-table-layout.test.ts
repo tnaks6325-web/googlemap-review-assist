@@ -26,13 +26,22 @@ describe("admin campaign table layout", () => {
 
   it("keeps campaign columns stable when a detail row is expanded", () => {
     expect(componentSource).toContain(
-      'className="w-full min-w-[1450px] table-fixed border-separate border-spacing-0"',
+      'className="w-full min-w-[1730px] table-fixed border-separate border-spacing-0"',
     );
     expect(componentSource).toContain("<colgroup>");
     expect(componentSource).toContain('<col className="w-[104px]" />');
-    expect(componentSource).toContain('<col className="w-[300px]" />');
-    expect(componentSource).toContain('colSpan={10}');
+    expect(componentSource).toContain('<col className="w-[480px]" />');
+    expect(componentSource).toContain('colSpan={11}');
     expect(componentSource).toContain('<tr className="group h-[92px]">');
+  });
+
+  it("pins the campaign column and provides synced horizontal scrollbars above and below the list", () => {
+    expect(componentSource).toContain("topTableScrollRef");
+    expect(componentSource).toContain("bottomTableScrollRef");
+    expect(componentSource).toContain("syncTableScroll");
+    expect(componentSource).toContain('aria-label="캠페인 목록 가로 스크롤"');
+    expect(componentSource).toContain("sticky left-[90px] z-10");
+    expect(componentSource).toContain('<TableHeading stickyLeft stickyOffset="left-[90px]">캠페인</TableHeading>');
   });
 
   it("keeps the operational status badge on one horizontal line", () => {
@@ -60,5 +69,17 @@ describe("admin campaign table layout", () => {
   it("keeps the campaign automation action labeled as one-click setup", () => {
     expect(componentSource).toContain('automationProgress ?? "원클릭 세팅"');
     expect(componentSource).not.toContain('automationProgress ?? "네이버 자동보정 + 참고자료 수집"');
+  });
+
+  it("labels direct setup without allowing the action text to wrap", () => {
+    expect(componentSource).toContain('"직접세팅"');
+    expect(componentSource).toContain("min-w-24 whitespace-nowrap");
+    expect(componentSource).not.toContain('"수동 세팅 적용"');
+  });
+
+  it("reserves a non-shrinking management action area for direct setup and review actions", () => {
+    expect(componentSource).toContain('flex flex-nowrap items-center justify-end gap-1.5 [&>*]:shrink-0');
+    expect(componentSource).toContain('<col className="w-[120px]" />');
+    expect(componentSource).toContain('<div className="h-px min-w-[1730px]" />');
   });
 });

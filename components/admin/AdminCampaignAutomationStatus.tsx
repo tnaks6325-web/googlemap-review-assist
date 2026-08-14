@@ -19,6 +19,7 @@ export interface AdminCampaignAutomationStatusRow {
 }
 
 type AutomationStatusFilter = "ALL" | "WAITING" | "NEEDS_REVIEW" | "COMPLETED";
+const EXPANDED_ROW_LIMIT = 10;
 
 const automationStatusFilters: Array<{
   key: AutomationStatusFilter;
@@ -78,6 +79,7 @@ export function AdminCampaignAutomationStatus({
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [filter, setFilter] = useState<AutomationStatusFilter>("ALL");
+  const [expanded, setExpanded] = useState(true);
   const mobileWorkspace = useAdminMobileWorkspace();
 
   if (!rows.length) return null;
@@ -86,6 +88,7 @@ export function AdminCampaignAutomationStatus({
   const filteredRows = selectedFilter?.statuses
     ? rows.filter((row) => selectedFilter.statuses?.includes(row.status))
     : rows;
+  const visibleRows = expanded ? filteredRows.slice(0, EXPANDED_ROW_LIMIT) : [];
 
   const retry = async (campaignId: string) => {
     if (readOnly) return;
@@ -137,10 +140,21 @@ export function AdminCampaignAutomationStatus({
             );
           })}
         </div>
-        <p className="text-xs text-ink-weak">총 {filteredRows.length}건 · 한 화면에 최대 15건</p>
+        <div className="flex items-center justify-between gap-3 sm:justify-end">
+          <p className="text-xs text-ink-weak">총 {filteredRows.length}건 · 펼치면 최대 {EXPANDED_ROW_LIMIT}건</p>
+          <button
+            type="button"
+            aria-expanded={expanded}
+            aria-controls="campaign-automation-status-list"
+            onClick={() => setExpanded((value) => !value)}
+            className="h-8 shrink-0 rounded-[8px] border border-line bg-surface px-3 text-xs font-bold text-ink-sub transition hover:border-brand/40 hover:text-brand"
+          >
+            {expanded ? "접기" : "펼치기"}
+          </button>
+        </div>
       </div>
-      {mobileWorkspace ? <div className="mt-3 space-y-2.5">
-        {filteredRows.map((row) => {
+      {expanded && mobileWorkspace ? <div id="campaign-automation-status-list" className="mt-3 space-y-2.5">
+        {visibleRows.map((row) => {
           const retryable = !readOnly && ["NEEDS_REVIEW", "FAILED"].includes(row.status);
           return (
             <MobileAutomationStatusCard
@@ -153,14 +167,14 @@ export function AdminCampaignAutomationStatus({
             />
           );
         })}
-        {!filteredRows.length ? (
+        {!visibleRows.length ? (
           <p className="rounded-[10px] border border-dashed border-line px-3 py-8 text-center text-sm text-ink-weak">
             선택한 상태의 자동화 항목이 없습니다.
           </p>
         ) : null}
-      </div> : (
+      </div> : expanded ? (
 
-      <div className="mt-3 max-h-[660px] overflow-x-auto overflow-y-auto overscroll-contain rounded-[10px] border border-line">
+      <div id="campaign-automation-status-list" className="mt-3 overflow-x-auto rounded-[10px] border border-line">
         <table className="w-full min-w-[900px] text-left text-xs">
           <caption className="sr-only">캠페인 자동화 상태와 재시도</caption>
           <thead className="sticky top-0 z-10 border-b border-line bg-surface-alt text-ink-weak">
@@ -174,7 +188,7 @@ export function AdminCampaignAutomationStatus({
             </tr>
           </thead>
           <tbody>
-            {filteredRows.map((row) => {
+            {visibleRows.map((row) => {
               const retryable = !readOnly && ["NEEDS_REVIEW", "FAILED"].includes(row.status);
               return (
                 <tr key={row.campaignId} className="border-b border-line last:border-b-0">
@@ -187,7 +201,7 @@ export function AdminCampaignAutomationStatus({
                 </tr>
               );
             })}
-            {!filteredRows.length ? (
+            {!visibleRows.length ? (
               <tr>
                 <td colSpan={6} className="px-3 py-12 text-center text-sm text-ink-weak">
                   선택한 상태의 자동화 항목이 없습니다.
@@ -196,7 +210,7 @@ export function AdminCampaignAutomationStatus({
             ) : null}
           </tbody>
         </table>
-      </div>)}
+      </div>) : null}
     </section>
   );
 }
