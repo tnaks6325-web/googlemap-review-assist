@@ -387,14 +387,14 @@ export function AdminCampaignOperationsTable({
           aria-label="캠페인 목록 가로 스크롤"
           className="h-5 overflow-x-auto border-b border-line"
         >
-          <div className="h-px min-w-[1540px]" />
+          <div className="h-px min-w-[1660px]" />
         </div>
         <div
           ref={bottomTableScrollRef}
           onScroll={(event) => syncTableScroll(event.currentTarget, topTableScrollRef.current)}
           className="overflow-x-auto"
         >
-          <table className="w-full min-w-[1540px] table-fixed border-separate border-spacing-0">
+          <table className="w-full min-w-[1660px] table-fixed border-separate border-spacing-0">
             <caption className="sr-only">
               관리자 캠페인 운영 상태 및 자료 연결 현황
             </caption>
@@ -408,8 +408,8 @@ export function AdminCampaignOperationsTable({
               <col className="w-[130px]" />
               <col className="w-[80px]" />
               <col className="w-[110px]" />
-              <col className="w-[110px]" />
-              <col className="w-[300px]" />
+              <col className="w-[120px]" />
+              <col className="w-[410px]" />
             </colgroup>
             <thead>
               <tr className="bg-surface-alt">
@@ -789,7 +789,7 @@ function CampaignRows({
           />
         </TableCell>
         <TableCell align="right">
-          <div className="flex justify-end gap-1.5">
+          <div className="flex flex-nowrap items-center justify-end gap-1.5 [&>*]:shrink-0">
             <button
               type="button"
               onClick={onManualSetup}
