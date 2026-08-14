@@ -30,6 +30,14 @@ if (process.env.VERCEL_ENV === "production") {
     `--schema=${schemaPath}`,
     "--file=prisma/production-review-draft-personas.sql",
   ]);
+  console.log("Applying additive campaign automation control schema migration.");
+  run("npx", [
+    "prisma",
+    "db",
+    "execute",
+    `--schema=${schemaPath}`,
+    "--file=prisma/production-campaign-automation-control.sql",
+  ]);
 } else {
   console.log("Skipping automatic production PostgreSQL schema synchronization.");
 }
