@@ -9,11 +9,12 @@ describe("Vercel production build safety", () => {
     expect(vercelBuildScript).not.toContain('run("npx", ["prisma", "db", "push"');
   });
 
-  it("executes only the reviewed additive virtual-reviewer migration in production", () => {
+  it("executes the reviewed additive production migrations", () => {
     expect(vercelBuildScript).toContain('process.env.VERCEL_ENV === "production"');
     expect(vercelBuildScript).toContain('"db",');
     expect(vercelBuildScript).toContain('"execute",');
     expect(vercelBuildScript).toContain("prisma/production-review-draft-personas.sql");
+    expect(vercelBuildScript).toContain("prisma/production-campaign-automation-control.sql");
   });
 
   it("keeps the virtual-reviewer migration explicitly additive and separate from deployment", () => {
@@ -21,6 +22,12 @@ describe("Vercel production build safety", () => {
 
     expect(migration).toContain("CREATE TABLE IF NOT EXISTS");
     expect(migration).toContain("ADD COLUMN IF NOT EXISTS");
+    expect(migration).not.toMatch(/DROP\s+(TABLE|COLUMN)/iu);
+  });
+
+  it("keeps the campaign automation control migration additive", () => {
+    const migration = readFileSync("prisma/production-campaign-automation-control.sql", "utf8");
+    expect(migration).toContain("CREATE TABLE IF NOT EXISTS");
     expect(migration).not.toMatch(/DROP\s+(TABLE|COLUMN)/iu);
   });
 });
