@@ -2067,10 +2067,10 @@ export async function updateCampaignPreparedDraft(
   }
   const text = normalizeReviewDraftLanguage(input.text);
   const length = nonSpaceLength(text);
-  if (length < 30 || length > 200) {
+  if (length < 10 || length > 200) {
     throw new CampaignReviewDraftError(
       "INVALID_DRAFT_TEXT",
-      "원고는 공백 제외 30자 이상 200자 이하로 입력해 주세요.",
+      "원고는 공백 제외 10자 이상 200자 이하로 입력해 주세요.",
       422,
     );
   }
