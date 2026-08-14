@@ -55,12 +55,12 @@ function mutationError(error: unknown, fallbackCode: string, fallbackMessage: st
 }
 
 export async function PATCH(req: Request, { params }: DraftRouteContext) {
-  const authorization = await authorizeMutation(req, "update");
-  if (typeof authorization !== "string") return authorization;
-
   const body = (await req.json().catch(() => null)) as
     | { text?: unknown; action?: unknown; force?: unknown }
     | null;
+  const action = body?.action === "PROMOTE_TO_UNASSIGNED" ? "promote" : "update";
+  const authorization = await authorizeMutation(req, action);
+  if (typeof authorization !== "string") return authorization;
   if (body?.force !== undefined && typeof body.force !== "boolean") {
     return err("INVALID_DRAFT_OVERRIDE", "경고 무시 여부를 확인해 주세요", 400);
   }

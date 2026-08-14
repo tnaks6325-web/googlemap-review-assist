@@ -33,6 +33,7 @@ describe("admin campaign prepared drafts", () => {
     expect(routeSource).toContain("warnings: error.warnings");
     expect(routeSource).toContain("force: body.force === true");
     expect(routeSource).toContain('if (action === "update") return adminId;');
+    expect(routeSource).toContain('body?.action === "PROMOTE_TO_UNASSIGNED" ? "promote" : "update"');
     expect(routeSource).toContain("admin:prepared-draft:${action}:${adminId}:${clientIp(req)}");
   });
 
