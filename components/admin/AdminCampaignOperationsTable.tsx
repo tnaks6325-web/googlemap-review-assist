@@ -387,18 +387,19 @@ export function AdminCampaignOperationsTable({
           aria-label="캠페인 목록 가로 스크롤"
           className="h-5 overflow-x-auto border-b border-line"
         >
-          <div className="h-px min-w-[1450px]" />
+          <div className="h-px min-w-[1540px]" />
         </div>
         <div
           ref={bottomTableScrollRef}
           onScroll={(event) => syncTableScroll(event.currentTarget, topTableScrollRef.current)}
           className="overflow-x-auto"
         >
-          <table className="w-full min-w-[1450px] table-fixed border-separate border-spacing-0">
+          <table className="w-full min-w-[1540px] table-fixed border-separate border-spacing-0">
             <caption className="sr-only">
               관리자 캠페인 운영 상태 및 자료 연결 현황
             </caption>
             <colgroup>
+              <col className="w-[90px]" />
               <col className="w-[300px]" />
               <col className="w-[104px]" />
               <col className="w-[150px]" />
@@ -412,7 +413,8 @@ export function AdminCampaignOperationsTable({
             </colgroup>
             <thead>
               <tr className="bg-surface-alt">
-                <TableHeading stickyLeft>캠페인</TableHeading>
+                <TableHeading stickyLeft>자동</TableHeading>
+                <TableHeading stickyLeft stickyOffset="left-[90px]">캠페인</TableHeading>
                 <TableHeading>운영 상태</TableHeading>
                 <TableHeading>오늘 배정 / 일 한도</TableHeading>
                 <TableHeading>지급</TableHeading>
@@ -675,7 +677,14 @@ function CampaignRows({
   return (
     <>
       <tr className="group h-[92px]">
-        <td className="sticky left-0 z-10 border-t border-line bg-surface px-4 py-4 shadow-[2px_0_5px_rgba(16,24,40,0.06)] group-first:border-t-0">
+        <td className="sticky left-0 z-20 border-t border-line bg-surface px-3 py-4 text-center group-first:border-t-0">
+          <CampaignAutomationToggle
+            enabled={automationEnabled}
+            loading={automationToggleLoading}
+            onToggle={onAutomationToggle}
+          />
+        </td>
+        <td className="sticky left-[90px] z-10 border-t border-line bg-surface px-4 py-4 shadow-[2px_0_5px_rgba(16,24,40,0.06)] group-first:border-t-0">
           {googleMapsUrl && !automationLocked ? (
             <a
               href={googleMapsUrl}
@@ -781,12 +790,6 @@ function CampaignRows({
         </TableCell>
         <TableCell align="right">
           <div className="flex justify-end gap-1.5">
-            <CampaignAutomationToggle
-              enabled={automationEnabled}
-              loading={automationToggleLoading}
-              onToggle={onAutomationToggle}
-              compact
-            />
             <button
               type="button"
               onClick={onManualSetup}
@@ -817,7 +820,7 @@ function CampaignRows({
       </tr>
       {expanded ? (
         <tr id={`campaign-detail-${campaign.id}`}>
-          <td colSpan={10} className="border-t border-line bg-[#f8fbff] p-4">
+          <td colSpan={11} className="border-t border-line bg-[#f8fbff] p-4">
             {automationLocked ? <p className="rounded-[10px] border border-brand/20 bg-brand-tint px-4 py-3 text-sm font-semibold text-ink-sub">자동화 진행 중에는 상세 정보만 확인할 수 있습니다. 원고보관함·리뷰제출함의 상세 열람은 계속 가능합니다.</p> : <><AdminCampaignRewardPoints
               campaignId={campaign.id}
               initialRewardPoints={campaign.rewardPoints}
@@ -851,17 +854,19 @@ function TableHeading({
   children,
   align = "left",
   stickyLeft = false,
+  stickyOffset = "left-0",
 }: {
   children: React.ReactNode;
   align?: "left" | "right";
   stickyLeft?: boolean;
+  stickyOffset?: "left-0" | "left-[90px]";
 }) {
   return (
     <th
       scope="col"
       className={`h-11 border-b border-line px-4 text-[11px] font-bold text-ink-weak ${
         align === "right" ? "text-right" : "text-left"
-      } ${stickyLeft ? "sticky left-0 z-20 bg-surface-alt shadow-[2px_0_5px_rgba(16,24,40,0.06)]" : ""}`}
+      } ${stickyLeft ? `sticky ${stickyOffset} z-30 bg-surface-alt shadow-[2px_0_5px_rgba(16,24,40,0.06)]` : ""}`}
     >
       {children}
     </th>
@@ -872,12 +877,10 @@ function CampaignAutomationToggle({
   enabled,
   loading,
   onToggle,
-  compact = false,
 }: {
   enabled: boolean;
   loading: boolean;
   onToggle: () => void;
-  compact?: boolean;
 }) {
   return (
     <button
@@ -887,16 +890,17 @@ function CampaignAutomationToggle({
       aria-label={`캠페인 자동화 ${enabled ? "끄기" : "켜기"}`}
       disabled={loading}
       onClick={onToggle}
-      className={`inline-flex items-center justify-center gap-1.5 rounded-[9px] border px-3 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-60 ${
-        compact ? "h-9" : "h-10"
-      } ${
-        enabled
-          ? "border-success/30 bg-success-tint text-[#087a5c] hover:border-success"
-          : "border-line-strong bg-surface-alt text-ink-weak hover:border-ink-weak"
+      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full p-0.5 transition-colors duration-300 [transition-timing-function:cubic-bezier(0.7,0,0.9,0.4)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success/50 disabled:cursor-not-allowed disabled:opacity-60 ${
+        enabled ? "bg-success" : "bg-line-strong"
       }`}
     >
-      <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${enabled ? "bg-success" : "bg-ink-weak"}`} />
-      {loading ? "저장 중" : enabled ? "자동 ON" : "자동 OFF"}
+      <span
+        aria-hidden="true"
+        className={`size-5 rounded-full bg-surface shadow-[0_1px_2px_rgba(16,24,40,0.28)] transition-transform duration-300 [transition-timing-function:cubic-bezier(0.7,0,0.9,0.4)] ${
+          enabled ? "translate-x-5" : "translate-x-0"
+        }`}
+      />
+      <span className="sr-only">{loading ? "저장 중" : enabled ? "자동화 켜짐" : "자동화 꺼짐"}</span>
     </button>
   );
 }

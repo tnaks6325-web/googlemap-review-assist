@@ -26,12 +26,12 @@ describe("admin campaign table layout", () => {
 
   it("keeps campaign columns stable when a detail row is expanded", () => {
     expect(componentSource).toContain(
-      'className="w-full min-w-[1450px] table-fixed border-separate border-spacing-0"',
+      'className="w-full min-w-[1540px] table-fixed border-separate border-spacing-0"',
     );
     expect(componentSource).toContain("<colgroup>");
     expect(componentSource).toContain('<col className="w-[104px]" />');
     expect(componentSource).toContain('<col className="w-[300px]" />');
-    expect(componentSource).toContain('colSpan={10}');
+    expect(componentSource).toContain('colSpan={11}');
     expect(componentSource).toContain('<tr className="group h-[92px]">');
   });
 
@@ -40,8 +40,8 @@ describe("admin campaign table layout", () => {
     expect(componentSource).toContain("bottomTableScrollRef");
     expect(componentSource).toContain("syncTableScroll");
     expect(componentSource).toContain('aria-label="캠페인 목록 가로 스크롤"');
-    expect(componentSource).toContain("sticky left-0 z-10");
-    expect(componentSource).toContain("<TableHeading stickyLeft>캠페인</TableHeading>");
+    expect(componentSource).toContain("sticky left-[90px] z-10");
+    expect(componentSource).toContain('<TableHeading stickyLeft stickyOffset="left-[90px]">캠페인</TableHeading>');
   });
 
   it("keeps the operational status badge on one horizontal line", () => {
