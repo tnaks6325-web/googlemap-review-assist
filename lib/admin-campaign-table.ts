@@ -26,6 +26,7 @@ export interface AdminCampaignFilterRow {
 export interface AdminCampaignNaverAutoLinkRow {
   id: string;
   businessId: string;
+  automationEnabled?: boolean;
   hasGooglePlace: boolean;
   naverPlace: { matchStatus: string } | null;
 }
@@ -53,6 +54,7 @@ export function automaticNaverCampaignIds(
 
   for (const campaign of campaigns) {
     if (
+      campaign.automationEnabled === false ||
       !campaign.hasGooglePlace ||
       (campaign.naverPlace &&
         campaign.naverPlace.matchStatus !== "NEEDS_REVIEW") ||
@@ -76,7 +78,7 @@ export function adminCampaignAutomationPlan(
     referenceCampaignIds: [
       ...new Set(
         campaigns
-          .filter((campaign) => campaign.blogReferenceCount === 0)
+          .filter((campaign) => campaign.automationEnabled !== false && campaign.blogReferenceCount === 0)
           .map((campaign) => campaign.id),
       ),
     ],

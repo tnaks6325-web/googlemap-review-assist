@@ -129,6 +129,7 @@ model Campaign {
   slug                    String                          @unique
   name                    String
   active                  Boolean                         @default(true)
+  automationEnabled       Boolean                         @default(true)
   totalQuota              Int?
   dailyQuota              Int?
   startDate               String?

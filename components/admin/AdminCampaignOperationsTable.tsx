@@ -112,10 +112,22 @@ export function AdminCampaignOperationsTable({
     hasError: boolean;
   } | null>(null);
   const [manualSetupCampaignId, setManualSetupCampaignId] = useState<string | null>(null);
+  const [automationToggleCampaignId, setAutomationToggleCampaignId] = useState<string | null>(null);
+  const [campaignAutomationEnabled, setCampaignAutomationEnabled] = useState<Record<string, boolean>>(
+    () => Object.fromEntries(campaigns.map((campaign) => [campaign.id, campaign.automationEnabled])),
+  );
   const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(
     null,
   );
   const mobileWorkspace = useAdminMobileWorkspace();
+
+  const automationCampaigns = useMemo(
+    () => campaigns.map((campaign) => ({
+      ...campaign,
+      automationEnabled: campaignAutomationEnabled[campaign.id] ?? campaign.automationEnabled,
+    })),
+    [campaignAutomationEnabled, campaigns],
+  );
 
   const filteredCampaigns = useMemo(
     () => filterAdminCampaignRows(campaigns, query, status),
@@ -145,7 +157,7 @@ export function AdminCampaignOperationsTable({
     if (autoLinkStarted.current) return;
     autoLinkStarted.current = true;
 
-    const campaignIds = automaticNaverCampaignIds(campaigns);
+    const campaignIds = automaticNaverCampaignIds(automationCampaigns);
     if (!campaignIds.length) return;
 
     let cancelled = false;
@@ -157,11 +169,11 @@ export function AdminCampaignOperationsTable({
     return () => {
       cancelled = true;
     };
-  }, [automationEnabled, automationLocked, campaigns, router, runNaverAutoLink]);
+  }, [automationCampaigns, automationEnabled, automationLocked, router, runNaverAutoLink]);
 
   const runAllAutomation = async () => {
     if (automationLocked || !automationEnabled) return;
-    const plan = adminCampaignAutomationPlan(campaigns);
+    const plan = adminCampaignAutomationPlan(automationCampaigns);
     automationRunning.current = true;
     setAutomationLoading(true);
     setAutomationMessage(null);
@@ -226,6 +238,41 @@ export function AdminCampaignOperationsTable({
       setAutomationMessage({ text: "네트워크 오류로 수동 세팅을 시작하지 못했습니다.", hasError: true });
     } finally {
       setManualSetupCampaignId(null);
+    }
+  };
+
+  const toggleCampaignAutomation = async (campaign: AdminCampaignOperationsRow) => {
+    const current = campaignAutomationEnabled[campaign.id] ?? campaign.automationEnabled;
+    const next = !current;
+    setAutomationToggleCampaignId(campaign.id);
+    setAutomationMessage(null);
+    try {
+      const response = await fetch(`/api/admin/campaigns/${campaign.id}/automation`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ enabled: next }),
+      });
+      const body = (await response.json().catch(() => null)) as {
+        campaign?: { automationEnabled?: boolean };
+        error?: { message?: string };
+      } | null;
+      if (!response.ok || typeof body?.campaign?.automationEnabled !== "boolean") {
+        setAutomationMessage({
+          text: body?.error?.message ?? "캠페인 자동화를 변경하지 못했습니다.",
+          hasError: true,
+        });
+        return;
+      }
+      setCampaignAutomationEnabled((values) => ({ ...values, [campaign.id]: body.campaign!.automationEnabled! }));
+      setAutomationMessage({
+        text: body.campaign.automationEnabled ? `${campaign.businessName} 자동화를 켰습니다.` : `${campaign.businessName} 자동화를 껐습니다. 수동 세팅은 계속 사용할 수 있습니다.`,
+        hasError: false,
+      });
+      router.refresh();
+    } catch {
+      setAutomationMessage({ text: "네트워크 오류로 캠페인 자동화를 변경하지 못했습니다.", hasError: true });
+    } finally {
+      setAutomationToggleCampaignId(null);
     }
   };
 
@@ -318,7 +365,10 @@ export function AdminCampaignOperationsTable({
                 automationLocked={automationLocked}
                 manualSetupEligible={campaign.manualSetupEligible}
                 manualSetupLoading={manualSetupCampaignId === campaign.id}
+                automationEnabled={campaignAutomationEnabled[campaign.id] ?? campaign.automationEnabled}
+                automationToggleLoading={automationToggleCampaignId === campaign.id}
                 onManualSetup={() => void runManualSetup(campaign.id)}
+                onAutomationToggle={() => void toggleCampaignAutomation(campaign)}
                 onToggle={() => setExpandedCampaignId(expanded ? null : campaign.id)}
               />
             );
@@ -375,7 +425,10 @@ export function AdminCampaignOperationsTable({
                     automationLocked={automationLocked}
                     manualSetupEligible={campaign.manualSetupEligible}
                     manualSetupLoading={manualSetupCampaignId === campaign.id}
+                    automationEnabled={campaignAutomationEnabled[campaign.id] ?? campaign.automationEnabled}
+                    automationToggleLoading={automationToggleCampaignId === campaign.id}
                     onManualSetup={() => void runManualSetup(campaign.id)}
+                    onAutomationToggle={() => void toggleCampaignAutomation(campaign)}
                     onToggle={() =>
                       setExpandedCampaignId(expanded ? null : campaign.id)
                     }
@@ -421,7 +474,10 @@ function MobileCampaignCard({
   automationLocked,
   manualSetupEligible,
   manualSetupLoading,
+  automationEnabled,
+  automationToggleLoading,
   onManualSetup,
+  onAutomationToggle,
   onToggle,
 }: {
   campaign: AdminCampaignOperationsRow;
@@ -431,7 +487,10 @@ function MobileCampaignCard({
   automationLocked: boolean;
   manualSetupEligible: boolean;
   manualSetupLoading: boolean;
+  automationEnabled: boolean;
+  automationToggleLoading: boolean;
   onManualSetup: () => void;
+  onAutomationToggle: () => void;
   onToggle: () => void;
 }) {
   const googleMapsUrl = safeGoogleMapsUrl(campaign.googleMapsUrl);
@@ -493,6 +552,11 @@ function MobileCampaignCard({
         </div>
 
         <div className="mt-3 grid grid-cols-2 gap-2">
+          <CampaignAutomationToggle
+            enabled={automationEnabled}
+            loading={automationToggleLoading}
+            onToggle={onAutomationToggle}
+          />
           <button
             type="button"
             onClick={onManualSetup}
@@ -569,7 +633,10 @@ function CampaignRows({
   automationLocked,
   manualSetupEligible,
   manualSetupLoading,
+  automationEnabled,
+  automationToggleLoading,
   onManualSetup,
+  onAutomationToggle,
   onToggle,
 }: {
   campaign: AdminCampaignOperationsRow;
@@ -579,7 +646,10 @@ function CampaignRows({
   automationLocked: boolean;
   manualSetupEligible: boolean;
   manualSetupLoading: boolean;
+  automationEnabled: boolean;
+  automationToggleLoading: boolean;
   onManualSetup: () => void;
+  onAutomationToggle: () => void;
   onToggle: () => void;
 }) {
   const googleMapsUrl = safeGoogleMapsUrl(campaign.googleMapsUrl);
@@ -693,6 +763,12 @@ function CampaignRows({
         </TableCell>
         <TableCell align="right">
           <div className="flex justify-end gap-1.5">
+            <CampaignAutomationToggle
+              enabled={automationEnabled}
+              loading={automationToggleLoading}
+              onToggle={onAutomationToggle}
+              compact
+            />
             <button
               type="button"
               onClick={onManualSetup}
@@ -769,6 +845,39 @@ function TableHeading({
     >
       {children}
     </th>
+  );
+}
+
+function CampaignAutomationToggle({
+  enabled,
+  loading,
+  onToggle,
+  compact = false,
+}: {
+  enabled: boolean;
+  loading: boolean;
+  onToggle: () => void;
+  compact?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={enabled}
+      aria-label={`캠페인 자동화 ${enabled ? "끄기" : "켜기"}`}
+      disabled={loading}
+      onClick={onToggle}
+      className={`inline-flex items-center justify-center gap-1.5 rounded-[9px] border px-3 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+        compact ? "h-9" : "h-10"
+      } ${
+        enabled
+          ? "border-success/30 bg-success-tint text-[#087a5c] hover:border-success"
+          : "border-line-strong bg-surface-alt text-ink-weak hover:border-ink-weak"
+      }`}
+    >
+      <span aria-hidden="true" className={`h-1.5 w-1.5 rounded-full ${enabled ? "bg-success" : "bg-ink-weak"}`} />
+      {loading ? "저장 중" : enabled ? "자동 ON" : "자동 OFF"}
+    </button>
   );
 }
 
