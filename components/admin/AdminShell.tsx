@@ -130,6 +130,7 @@ export function AdminShell({
     <div className="min-h-dvh bg-canvas" data-admin-display-mode={displayMode}>
       <div
         className={cn(
+          "admin-desktop-compact",
           "mx-auto flex min-h-dvh",
           wideContent ? "max-w-[1920px]" : "max-w-[1600px]",
         )}

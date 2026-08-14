@@ -71,6 +71,14 @@ body {
   display: none !important;
 }
 
+/* PC 모드에서는 관리자 업무 화면을 80% 배율로 표시해 표와 도구를 한 화면에 더 많이 보여준다. */
+@media (min-width: 1024px) {
+  [data-admin-display-mode="desktop"] .admin-desktop-compact {
+    width: 125%;
+    zoom: 0.8;
+  }
+}
+
 /* a11y: 키보드 포커스 가시화(마우스 클릭에는 안 보이게 focus-visible) */
 :focus-visible {
   outline: 2px solid var(--color-brand);
