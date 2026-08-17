@@ -592,7 +592,7 @@ describe("campaign review draft generator", () => {
         evidenceIdsJson: "[]",
         maxSimilarity: 0.1,
         qualityPassed: true,
-        createdAt: new Date(`2026-07-20T03:${String(slot).padStart(2, "0")}:00.000Z`),
+        createdAt: new Date("2026-07-20T03:00:00.000Z"),
       })),
     });
 

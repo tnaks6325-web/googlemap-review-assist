@@ -1834,7 +1834,7 @@ export async function generateCampaignReviewDraftPreview(
     }),
     db.campaignPreparedDraft.findMany({
       where: { campaignId: campaign.id, qualityPassed: true },
-      orderBy: { createdAt: "desc" },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: 50,
       select: { text: true },
     }),

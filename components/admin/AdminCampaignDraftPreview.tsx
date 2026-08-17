@@ -350,6 +350,7 @@ export function AdminCampaignDraftPreview({
   const [mutatingDraftId, setMutatingDraftId] = useState<string | null>(null);
   const [pendingReview, setPendingReview] = useState<PendingDraftReview | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const historyRequestRef = useRef(0);
   const preparedDraftCount = metrics.unassignedCount;
 
   useEffect(() => {
@@ -385,31 +386,39 @@ export function AdminCampaignDraftPreview({
   };
 
   const loadHistory = async (status = filter) => {
+    const requestId = ++historyRequestRef.current;
     setBusy("loading");
+    setLoadingMore(false);
     setError(null);
     try {
-      applyHistory(await fetchHistory(status));
+      const data = await fetchHistory(status);
+      if (requestId !== historyRequestRef.current) return;
+      applyHistory(data);
     } catch (cause) {
+      if (requestId !== historyRequestRef.current) return;
       setError(cause instanceof Error ? cause.message : "저장된 원고를 불러오지 못했습니다.");
     } finally {
-      setBusy(null);
+      if (requestId === historyRequestRef.current) setBusy(null);
     }
   };
 
   const loadMore = async () => {
     if (!history?.nextCursor || loadingMore) return;
+    const requestId = ++historyRequestRef.current;
     setLoadingMore(true);
     setError(null);
     try {
       const next = await fetchHistory(filter, history.nextCursor);
+      if (requestId !== historyRequestRef.current) return;
       setHistory((current) => current
         ? { ...next, items: [...current.items, ...next.items] }
         : next);
       setMetrics(next.metrics);
     } catch (cause) {
+      if (requestId !== historyRequestRef.current) return;
       setError(cause instanceof Error ? cause.message : "저장된 원고를 더 불러오지 못했습니다.");
     } finally {
-      setLoadingMore(false);
+      if (requestId === historyRequestRef.current) setLoadingMore(false);
     }
   };
 
