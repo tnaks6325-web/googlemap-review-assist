@@ -2053,6 +2053,14 @@ export async function listCampaignPreparedDrafts(
 export async function auditCampaignPreparedDraftRevisions(
   db: DbClient = prisma,
 ): Promise<CampaignPreparedDraftRevisionAudit> {
+  if (hasTransaction(db)) {
+    return db.$transaction(
+      (tx) => auditCampaignPreparedDraftRevisions(tx),
+      // The local SQLite client exposes only Serializable; Vercel generates the
+      // PostgreSQL client, where RepeatableRead provides the required snapshot.
+      { isolationLevel: "RepeatableRead" as never },
+    );
+  }
   const revisions = await db.campaignPreparedDraftRevision.findMany({
     orderBy: { createdAt: "desc" },
     select: {
