@@ -545,7 +545,7 @@ describe("campaign review draft generator", () => {
     await migrateLegacyCampaignPreparedDrafts(campaign.id, prisma);
     await migrateLegacyCampaignPreparedDrafts(campaign.id, prisma);
 
-    const history = await listCampaignPreparedDrafts(campaign.id, prisma);
+    const history = await listCampaignPreparedDrafts(campaign.id, {}, prisma);
     expect(history.metrics).toMatchObject({
       totalCount: 1,
       unassignedCount: 1,
@@ -562,6 +562,53 @@ describe("campaign review draft generator", () => {
     await expect(
       prisma.campaignReviewDraft.count({ where: { id: legacy.id } }),
     ).resolves.toBe(1);
+  });
+
+  it("paginates prepared drafts within the selected status", async () => {
+    const { campaign } = await createAssignment({
+      googlePlace: true,
+      googleReview: true,
+    });
+    const batch = await prisma.campaignPreparedDraftBatch.create({
+      data: {
+        campaignId: campaign.id,
+        provider: "template",
+        model: "template-v2",
+        sourceGroupsJson: "[]",
+        sourceGroupCount: 2,
+        promptVersion: "review-diversity-v6",
+        metricsJson: "{}",
+      },
+    });
+    await prisma.campaignPreparedDraft.createMany({
+      data: Array.from({ length: 26 }, (_, slot) => ({
+        campaignId: campaign.id,
+        batchId: batch.id,
+        slot,
+        styleId: `page-style-${slot}`,
+        toneLabel: "담백형",
+        structureLabel: "세부 우선",
+        text: `페이지 검증을 위한 저장 원고 ${slot + 1}입니다. 충분한 길이의 내용으로 작성합니다.`,
+        evidenceIdsJson: "[]",
+        maxSimilarity: 0.1,
+        qualityPassed: true,
+        createdAt: new Date(`2026-07-20T03:${String(slot).padStart(2, "0")}:00.000Z`),
+      })),
+    });
+
+    const firstPage = await listCampaignPreparedDrafts(campaign.id, { status: "UNASSIGNED" }, prisma);
+    expect(firstPage.metrics.unassignedCount).toBe(26);
+    expect(firstPage.items).toHaveLength(25);
+    expect(firstPage.hasMore).toBe(true);
+    expect(firstPage.nextCursor).toBeTruthy();
+
+    const secondPage = await listCampaignPreparedDrafts(campaign.id, {
+      status: "UNASSIGNED",
+      cursor: firstPage.nextCursor,
+    }, prisma);
+    expect(secondPage.items).toHaveLength(1);
+    expect(secondPage.hasMore).toBe(false);
+    expect(secondPage.nextCursor).toBeNull();
   });
 
   it("assigns a stored unassigned draft before generating a new reviewer draft", async () => {
