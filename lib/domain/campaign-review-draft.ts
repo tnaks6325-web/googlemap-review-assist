@@ -135,6 +135,7 @@ export interface CampaignReviewDraftPreview {
 export interface CampaignPreparedDraftHistory {
   campaignId: string;
   hasMore: boolean;
+  nextCursor: string | null;
   metrics: {
     totalCount: number;
     unassignedCount: number;
@@ -1930,6 +1931,7 @@ export async function generateCampaignReviewDraftPreview(
 
 export async function listCampaignPreparedDrafts(
   campaignId: string,
+  options: { status?: "UNASSIGNED" | "QUALITY_EXCLUDED" | "ASSIGNED"; cursor?: string | null } = {},
   db: DbClient = prisma,
 ): Promise<CampaignPreparedDraftHistory> {
   const cleanCampaignId = campaignId.trim();
@@ -1953,9 +1955,15 @@ export async function listCampaignPreparedDrafts(
     batchCount,
   ] = await Promise.all([
     db.campaignPreparedDraft.findMany({
-      where: { campaignId: cleanCampaignId },
+      where: {
+        campaignId: cleanCampaignId,
+        ...(options.status === "UNASSIGNED" ? { qualityPassed: true, assignedReceiptId: null } : {}),
+        ...(options.status === "QUALITY_EXCLUDED" ? { qualityPassed: false } : {}),
+        ...(options.status === "ASSIGNED" ? { qualityPassed: true, assignedReceiptId: { not: null } } : {}),
+      },
       orderBy: { createdAt: "desc" },
-      take: 250,
+      take: 26,
+      ...(options.cursor ? { cursor: { id: options.cursor }, skip: 1 } : {}),
       include: {
         batch: {
           select: {
@@ -1987,7 +1995,8 @@ export async function listCampaignPreparedDrafts(
     }),
     db.campaignPreparedDraftBatch.count({ where: { campaignId: cleanCampaignId } }),
   ]);
-  const items: CampaignPreparedDraftHistory["items"] = rows.map((row) => ({
+  const pageRows = rows.slice(0, 25);
+  const items: CampaignPreparedDraftHistory["items"] = pageRows.map((row) => ({
     id: row.id,
     batchId: row.batchId,
     slot: row.slot,
@@ -2011,7 +2020,8 @@ export async function listCampaignPreparedDrafts(
   }));
   return {
     campaignId: cleanCampaignId,
-    hasMore: totalCount > items.length,
+    hasMore: rows.length > 25,
+    nextCursor: rows.length > 25 ? pageRows.at(-1)?.id ?? null : null,
     metrics: {
       totalCount,
       unassignedCount,
