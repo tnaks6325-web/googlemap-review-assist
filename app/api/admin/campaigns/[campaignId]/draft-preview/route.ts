@@ -24,8 +24,14 @@ export async function GET(
   if (!adminId) return err("UNAUTHORIZED", "관리자 로그인이 필요해요", 401);
 
   const { campaignId } = await params;
+  const url = new URL(_req.url);
+  const status = url.searchParams.get("status");
+  const cursor = url.searchParams.get("cursor");
   try {
-    return ok(await listCampaignPreparedDrafts(campaignId));
+    return ok(await listCampaignPreparedDrafts(campaignId, {
+      status: status === "UNASSIGNED" || status === "QUALITY_EXCLUDED" || status === "ASSIGNED" ? status : undefined,
+      cursor: cursor || null,
+    }));
   } catch (error) {
     if (error instanceof CampaignReviewDraftError) {
       return err(error.code, error.message, error.status);

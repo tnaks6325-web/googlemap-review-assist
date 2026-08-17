@@ -35,6 +35,7 @@ export interface PreparedDraftItem {
 export interface PreparedDraftHistory {
   campaignId: string;
   hasMore: boolean;
+  nextCursor: string | null;
   metrics: PreparedDraftMetrics;
   items: PreparedDraftItem[];
 }
@@ -337,6 +338,7 @@ export function AdminCampaignDraftPreview({
 }) {
   const draftTarget = campaignPreparedDraftReserveTarget(totalQuota);
   const [busy, setBusy] = useState<"loading" | "generating" | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [history, setHistory] = useState<PreparedDraftHistory | null>(null);
   const [metrics, setMetrics] = useState(initialMetrics);
   const [filter, setFilter] = useState<DraftStatus>("UNASSIGNED");
@@ -348,6 +350,7 @@ export function AdminCampaignDraftPreview({
   const [mutatingDraftId, setMutatingDraftId] = useState<string | null>(null);
   const [pendingReview, setPendingReview] = useState<PendingDraftReview | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const historyRequestRef = useRef(0);
   const preparedDraftCount = metrics.unassignedCount;
 
   useEffect(() => {
@@ -364,8 +367,10 @@ export function AdminCampaignDraftPreview({
     };
   }, [open]);
 
-  const fetchHistory = async () => {
-    const response = await fetch(`/api/admin/campaigns/${campaignId}/draft-preview`);
+  const fetchHistory = async (status = filter, cursor?: string | null) => {
+    const search = new URLSearchParams({ status });
+    if (cursor) search.set("cursor", cursor);
+    const response = await fetch(`/api/admin/campaigns/${campaignId}/draft-preview?${search.toString()}`);
     const data = (await response.json().catch(() => null)) as
       | (PreparedDraftHistory & ErrorResult)
       | null;
@@ -380,22 +385,47 @@ export function AdminCampaignDraftPreview({
     setMetrics(data.metrics);
   };
 
-  const loadHistory = async () => {
+  const loadHistory = async (status = filter) => {
+    const requestId = ++historyRequestRef.current;
     setBusy("loading");
+    setLoadingMore(false);
     setError(null);
     try {
-      applyHistory(await fetchHistory());
+      const data = await fetchHistory(status);
+      if (requestId !== historyRequestRef.current) return;
+      applyHistory(data);
     } catch (cause) {
+      if (requestId !== historyRequestRef.current) return;
       setError(cause instanceof Error ? cause.message : "저장된 원고를 불러오지 못했습니다.");
     } finally {
-      setBusy(null);
+      if (requestId === historyRequestRef.current) setBusy(null);
+    }
+  };
+
+  const loadMore = async () => {
+    if (!history?.nextCursor || loadingMore) return;
+    const requestId = ++historyRequestRef.current;
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const next = await fetchHistory(filter, history.nextCursor);
+      if (requestId !== historyRequestRef.current) return;
+      setHistory((current) => current
+        ? { ...next, items: [...current.items, ...next.items] }
+        : next);
+      setMetrics(next.metrics);
+    } catch (cause) {
+      if (requestId !== historyRequestRef.current) return;
+      setError(cause instanceof Error ? cause.message : "저장된 원고를 더 불러오지 못했습니다.");
+    } finally {
+      if (requestId === historyRequestRef.current) setLoadingMore(false);
     }
   };
 
   const openHistory = () => {
     setPendingReview(null);
     setOpen(true);
-    void loadHistory();
+    void loadHistory(filter);
   };
 
   const generate = async () => {
@@ -606,6 +636,7 @@ export function AdminCampaignDraftPreview({
                     setFilter(item.status);
                     setPendingReview(null);
                     setError(null);
+                    void loadHistory(item.status);
                   }}
                   className={`rounded-full px-3 py-1.5 text-xs font-bold ${
                     filter === item.status ? "bg-brand text-white" : "bg-surface-alt text-ink-sub"
@@ -770,9 +801,16 @@ export function AdminCampaignDraftPreview({
             )}
 
             {history?.hasMore ? (
-              <p className="mt-3 text-center text-xs text-ink-weak">
-                최신 원고 250건만 표시하고 있습니다.
-              </p>
+              <div className="mt-4 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => void loadMore()}
+                  disabled={loadingMore || mutatingDraftId !== null}
+                  className="h-9 rounded-[9px] border border-line bg-canvas px-4 text-xs font-bold text-ink-sub hover:bg-surface-alt disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {loadingMore ? "원고를 불러오는 중…" : "원고 더 보기"}
+                </button>
+              </div>
             ) : null}
 
             <div className="mt-5 flex justify-end">

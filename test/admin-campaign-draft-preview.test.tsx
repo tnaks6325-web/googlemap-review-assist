@@ -287,6 +287,7 @@ describe("admin campaign prepared drafts", () => {
       loadHistory: async () => ({
         campaignId: "campaign-1",
         hasMore: false,
+        nextCursor: null,
         metrics: {
           totalCount: storedCounts[round - 1],
           unassignedCount: storedCounts[round - 1],
@@ -314,6 +315,7 @@ describe("admin campaign prepared drafts", () => {
       loadHistory: async () => ({
         campaignId: "campaign-1",
         hasMore: false,
+        nextCursor: null,
         metrics: {
           totalCount: 25,
           unassignedCount: 25,
