@@ -163,6 +163,20 @@ export interface CampaignPreparedDraftHistory {
   }>;
 }
 
+export interface CampaignPreparedDraftRevisionAudit {
+  revisedDraftCount: number;
+  matchingDraftCount: number;
+  mismatches: Array<{
+    campaignId: string;
+    campaignName: string;
+    businessName: string;
+    draftId: string;
+    latestRevisionId: string;
+    revisedAt: string;
+    state: "TEXT_MISMATCH" | "DRAFT_MISSING";
+  }>;
+}
+
 export class CampaignReviewDraftError extends Error {
   constructor(
     public code: string,
@@ -2030,6 +2044,69 @@ export async function listCampaignPreparedDrafts(
       batchCount,
     },
     items,
+  };
+}
+
+// One-time operational audit: compare each draft with the latest saved admin revision.
+// It returns metadata only, never draft text, so the authenticated caller can identify
+// inconsistent records without exposing their contents through an admin API response.
+export async function auditCampaignPreparedDraftRevisions(
+  db: DbClient = prisma,
+): Promise<CampaignPreparedDraftRevisionAudit> {
+  if (hasTransaction(db)) {
+    return db.$transaction(
+      (tx) => auditCampaignPreparedDraftRevisions(tx),
+      // The local SQLite client exposes only Serializable; Vercel generates the
+      // PostgreSQL client, where RepeatableRead provides the required snapshot.
+      { isolationLevel: "RepeatableRead" as never },
+    );
+  }
+  const revisions = await db.campaignPreparedDraftRevision.findMany({
+    orderBy: { createdAt: "desc" },
+    select: {
+      id: true,
+      campaignId: true,
+      draftId: true,
+      afterText: true,
+      createdAt: true,
+      campaign: {
+        select: {
+          name: true,
+          business: { select: { name: true } },
+        },
+      },
+    },
+  });
+  const latestByDraft = new Map<string, typeof revisions[number]>();
+  for (const revision of revisions) {
+    if (!latestByDraft.has(revision.draftId)) latestByDraft.set(revision.draftId, revision);
+  }
+  const draftIds = [...latestByDraft.keys()];
+  const currentDrafts = draftIds.length
+    ? await db.campaignPreparedDraft.findMany({
+        where: { id: { in: draftIds } },
+        select: { id: true, text: true },
+      })
+    : [];
+  const currentTextById = new Map(currentDrafts.map((draft) => [draft.id, draft.text]));
+  const mismatches: CampaignPreparedDraftRevisionAudit["mismatches"] = [];
+  for (const revision of latestByDraft.values()) {
+    const currentText = currentTextById.get(revision.draftId);
+    if (currentText === revision.afterText) continue;
+    mismatches.push({
+      campaignId: revision.campaignId,
+      campaignName: revision.campaign.name,
+      businessName: revision.campaign.business.name,
+      draftId: revision.draftId,
+      latestRevisionId: revision.id,
+      revisedAt: revision.createdAt.toISOString(),
+      state: currentText === undefined ? "DRAFT_MISSING" : "TEXT_MISMATCH",
+    });
+  }
+  return {
+    revisedDraftCount: latestByDraft.size,
+    matchingDraftCount: latestByDraft.size - mismatches.length,
+    mismatches,
   };
 }
 
