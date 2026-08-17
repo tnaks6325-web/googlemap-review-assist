@@ -8,6 +8,7 @@ import {
   promoteCampaignQualityExcludedDraft,
   updateCampaignPreparedDraft,
 } from "@/lib/domain/campaign-review-draft";
+import { prisma } from "@/lib/db";
 import { err, ok } from "@/lib/http";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 
@@ -20,12 +21,16 @@ type DraftRouteContext = {
   params: Promise<{ campaignId: string; draftId: string }>;
 };
 
-async function authorizeMutation(req: Request, action: string) {
+async function authorizeMutation(req: Request) {
   if (!checkOrigin(req)) return err("BAD_ORIGIN", "요청 출처가 올바르지 않아요", 403);
   const adminId = await getAdminId();
   if (!adminId) return err("UNAUTHORIZED", "관리자 로그인이 필요해요", 401);
   const lockResponse = await campaignOperationsMutationLockResponse();
   if (lockResponse) return lockResponse;
+  return adminId;
+}
+
+async function authorizeRateLimitedMutation(req: Request, action: "delete" | "promote", adminId: string) {
   const allowed = await rateLimit(
     `admin:prepared-draft:${action}:${adminId}:${clientIp(req)}`,
     120,
@@ -51,7 +56,7 @@ function mutationError(error: unknown, fallbackCode: string, fallbackMessage: st
 }
 
 export async function PATCH(req: Request, { params }: DraftRouteContext) {
-  const authorization = await authorizeMutation(req, "update");
+  const authorization = await authorizeMutation(req);
   if (typeof authorization !== "string") return authorization;
 
   const body = (await req.json().catch(() => null)) as
@@ -60,8 +65,18 @@ export async function PATCH(req: Request, { params }: DraftRouteContext) {
   if (body?.force !== undefined && typeof body.force !== "boolean") {
     return err("INVALID_DRAFT_OVERRIDE", "경고 무시 여부를 확인해 주세요", 400);
   }
-  const { campaignId, draftId } = await params;
+  const { campaignId: rawCampaignId, draftId: rawDraftId } = await params;
+  const campaignId = rawCampaignId.trim();
+  const draftId = rawDraftId.trim();
   try {
+    const draft = await prisma.campaignPreparedDraft.findFirst({
+      where: { id: draftId, campaignId },
+      select: { qualityPassed: true },
+    });
+    if (body?.action === "PROMOTE_TO_UNASSIGNED" || draft?.qualityPassed === false) {
+      const rateLimitResponse = await authorizeRateLimitedMutation(req, "promote", authorization);
+      if (typeof rateLimitResponse !== "string") return rateLimitResponse;
+    }
     if (body?.action === "PROMOTE_TO_UNASSIGNED") {
       return ok({
         draft: await promoteCampaignQualityExcludedDraft(campaignId, draftId, {
@@ -85,8 +100,10 @@ export async function PATCH(req: Request, { params }: DraftRouteContext) {
 }
 
 export async function DELETE(req: Request, { params }: DraftRouteContext) {
-  const authorization = await authorizeMutation(req, "delete");
+  const authorization = await authorizeMutation(req);
   if (typeof authorization !== "string") return authorization;
+  const rateLimitResponse = await authorizeRateLimitedMutation(req, "delete", authorization);
+  if (typeof rateLimitResponse !== "string") return rateLimitResponse;
 
   const { campaignId, draftId } = await params;
   try {
