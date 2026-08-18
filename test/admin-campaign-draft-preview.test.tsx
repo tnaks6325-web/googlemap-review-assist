@@ -9,6 +9,7 @@ import {
   deletePreparedDraftRequest,
   deleteQualityExcludedDraftsRequest,
   promotePreparedDraftRequest,
+  regeneratePreparedDraftRequest,
   runCampaignDraftAutofill,
   updatePreparedDraftRequest,
 } from "@/components/admin/AdminCampaignDraftPreview";
@@ -29,6 +30,9 @@ describe("admin campaign prepared drafts", () => {
     expect(routeSource).toContain("getAdminId()");
     expect(routeSource).toContain("updateCampaignPreparedDraft");
     expect(routeSource).toContain("deleteCampaignPreparedDraft");
+    expect(routeSource).toContain("regenerateCampaignPreparedDraft");
+    expect(routeSource).toContain('action === "REGENERATE"');
+    expect(routeSource).toContain("campaignOperationsMutationLockResponse");
     expect(routeSource).toContain("CampaignReviewDraftWarningError");
     expect(routeSource).toContain("warnings: error.warnings");
     expect(routeSource).toContain("force: body.force === true");
@@ -199,6 +203,22 @@ describe("admin campaign prepared drafts", () => {
       draftId: "draft-2",
       fetcher: failureFetcher,
     })).rejects.toThrow("이미 배정된 원고입니다.");
+  });
+
+  it("requests a protected replacement for one prepared draft", async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      draft: { id: "draft-1", text: "새로 생성된 원고입니다.", qualityPassed: true, status: "UNASSIGNED" },
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+
+    await expect(regeneratePreparedDraftRequest({ campaignId: "campaign 1", draftId: "draft/1", fetcher }))
+      .resolves.toMatchObject({ id: "draft-1", status: "UNASSIGNED" });
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/admin/campaigns/campaign%201/drafts/draft%2F1",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ action: "REGENERATE" }),
+      }),
+    );
   });
 
   it("moves a quality-excluded draft into the unassigned pool", async () => {

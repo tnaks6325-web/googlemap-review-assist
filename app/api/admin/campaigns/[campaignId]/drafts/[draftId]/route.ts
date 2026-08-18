@@ -6,6 +6,7 @@ import {
   CampaignReviewDraftWarningError,
   deleteCampaignPreparedDraft,
   promoteCampaignQualityExcludedDraft,
+  regenerateCampaignPreparedDraft,
   updateCampaignPreparedDraft,
 } from "@/lib/domain/campaign-review-draft";
 import { err, ok } from "@/lib/http";
@@ -13,6 +14,7 @@ import { clientIp, rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 300;
 
 const HOUR = 60 * 60 * 1000;
 
@@ -66,6 +68,13 @@ export async function PATCH(req: Request, { params }: DraftRouteContext) {
       return ok({
         draft: await promoteCampaignQualityExcludedDraft(campaignId, draftId, {
           force: body.force === true,
+        }),
+      });
+    }
+    if (body?.action === "REGENERATE") {
+      return ok({
+        draft: await regenerateCampaignPreparedDraft(campaignId, draftId, {
+          adminId: authorization,
         }),
       });
     }

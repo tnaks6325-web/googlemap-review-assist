@@ -2041,7 +2041,7 @@ async function findMutablePreparedDraft(campaignId: string, draftId: string, db:
   }
   const draft = await db.campaignPreparedDraft.findFirst({
     where: { id: cleanDraftId, campaignId: cleanCampaignId },
-    select: { id: true, campaignId: true, text: true, qualityPassed: true, assignedReceiptId: true },
+    select: { id: true, campaignId: true, slot: true, text: true, qualityPassed: true, assignedReceiptId: true },
   });
   if (!draft) {
     throw new CampaignReviewDraftError("DRAFT_NOT_FOUND", "저장된 원고를 찾을 수 없습니다.", 404);
@@ -2131,6 +2131,100 @@ export async function updateCampaignPreparedDraft(
     }
   });
   return { id: draft.id, text, qualityPassed: true, status: "UNASSIGNED" };
+}
+
+export async function regenerateCampaignPreparedDraft(
+  campaignId: string,
+  draftId: string,
+  input: { adminId: string },
+  db: DbClient = prisma,
+): Promise<CampaignPreparedDraftMutationResult> {
+  const draft = await findMutablePreparedDraft(campaignId, draftId, db);
+  const adminId = input.adminId.trim();
+  if (!adminId || adminId.length > 191) {
+    throw new CampaignReviewDraftError("INVALID_ADMIN", "관리자 정보를 확인해 주세요.", 400);
+  }
+  const campaign = await fetchCampaignWithContext(db, draft.campaignId);
+  if (!campaign) {
+    throw new CampaignReviewDraftError("CAMPAIGN_NOT_FOUND", "캠페인을 찾을 수 없습니다.", 404);
+  }
+  const context = buildDraftContext({
+    assignmentId: `admin-regenerate:${campaign.id}:${draft.id}`,
+    campaignId: campaign.id,
+    businessId: campaign.businessId,
+    campaign,
+    business: campaign.business,
+  });
+  assertDraftContextReady(context);
+  const existingPassedDrafts = await db.campaignPreparedDraft.findMany({
+    where: { campaignId: campaign.id, id: { not: draft.id }, qualityPassed: true },
+    select: { text: true },
+    take: 250,
+  });
+  const slot = REVIEW_DRAFT_STYLE_SLOTS.find((item) => item.index === draft.slot)
+    ?? REVIEW_DRAFT_STYLE_SLOTS[0];
+  const [item] = await generateMatrixPreviewItems(
+    context,
+    1,
+    undefined,
+    [draft.text, ...existingPassedDrafts.map((row) => row.text)],
+    [slot],
+  );
+  if (!item?.qualityPassed) {
+    throw new CampaignReviewDraftError(
+      "REGENERATED_DRAFT_QUALITY_FAILED",
+      "새 원고가 품질 검사를 통과하지 못해 기존 원고를 유지했어요. 다시 시도해 주세요.",
+      422,
+    );
+  }
+  const provider = envValue("REVIEW_DRAFT_PROVIDER") || "gemini";
+  const model = provider === "template"
+    ? "template-v2"
+    : envValue("REVIEW_DRAFT_MODEL") || DEFAULT_REVIEW_DRAFT_MODEL;
+  const sourceGroups = sourceGroupMeta(context.sourceGroups);
+  const generatedAt = new Date();
+  await inTransaction(db, async (tx) => {
+    const batch = await tx.campaignPreparedDraftBatch.create({
+      data: {
+        campaignId: campaign.id,
+        provider,
+        model,
+        sourceGroupsJson: JSON.stringify(sourceGroups),
+        sourceGroupCount: sourceGroups.length,
+        promptVersion: REVIEW_DRAFT_DIVERSITY_VERSION,
+        metricsJson: JSON.stringify({ regeneratedDraftId: draft.id, maxSimilarity: item.maxSimilarity }),
+        generatedAt,
+      },
+    });
+    const updated = await tx.campaignPreparedDraft.updateMany({
+      where: { id: draft.id, campaignId: draft.campaignId, assignedReceiptId: null },
+      data: {
+        batchId: batch.id,
+        slot: item.slot,
+        styleId: item.styleId,
+        toneLabel: item.toneLabel,
+        structureLabel: item.structureLabel,
+        text: item.text,
+        evidenceIdsJson: JSON.stringify(item.evidenceIds),
+        maxSimilarity: item.maxSimilarity,
+        qualityPassed: true,
+        createdAt: generatedAt,
+      },
+    });
+    if (updated.count !== 1) {
+      throw new CampaignReviewDraftError("DRAFT_ALREADY_ASSIGNED", "원고를 재생성하는 동안 참여자에게 배정되어 기존 원고를 유지했어요.", 409);
+    }
+    await tx.campaignPreparedDraftRevision.create({
+      data: {
+        campaignId: draft.campaignId,
+        draftId: draft.id,
+        adminId,
+        beforeText: draft.text,
+        afterText: item.text,
+      },
+    });
+  });
+  return { id: draft.id, text: item.text, qualityPassed: true, status: "UNASSIGNED" };
 }
 
 export async function promoteCampaignQualityExcludedDraft(
