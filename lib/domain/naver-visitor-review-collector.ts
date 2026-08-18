@@ -32,7 +32,7 @@ function boundedMessage(error: unknown) {
 function statusFromPageText(text: string): NaverVisitorReviewRunStatus | null {
   const normalized = text.toLowerCase();
   if (/captcha|로봇|비정상적인 접근|자동화된 접근/.test(normalized)) return "CAPTCHA_REQUIRED";
-  if (/접근이 제한|접근이 차단|차단되었습니다|권한이 없습니다/.test(normalized)) return "BLOCKED";
+  if (/접근이 제한|접근이 차단|차단되었습니다|권한이 없습니다|과도한 접근 요청|서비스 이용이 제한/.test(normalized)) return "BLOCKED";
   return null;
 }
 
