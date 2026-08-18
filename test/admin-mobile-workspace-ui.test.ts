@@ -17,6 +17,10 @@ const campaignSource = readFileSync(
   new URL("../components/admin/AdminCampaignOperationsTable.tsx", import.meta.url),
   "utf8",
 );
+const campaignPageSource = readFileSync(
+  new URL("../app/admin/campaigns/page.tsx", import.meta.url),
+  "utf8",
+);
 
 describe("admin mobile workspace presentation", () => {
   it("uses a compact mobile header and an expandable section menu", () => {
@@ -36,5 +40,17 @@ describe("admin mobile workspace presentation", () => {
     expect(automationSource).toContain("MobileAutomationStatusCard");
     expect(campaignSource).toContain("useAdminMobileWorkspace");
     expect(campaignSource).toContain("MobileCampaignCard");
+  });
+
+  it("keeps the sheet inspector inside the mobile canvas", () => {
+    expect(campaignPageSource).toContain("admin-campaign-sheet-layout");
+    expect(globalsSource).toContain('[data-admin-display-mode="mobile"] .admin-campaign-sheet-layout');
+  });
+
+  it("progressively reveals long mobile lists", () => {
+    expect(automationSource).toContain("MOBILE_AUTOMATION_PAGE_SIZE = 5");
+    expect(automationSource).toContain("filteredRows.slice(0, mobileVisibleCount)");
+    expect(campaignSource).toContain("MOBILE_CAMPAIGN_PAGE_SIZE = 6");
+    expect(campaignSource).toContain("visibleCampaigns");
   });
 });

@@ -38,6 +38,7 @@ const STATUS_OPTIONS: Array<{
   { value: "ended", label: "운영 종료" },
   { value: "inactive", label: "중지됨" },
 ];
+const MOBILE_CAMPAIGN_PAGE_SIZE = 6;
 
 function formatCampaignPeriod(startDate: string | null, endDate: string | null) {
   const format = (value: string) => value.replaceAll("-", ".");
@@ -121,6 +122,9 @@ export function AdminCampaignOperationsTable({
   const [expandedCampaignId, setExpandedCampaignId] = useState<string | null>(
     null,
   );
+  const [mobileVisibleCount, setMobileVisibleCount] = useState(
+    MOBILE_CAMPAIGN_PAGE_SIZE,
+  );
   const mobileWorkspace = useAdminMobileWorkspace();
 
   const automationCampaigns = useMemo(
@@ -135,6 +139,9 @@ export function AdminCampaignOperationsTable({
     () => filterAdminCampaignRows(campaigns, query, status),
     [campaigns, query, status],
   );
+  const visibleCampaigns = mobileWorkspace
+    ? filteredCampaigns.slice(0, mobileVisibleCount)
+    : filteredCampaigns;
 
   const syncTableScroll = (source: HTMLDivElement, target: HTMLDivElement | null) => {
     if (target && target.scrollLeft !== source.scrollLeft) target.scrollLeft = source.scrollLeft;
@@ -330,7 +337,10 @@ export function AdminCampaignOperationsTable({
             </svg>
             <input
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setMobileVisibleCount(MOBILE_CAMPAIGN_PAGE_SIZE);
+              }}
               placeholder="업체명·주소 검색"
               className="h-10 w-full rounded-[10px] border border-line-strong bg-surface pl-9 pr-3 text-sm text-ink outline-none transition focus:border-brand focus:ring-3 focus:ring-brand/10 sm:w-60"
             />
@@ -339,9 +349,10 @@ export function AdminCampaignOperationsTable({
             <span className="sr-only">캠페인 상태</span>
             <select
               value={status}
-              onChange={(event) =>
-                setStatus(event.target.value as AdminCampaignStatusFilter)
-              }
+              onChange={(event) => {
+                setStatus(event.target.value as AdminCampaignStatusFilter);
+                setMobileVisibleCount(MOBILE_CAMPAIGN_PAGE_SIZE);
+              }}
               className="h-10 w-full rounded-[10px] border border-line-strong bg-surface px-3 text-sm font-medium text-ink-sub outline-none transition focus:border-brand focus:ring-3 focus:ring-brand/10 sm:w-40"
             >
               {STATUS_OPTIONS.map((option) => (
@@ -356,7 +367,7 @@ export function AdminCampaignOperationsTable({
 
       <div className="mt-3 overflow-hidden rounded-[14px] border border-line bg-surface shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
         {mobileWorkspace ? <div className="space-y-2.5 p-3">
-          {filteredCampaigns.map((campaign) => {
+          {visibleCampaigns.map((campaign) => {
             const campaignStatus = operationalCampaignStatus(campaign);
             const expanded = expandedCampaignId === campaign.id;
             const sourcePercent = Math.min(campaign.draftSourceGroupCount * 25, 100);
@@ -379,6 +390,15 @@ export function AdminCampaignOperationsTable({
               />
             );
           })}
+          {visibleCampaigns.length < filteredCampaigns.length ? (
+            <button
+              type="button"
+              onClick={() => setMobileVisibleCount((count) => count + MOBILE_CAMPAIGN_PAGE_SIZE)}
+              className="h-10 w-full rounded-[9px] border border-line bg-surface text-sm font-bold text-ink-sub transition hover:border-brand/40 hover:text-brand"
+            >
+              캠페인 더 보기 ({filteredCampaigns.length - visibleCampaigns.length}건)
+            </button>
+          ) : null}
         </div> : (<>
 
         <div

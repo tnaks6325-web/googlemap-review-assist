@@ -20,6 +20,7 @@ export interface AdminCampaignAutomationStatusRow {
 
 type AutomationStatusFilter = "ALL" | "WAITING" | "NEEDS_REVIEW" | "COMPLETED";
 const EXPANDED_ROW_LIMIT = 10;
+const MOBILE_AUTOMATION_PAGE_SIZE = 5;
 
 const automationStatusFilters: Array<{
   key: AutomationStatusFilter;
@@ -80,6 +81,7 @@ export function AdminCampaignAutomationStatus({
   const [message, setMessage] = useState<string | null>(null);
   const [filter, setFilter] = useState<AutomationStatusFilter>("ALL");
   const [expanded, setExpanded] = useState(true);
+  const [mobileVisibleCount, setMobileVisibleCount] = useState(MOBILE_AUTOMATION_PAGE_SIZE);
   const mobileWorkspace = useAdminMobileWorkspace();
 
   if (!rows.length) return null;
@@ -88,7 +90,11 @@ export function AdminCampaignAutomationStatus({
   const filteredRows = selectedFilter?.statuses
     ? rows.filter((row) => selectedFilter.statuses?.includes(row.status))
     : rows;
-  const visibleRows = expanded ? filteredRows.slice(0, EXPANDED_ROW_LIMIT) : [];
+  const visibleRows = mobileWorkspace
+    ? filteredRows.slice(0, mobileVisibleCount)
+    : expanded
+      ? filteredRows.slice(0, EXPANDED_ROW_LIMIT)
+      : [];
 
   const retry = async (campaignId: string) => {
     if (readOnly) return;
@@ -128,7 +134,10 @@ export function AdminCampaignAutomationStatus({
                 key={item.key}
                 type="button"
                 aria-pressed={active}
-                onClick={() => setFilter(item.key)}
+                onClick={() => {
+                  setFilter(item.key);
+                  setMobileVisibleCount(MOBILE_AUTOMATION_PAGE_SIZE);
+                }}
                 className={`h-8 rounded-full px-3 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 ${
                   active
                     ? "bg-brand text-white shadow-[0_1px_2px_rgba(16,24,40,0.12)]"
@@ -141,16 +150,20 @@ export function AdminCampaignAutomationStatus({
           })}
         </div>
         <div className="flex items-center justify-between gap-3 sm:justify-end">
-          <p className="text-xs text-ink-weak">총 {filteredRows.length}건 · 펼치면 최대 {EXPANDED_ROW_LIMIT}건</p>
-          <button
-            type="button"
-            aria-expanded={expanded}
-            aria-controls="campaign-automation-status-list"
-            onClick={() => setExpanded((value) => !value)}
-            className="h-8 shrink-0 rounded-[8px] border border-line bg-surface px-3 text-xs font-bold text-ink-sub transition hover:border-brand/40 hover:text-brand"
-          >
-            {expanded ? "접기" : "펼치기"}
-          </button>
+          <p className="text-xs text-ink-weak">
+            총 {filteredRows.length}건 · {mobileWorkspace ? `${visibleRows.length}건 표시` : `펼치면 최대 ${EXPANDED_ROW_LIMIT}건`}
+          </p>
+          {!mobileWorkspace ? (
+            <button
+              type="button"
+              aria-expanded={expanded}
+              aria-controls="campaign-automation-status-list"
+              onClick={() => setExpanded((value) => !value)}
+              className="h-8 shrink-0 rounded-[8px] border border-line bg-surface px-3 text-xs font-bold text-ink-sub transition hover:border-brand/40 hover:text-brand"
+            >
+              {expanded ? "접기" : "펼치기"}
+            </button>
+          ) : null}
         </div>
       </div>
       {expanded && mobileWorkspace ? <div id="campaign-automation-status-list" className="mt-3 space-y-2.5">
@@ -171,6 +184,15 @@ export function AdminCampaignAutomationStatus({
           <p className="rounded-[10px] border border-dashed border-line px-3 py-8 text-center text-sm text-ink-weak">
             선택한 상태의 자동화 항목이 없습니다.
           </p>
+        ) : null}
+        {visibleRows.length < filteredRows.length ? (
+          <button
+            type="button"
+            onClick={() => setMobileVisibleCount((count) => count + MOBILE_AUTOMATION_PAGE_SIZE)}
+            className="h-10 w-full rounded-[9px] border border-line bg-surface text-sm font-bold text-ink-sub transition hover:border-brand/40 hover:text-brand"
+          >
+            자동화 상태 더 보기 ({filteredRows.length - visibleRows.length}건)
+          </button>
         ) : null}
       </div> : expanded ? (
 
