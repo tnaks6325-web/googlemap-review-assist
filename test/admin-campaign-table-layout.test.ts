@@ -18,35 +18,33 @@ const campaignPageSource = readFileSync(
 );
 
 describe("admin campaign table layout", () => {
-  it("uses the wide admin canvas so the management column stays visible", () => {
+  it("uses the wide admin canvas for the PC campaign list", () => {
     expect(campaignPageSource).toContain("wideContent");
     expect(shellSource).toContain('wideContent ? "max-w-[1920px]" : "max-w-[1600px]"');
     expect(shellSource).toContain('wideContent ? "max-w-[1680px]" : "max-w-[1440px]"');
   });
 
-  it("keeps campaign columns stable when a detail row is expanded", () => {
-    expect(componentSource).toContain(
-      'className="w-full min-w-[1730px] table-fixed border-separate border-spacing-0"',
-    );
-    expect(componentSource).toContain("<colgroup>");
-    expect(componentSource).toContain('<col className="w-[104px]" />');
-    expect(componentSource).toContain('<col className="w-[480px]" />');
-    expect(componentSource).toContain('colSpan={11}');
-    expect(componentSource).toContain('<tr className="group h-[92px]">');
+  it("fits the desktop table without horizontal scroll controls", () => {
+    expect(componentSource).toContain('className="w-full table-fixed border-separate border-spacing-0"');
+    expect(componentSource).not.toContain("min-w-[1730px]");
+    expect(componentSource).not.toContain("topTableScrollRef");
+    expect(componentSource).not.toContain("bottomTableScrollRef");
+    expect(componentSource).not.toContain("syncTableScroll");
   });
 
-  it("pins the campaign column and provides synced horizontal scrollbars above and below the list", () => {
-    expect(componentSource).toContain("topTableScrollRef");
-    expect(componentSource).toContain("bottomTableScrollRef");
-    expect(componentSource).toContain("syncTableScroll");
-    expect(componentSource).toContain('aria-label="캠페인 목록 가로 스크롤"');
-    expect(componentSource).toContain("sticky left-[90px] z-10");
-    expect(componentSource).toContain('<TableHeading stickyLeft stickyOffset="left-[90px]">캠페인</TableHeading>');
+  it("uses compact combined columns while keeping details aligned", () => {
+    expect(componentSource).toContain("<colgroup>");
+    expect(componentSource).toContain('<col className="w-[24%]" />');
+    expect(componentSource).toContain('<col className="w-[22%]" />');
+    expect(componentSource).toContain("지급 / 코드");
+    expect(componentSource).toContain("원고 · 채널 · 참고");
+    expect(componentSource).toContain("colSpan={8}");
+    expect(componentSource).toContain('<tr className="group h-[92px]">');
   });
 
   it("keeps the operational status badge on one horizontal line", () => {
     expect(componentSource).toContain(
-      "inline-flex min-h-6 whitespace-nowrap items-center rounded-full",
+      "inline-flex max-w-full min-h-6 truncate items-center rounded-full",
     );
   });
 
@@ -71,15 +69,10 @@ describe("admin campaign table layout", () => {
     expect(componentSource).not.toContain('automationProgress ?? "네이버 자동보정 + 참고자료 수집"');
   });
 
-  it("labels direct setup without allowing the action text to wrap", () => {
+  it("keeps direct setup and review actions available without widening the table", () => {
+    expect(componentSource).toContain("flex flex-wrap items-center justify-end gap-1.5");
     expect(componentSource).toContain('"직접세팅"');
     expect(componentSource).toContain("min-w-24 whitespace-nowrap");
     expect(componentSource).not.toContain('"수동 세팅 적용"');
-  });
-
-  it("reserves a non-shrinking management action area for direct setup and review actions", () => {
-    expect(componentSource).toContain('flex flex-nowrap items-center justify-end gap-1.5 [&>*]:shrink-0');
-    expect(componentSource).toContain('<col className="w-[120px]" />');
-    expect(componentSource).toContain('<div className="h-px min-w-[1730px]" />');
   });
 });
