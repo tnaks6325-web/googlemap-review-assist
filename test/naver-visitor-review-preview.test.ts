@@ -67,4 +67,8 @@ describe("Naver visitor review collector markup compatibility", () => {
   it("preserves regular-expression escapes inside the browser-evaluated source", () => {
     expect(collectorSource).toContain("rawText.match(/\\\\d{4}");
   });
+
+  it("classifies Naver's rate-limit page as blocked instead of a page-layout change", () => {
+    expect(collectorSource).toContain("과도한 접근 요청");
+  });
 });
