@@ -4,6 +4,7 @@ import { getAdminId } from "@/lib/auth/session";
 import { campaignOperationsMutationLockResponse } from "@/lib/admin-campaign-operations-lock";
 import {
   isCampaignReviewDraftIndustry,
+  isBlogEvidenceDetailLevel,
   normalizeCampaignDraftGuidance,
 } from "@/lib/domain/campaign-review-draft";
 import { err, ok } from "@/lib/http";
@@ -53,6 +54,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ campaign
 
   const approvedFacts = normalizeLines(body.approvedFacts, 8, 160);
   const bannedTerms = normalizeLines(body.bannedTerms, 12, 40);
+  const blogEvidenceDetailLevel = body.blogEvidenceDetailLevel;
+  if (!isBlogEvidenceDetailLevel(blogEvidenceDetailLevel)) {
+    return err("INVALID_BLOG_EVIDENCE_DETAIL", "블로그 사실카드 정보 수준을 확인해 주세요.", 400);
+  }
   const { campaignId } = await params;
   const campaign = await prisma.campaign.findUnique({ where: { id: campaignId }, select: { id: true } });
   if (!campaign) return err("CAMPAIGN_NOT_FOUND", "캠페인을 찾을 수 없습니다", 404);
@@ -64,11 +69,13 @@ export async function PUT(req: Request, { params }: { params: Promise<{ campaign
       industry,
       approvedFactsJson: JSON.stringify(approvedFacts),
       bannedTermsJson: JSON.stringify(bannedTerms),
+      blogEvidenceDetailLevel,
     },
     update: {
       industry,
       approvedFactsJson: JSON.stringify(approvedFacts),
       bannedTermsJson: JSON.stringify(bannedTerms),
+      blogEvidenceDetailLevel,
     },
   });
 

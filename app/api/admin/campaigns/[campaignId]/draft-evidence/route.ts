@@ -4,6 +4,7 @@ import { campaignOperationsMutationLockResponse } from "@/lib/admin-campaign-ope
 import {
   CampaignDraftEvidenceError,
   extractCampaignDraftEvidence,
+  deleteCampaignDraftEvidence,
   listCampaignDraftEvidence,
   summarizeCampaignDraftEvidenceFailure,
 } from "@/lib/domain/campaign-draft-evidence";
@@ -58,6 +59,34 @@ export async function POST(
   const { campaignId } = await params;
   try {
     return ok(await extractCampaignDraftEvidence(campaignId));
+  } catch (error) {
+    return handleEvidenceError(error);
+  }
+}
+
+export async function DELETE(
+  req: Request,
+  { params }: { params: Promise<{ campaignId: string }> },
+) {
+  if (!checkOrigin(req)) return err("BAD_ORIGIN", "요청 출처가 올바르지 않습니다.", 403);
+  const adminId = await authorize();
+  if (!adminId) return err("UNAUTHORIZED", "관리자 로그인이 필요합니다.", 401);
+  const lockResponse = await campaignOperationsMutationLockResponse();
+  if (lockResponse) return lockResponse;
+  if (!(await rateLimit(`admin:draft-evidence:delete:${adminId}:${clientIp(req)}`, 120, HOUR)).ok) {
+    return err("RATE_LIMITED", "잠시 후 다시 시도해 주세요.", 429);
+  }
+  const body = (await req.json().catch(() => null)) as { evidenceId?: unknown } | null;
+  if (!body || typeof body.evidenceId !== "string" || !body.evidenceId.trim()) {
+    return err("INVALID_EVIDENCE", "삭제할 사실 카드를 확인해 주세요.", 400);
+  }
+  const { campaignId } = await params;
+  try {
+    const deleted = await deleteCampaignDraftEvidence(campaignId, body.evidenceId);
+    return ok({
+      ...await listCampaignDraftEvidence(campaignId),
+      ...deleted,
+    });
   } catch (error) {
     return handleEvidenceError(error);
   }

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui";
 import {
   CAMPAIGN_REVIEW_DRAFT_INDUSTRIES,
+  BLOG_EVIDENCE_DETAIL_LEVELS,
   campaignReviewDraftIndustryLabel,
   type CampaignDraftGuidance,
   type CampaignReviewDraftIndustry,
@@ -28,6 +29,7 @@ export function AdminCampaignDraftGuidance({
   const [industry, setIndustry] = useState<CampaignReviewDraftIndustry | "">(initialGuidance.industry ?? "");
   const [approvedFacts, setApprovedFacts] = useState(initialGuidance.approvedFacts.join("\n"));
   const [bannedTerms, setBannedTerms] = useState(initialGuidance.bannedTerms.join("\n"));
+  const [blogEvidenceDetailLevel, setBlogEvidenceDetailLevel] = useState(initialGuidance.blogEvidenceDetailLevel);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -48,6 +50,7 @@ export function AdminCampaignDraftGuidance({
           industry: industry || null,
           approvedFacts: approvedFacts.split("\n"),
           bannedTerms: bannedTerms.split("\n"),
+          blogEvidenceDetailLevel,
         }),
       });
       const data = (await res.json().catch(() => null)) as (GuidanceResponse & ErrorResult) | null;
@@ -56,6 +59,7 @@ export function AdminCampaignDraftGuidance({
       setIndustry(data.guidance.industry ?? "");
       setApprovedFacts(data.guidance.approvedFacts.join("\n"));
       setBannedTerms(data.guidance.bannedTerms.join("\n"));
+      setBlogEvidenceDetailLevel(data.guidance.blogEvidenceDetailLevel);
       setMessage("원고 기준을 저장했습니다.");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "원고 기준을 저장하지 못했습니다.");
@@ -112,6 +116,26 @@ export function AdminCampaignDraftGuidance({
           rows={4}
           className="mt-1 w-full rounded-btn border border-line bg-surface p-3 text-sm font-normal leading-5 text-ink outline-none focus:border-brand"
         />
+      </label>
+
+      <label className="mt-3 block text-xs font-semibold text-ink">
+        블로그 사실카드 정보 수준
+        <select
+          value={blogEvidenceDetailLevel}
+          onChange={(event) => setBlogEvidenceDetailLevel(event.target.value as typeof blogEvidenceDetailLevel)}
+          className="mt-1 h-10 w-full rounded-btn border border-line bg-surface px-3 text-sm font-normal text-ink outline-none focus:border-brand"
+        >
+          {BLOG_EVIDENCE_DETAIL_LEVELS.map((level) => (
+            <option key={level} value={level}>
+              {level === "EXCLUDE" ? "제외 — 블로그 정보는 사실카드에 사용하지 않음" : null}
+              {level === "TITLE_ONLY" ? "제목만 (권장) — 구체적 본문 정보 제외" : null}
+              {level === "SUMMARY" ? "요약 포함 — 검색 결과의 짧은 설명까지 사용" : null}
+            </option>
+          ))}
+        </select>
+        <span className="mt-1 block font-normal leading-5 text-ink-weak">
+          설정 후 자료 분석을 다시 실행하면 새 수준으로 사실카드가 만들어집니다. 기존 카드는 직접 삭제할 수 있습니다.
+        </span>
       </label>
 
       <label className="mt-3 block text-xs font-semibold text-ink">

@@ -34,6 +34,7 @@ export function AdminCampaignDraftEvidence({ campaignId }: { campaignId: string 
   const [result, setResult] = useState<EvidenceResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -71,6 +72,26 @@ export function AdminCampaignDraftEvidence({ campaignId }: { campaignId: string 
       setError(cause instanceof Error ? cause.message : "캠페인 자료를 분석하지 못했습니다.");
     } finally {
       setAnalyzing(false);
+    }
+  };
+
+  const remove = async (evidenceId: string) => {
+    if (!window.confirm("이 사실 카드를 삭제할까요? 삭제하면 이후 원고 생성 근거에서 제외됩니다.")) return;
+    setDeletingId(evidenceId);
+    setError(null);
+    try {
+      const response = await fetch(`/api/admin/campaigns/${campaignId}/draft-evidence`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ evidenceId }),
+      });
+      const data = (await response.json().catch(() => null)) as EvidenceResponse | null;
+      if (!response.ok) throw new Error(data?.error?.message || "사실 카드를 삭제하지 못했습니다.");
+      setResult(data);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "사실 카드를 삭제하지 못했습니다.");
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -116,6 +137,16 @@ export function AdminCampaignDraftEvidence({ campaignId }: { campaignId: string 
                   </span>
                   <span className="text-ink-weak">{card.sourceType}</span>
                   <span className="ml-auto font-semibold text-success">자동 적용</span>
+                  <Button
+                    type="button"
+                    variant="text"
+                    loading={deletingId === card.id}
+                    onClick={() => void remove(card.id)}
+                    className="ml-1 h-7 px-2 text-[11px] text-danger"
+                    aria-label="사실 카드 삭제"
+                  >
+                    삭제
+                  </Button>
                 </div>
                 <p className="mt-2 text-sm leading-5 text-ink">{card.fact}</p>
                 <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-ink-weak">
