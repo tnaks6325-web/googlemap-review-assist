@@ -493,6 +493,12 @@ async function fetchAssignmentWithContext(db: DbClient, assignmentId: string) {
             take: 12,
             select: { beforeText: true, afterText: true },
           },
+          naverVisitorReviewRuns: {
+            where: { status: "SUCCESS" },
+            orderBy: { createdAt: "desc" },
+            take: 1,
+            include: { previews: { orderBy: { ordinal: "asc" }, take: 10 } },
+          },
         },
       },
       business: {
@@ -531,6 +537,12 @@ async function fetchCampaignWithContext(db: DbClient, campaignId: string) {
         take: 12,
         select: { beforeText: true, afterText: true },
       },
+      naverVisitorReviewRuns: {
+        where: { status: "SUCCESS" },
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        include: { previews: { orderBy: { ordinal: "asc" }, take: 10 } },
+      },
       business: {
         include: {
           menus: { take: 12 },
@@ -563,6 +575,13 @@ function buildDraftContext(input: {
   const naverReviews = input.business.externalReviews.filter(
     (review) => review.platform === "NAVER" && stripHtml(review.content),
   );
+  const campaignNaverVisitorReviews = input.campaign.naverVisitorReviewRuns
+    .flatMap((run) => run.previews)
+    .filter((preview) => stripHtml(preview.content));
+  const naverReferenceTexts = [
+    ...naverReviews.map((review) => review.content ?? ""),
+    ...campaignNaverVisitorReviews.map((preview) => preview.content),
+  ];
   const blogReferences = input.campaign.blogReferences.filter(
     (reference) => stripHtml(reference.title) || stripHtml(reference.description),
   );
@@ -592,11 +611,11 @@ function buildDraftContext(input: {
       items: [placeLine(naverPlace)],
     });
   }
-  if (blogReferences.length || naverReviews.length) {
+  if (blogReferences.length || naverReferenceTexts.length) {
     sourceGroups.push({
       key: "NAVER_REFERENCES",
       label: "Naver 블로그/방문자리뷰 참고 데이터",
-      count: blogReferences.length + naverReviews.length,
+      count: blogReferences.length + naverReferenceTexts.length,
       items: [
         ...uniqueStrings(
           blogReferences.map((reference) =>
@@ -604,7 +623,7 @@ function buildDraftContext(input: {
           ),
           6,
         ).map((text) => truncate(text, 180)),
-        ...uniqueStrings(naverReviews.map((review) => review.content), 4).map((text) => truncate(text, 180)),
+        ...uniqueStrings(naverReferenceTexts, 4).map((text) => truncate(text, 180)),
       ].slice(0, 10),
     });
   }
@@ -631,7 +650,7 @@ function buildDraftContext(input: {
     fact: stripHtml(evidence.fact).slice(0, 160),
   }));
   const styleReferences = retrieveReviewStyleExamples({
-    reviews: [...googleReviews, ...naverReviews].map((review) => review.content ?? ""),
+    reviews: [...googleReviews.map((review) => review.content ?? ""), ...naverReferenceTexts],
     queryTexts: [
       ...approvedEvidence.map((evidence) => evidence.fact),
       ...guidance.approvedFacts,
@@ -645,7 +664,7 @@ function buildDraftContext(input: {
   });
   const substantiveSourceCount =
     googleReviews.length +
-    naverReviews.length +
+    naverReferenceTexts.length +
     blogReferences.length +
     guidance.approvedFacts.length +
     guidance.guideKeywords.length +

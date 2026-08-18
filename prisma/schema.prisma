@@ -144,10 +144,53 @@ model Campaign {
   preparedDrafts          CampaignPreparedDraft[]
   preparedDraftRevisions  CampaignPreparedDraftRevision[]
   reviewDrafts            CampaignReviewDraft[]
+  naverVisitorReviewRuns  NaverVisitorReviewRun[]
   sheetCampaignSource     SheetCampaignSource?
   automationRuns          CampaignAutomationRun[]
   nextReviewDraftSequence Int                             @default(0)
   createdAt               DateTime                        @default(now())
+}
+
+// Public Naver visitor-review previews collected manually for manuscript reference only.
+// Collection history is separate from campaign submissions and is retained for 90 days by the collector.
+model NaverVisitorReviewRun {
+  id              String                     @id @default(cuid())
+  campaignId      String
+  campaign        Campaign                   @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  placeId         String
+  inputUrl        String
+  visitorReviewUrl String
+  placeName       String?
+  sort            String                     @default("RECOMMENDED")
+  status          String
+  activeKey       String?                    @unique
+  errorCode       String?
+  errorMessage    String?
+  startedAt       DateTime                   @default(now())
+  finishedAt      DateTime?
+  previews        NaverVisitorReviewPreview[]
+  createdAt       DateTime                   @default(now())
+
+  @@index([campaignId, createdAt])
+  @@index([campaignId, status, createdAt])
+}
+
+model NaverVisitorReviewPreview {
+  id                 String                @id @default(cuid())
+  runId              String
+  run                NaverVisitorReviewRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  ordinal            Int
+  authorMasked       String?
+  content            String
+  rating             Int?
+  visitDate          String?
+  verificationMethod String?
+  keywordsJson       String                @default("[]")
+  hasMedia           Boolean               @default(false)
+  createdAt          DateTime              @default(now())
+
+  @@unique([runId, ordinal])
+  @@index([runId])
 }
 
 // 원고 생성에 사용할 관리자 입력 사실과 업종별 금지 표현.

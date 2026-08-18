@@ -65,6 +65,24 @@ export interface AdminConnectedNaverPlace {
   syncedAt: string | null;
 }
 
+export interface AdminCampaignNaverVisitorReviewRun {
+  status: string;
+  placeId: string;
+  placeName: string | null;
+  errorMessage: string | null;
+  collectedAt: string | null;
+  previews: Array<{
+    ordinal: number;
+    authorMasked: string | null;
+    content: string;
+    rating: number | null;
+    visitDate: string | null;
+    verificationMethod: string | null;
+    keywords: string[];
+    hasMedia: boolean;
+  }>;
+}
+
 export interface AdminCampaignRow extends PublicCampaignCard {
   businessId: string;
   active: boolean;
@@ -97,6 +115,7 @@ export interface AdminCampaignRow extends PublicCampaignCard {
   hasGooglePlace: boolean;
   manualSetupEligible: boolean;
   naverPlace: AdminConnectedNaverPlace | null;
+  naverVisitorReviewRun: AdminCampaignNaverVisitorReviewRun | null;
 }
 
 export const DEFAULT_REWARD_POINTS = 500;
@@ -192,6 +211,11 @@ async function fetchCampaigns(includeInactive = false) {
         },
       },
       draftGuidance: true,
+      naverVisitorReviewRuns: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        include: { previews: { orderBy: { ordinal: "asc" } } },
+      },
       sheetCampaignSource: { select: { sourceStatus: true } },
       _count: { select: { codes: true, blogReferences: true } },
     },
@@ -269,6 +293,37 @@ function toAdminNaverPlace(campaign: CampaignWithBusiness): AdminConnectedNaverP
     matchConfidence: naverPlace.matchConfidence,
     syncedAt: naverPlace.syncedAt?.toISOString() ?? null,
   };
+}
+
+function toAdminNaverVisitorReviewRun(campaign: CampaignWithBusiness): AdminCampaignNaverVisitorReviewRun | null {
+  const run = campaign.naverVisitorReviewRuns[0];
+  if (!run) return null;
+  return {
+    status: run.status,
+    placeId: run.placeId,
+    placeName: run.placeName,
+    errorMessage: run.errorMessage,
+    collectedAt: run.finishedAt?.toISOString() ?? null,
+    previews: run.previews.map((preview) => ({
+      ordinal: preview.ordinal,
+      authorMasked: preview.authorMasked,
+      content: preview.content,
+      rating: preview.rating,
+      visitDate: preview.visitDate,
+      verificationMethod: preview.verificationMethod,
+      keywords: parsePreviewKeywords(preview.keywordsJson),
+      hasMedia: preview.hasMedia,
+    })),
+  };
+}
+
+function parsePreviewKeywords(value: string) {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string").slice(0, 10) : [];
+  } catch {
+    return [];
+  }
 }
 
 async function getPublicCampaignDetailUncached(slug: string): Promise<PublicCampaignDetail | null> {
@@ -521,6 +576,7 @@ export async function listAdminCampaigns(): Promise<AdminCampaignRow[]> {
       hasGooglePlace: Boolean(googlePlace),
       manualSetupEligible: campaign.sheetCampaignSource?.sourceStatus === "READY",
       naverPlace: toAdminNaverPlace(campaign),
+      naverVisitorReviewRun: toAdminNaverVisitorReviewRun(campaign),
     };
   });
 }

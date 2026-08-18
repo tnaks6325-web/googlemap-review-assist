@@ -6,6 +6,7 @@ import { AdminCampaignBlogReferences } from "@/components/admin/AdminCampaignBlo
 import { AdminCampaignDraftPreview } from "@/components/admin/AdminCampaignDraftPreview";
 import { AdminCampaignDraftGuidance } from "@/components/admin/AdminCampaignDraftGuidance";
 import { AdminCampaignNaverCandidates } from "@/components/admin/AdminCampaignNaverCandidates";
+import { AdminCampaignNaverVisitorReviews } from "@/components/admin/AdminCampaignNaverVisitorReviews";
 import { AdminCampaignRewardPoints } from "@/components/admin/AdminCampaignRewardPoints";
 import { AdminCampaignReviewSubmissions } from "@/components/admin/AdminCampaignReviewSubmissions";
 import { useAdminMobileWorkspace } from "@/components/admin/useAdminMobileWorkspace";
@@ -630,6 +631,7 @@ function MobileCampaignCard({
                   initialPlace={campaign.naverPlace}
                   hasGooglePlace={campaign.hasGooglePlace}
                 />
+                <AdminCampaignNaverVisitorReviews campaignId={campaign.id} initialPlaceId={campaign.naverPlace?.externalId} initialRun={campaign.naverVisitorReviewRun} />
                 <AdminCampaignBlogReferences
                   campaignId={campaign.id}
                   initialReferences={campaign.blogReferences}
@@ -832,6 +834,7 @@ function CampaignRows({
                 initialPlace={campaign.naverPlace}
                 hasGooglePlace={campaign.hasGooglePlace}
               />
+              <AdminCampaignNaverVisitorReviews campaignId={campaign.id} initialPlaceId={campaign.naverPlace?.externalId} initialRun={campaign.naverVisitorReviewRun} />
               <AdminCampaignBlogReferences
                 campaignId={campaign.id}
                 initialReferences={campaign.blogReferences}
