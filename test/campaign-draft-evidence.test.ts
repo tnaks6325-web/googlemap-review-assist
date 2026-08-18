@@ -5,16 +5,32 @@ import {
   CAMPAIGN_DRAFT_EVIDENCE_FACETS,
   CAMPAIGN_DRAFT_EVIDENCE_MAX_OUTPUT_TOKENS,
   CAMPAIGN_DRAFT_EVIDENCE_TIMEOUT_MS,
+  blogEvidenceExcerpt,
   normalizeExtractedEvidence,
   summarizeCampaignDraftEvidenceFailure,
   extractCampaignDraftEvidence,
+  deleteCampaignDraftEvidence,
+  listCampaignDraftEvidence,
   summarizeEvidenceReadiness,
 } from "@/lib/domain/campaign-draft-evidence";
+import { BLOG_EVIDENCE_DETAIL_LEVELS } from "@/lib/domain/campaign-review-draft";
 import { generateUniqueSlug } from "@/lib/domain/codes";
 
 let evidenceSequence = 0;
 
 describe("campaign draft evidence", () => {
+  it("limits blog evidence to the configured detail level", () => {
+    const reference = {
+      title: "용산 피자 방문 후기",
+      description: "2층 창가 4번 테이블에서 특정 메뉴와 가격, 직원 이름을 자세히 언급한 후기입니다.",
+    };
+
+    expect(BLOG_EVIDENCE_DETAIL_LEVELS).toContain("TITLE_ONLY");
+    expect(blogEvidenceExcerpt(reference, "EXCLUDE")).toBeNull();
+    expect(blogEvidenceExcerpt(reference, "TITLE_ONLY")).toBe(reference.title);
+    expect(blogEvidenceExcerpt(reference, "SUMMARY")).toContain(reference.description);
+  });
+
   it("summarizes unknown provider failures without leaking their message", () => {
     const error = new Error(
       "Gemini request failed for https://example.test?key=secret-key " +
@@ -130,6 +146,84 @@ describe("campaign draft evidence", () => {
       expect(second.evidence).toHaveLength(first.evidence.length);
       expect(second.evidence.length).toBeGreaterThan(0);
       expect(second.evidence.every((item) => item.status === "APPROVED")).toBe(true);
+    } finally {
+      if (originalProvider == null) delete process.env.REVIEW_DRAFT_PROVIDER;
+      else process.env.REVIEW_DRAFT_PROVIDER = originalProvider;
+    }
+  });
+
+  it("removes only the selected fact card from a campaign", async () => {
+    const owner = await prisma.owner.create({
+      data: { email: `evidence-delete-${Date.now()}-${evidenceSequence++}@test.local`, password: "x" },
+    });
+    const business = await prisma.business.create({
+      data: { ownerId: owner.id, name: "사실 카드 삭제 테스트" },
+    });
+    const campaign = await prisma.campaign.create({
+      data: { businessId: business.id, slug: await generateUniqueSlug(), name: "evidence-delete-campaign" },
+    });
+    const first = await prisma.campaignDraftEvidence.create({
+      data: {
+        campaignId: campaign.id,
+        facet: "OTHER",
+        fact: "삭제할 테스트 사실 카드",
+        sourceType: "ADMIN_APPROVED",
+        sourceRef: "approved:1",
+        sourceExcerpt: "삭제 테스트",
+      },
+    });
+    const second = await prisma.campaignDraftEvidence.create({
+      data: {
+        campaignId: campaign.id,
+        facet: "ACCESS",
+        fact: "유지할 테스트 사실 카드",
+        sourceType: "ADMIN_APPROVED",
+        sourceRef: "approved:2",
+        sourceExcerpt: "유지 테스트",
+      },
+    });
+
+    await expect(deleteCampaignDraftEvidence(campaign.id, first.id)).resolves.toEqual({ deletedId: first.id });
+    await expect(listCampaignDraftEvidence(campaign.id)).resolves.toMatchObject({
+      evidence: [{ id: second.id }],
+    });
+  });
+
+  it("replaces prior detailed blog cards when conservative analysis is rerun", async () => {
+    const owner = await prisma.owner.create({
+      data: { email: `evidence-blog-${Date.now()}-${evidenceSequence++}@test.local`, password: "x" },
+    });
+    const business = await prisma.business.create({
+      data: { ownerId: owner.id, name: "블로그 수준 테스트" },
+    });
+    const campaign = await prisma.campaign.create({
+      data: { businessId: business.id, slug: await generateUniqueSlug(), name: "evidence-blog-campaign" },
+    });
+    const reference = await prisma.campaignBlogReference.create({
+      data: {
+        campaignId: campaign.id,
+        searchQuery: "블로그 수준 테스트",
+        title: "짧은 블로그 제목",
+        description: "상세한 블로그 본문 요약은 제목만 수준에서 사실카드에 남으면 안 됩니다.",
+        link: `https://example.invalid/blog-${evidenceSequence++}`,
+      },
+    });
+    await prisma.campaignDraftEvidence.create({
+      data: {
+        campaignId: campaign.id,
+        facet: "OTHER",
+        fact: reference.description!,
+        sourceType: "NAVER_BLOG_SEARCH",
+        sourceRef: `blog:${reference.id}`,
+        sourceExcerpt: reference.description!,
+      },
+    });
+    const originalProvider = process.env.REVIEW_DRAFT_PROVIDER;
+    process.env.REVIEW_DRAFT_PROVIDER = "template";
+    try {
+      const result = await extractCampaignDraftEvidence(campaign.id);
+      expect(result.evidence.map((item) => item.fact)).toContain(reference.title);
+      expect(result.evidence.map((item) => item.fact)).not.toContain(reference.description);
     } finally {
       if (originalProvider == null) delete process.env.REVIEW_DRAFT_PROVIDER;
       else process.env.REVIEW_DRAFT_PROVIDER = originalProvider;

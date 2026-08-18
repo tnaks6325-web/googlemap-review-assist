@@ -50,6 +50,13 @@ export const CAMPAIGN_REVIEW_DRAFT_INDUSTRIES = [
   "OTHER",
 ] as const;
 
+export const BLOG_EVIDENCE_DETAIL_LEVELS = ["EXCLUDE", "TITLE_ONLY", "SUMMARY"] as const;
+export type BlogEvidenceDetailLevel = (typeof BLOG_EVIDENCE_DETAIL_LEVELS)[number];
+
+export function isBlogEvidenceDetailLevel(value: unknown): value is BlogEvidenceDetailLevel {
+  return typeof value === "string" && (BLOG_EVIDENCE_DETAIL_LEVELS as readonly string[]).includes(value);
+}
+
 const REVIEWER_ASSIGNMENT_SOURCE = "CAMPAIGN_ASSIGNMENT";
 const REVIEWER_ASSIGNMENT_STATUS_ASSIGNED = "ASSIGNED";
 const REVIEWER_ASSIGNMENT_STATUS_REVIEW_SUBMITTED = "REVIEW_SUBMITTED";
@@ -70,6 +77,7 @@ export interface CampaignDraftGuidance {
   bannedTerms: string[];
   guideKeywords: string[];
   reviewExamples: string[];
+  blogEvidenceDetailLevel: BlogEvidenceDetailLevel;
 }
 
 export interface CampaignReviewDraftSourceSummary {
@@ -1682,6 +1690,7 @@ export function normalizeCampaignDraftGuidance(input: {
   guideKeywordsJson?: string | null;
   reviewExamples?: unknown;
   reviewExamplesJson?: string | null;
+  blogEvidenceDetailLevel?: unknown;
 } | null | undefined): CampaignDraftGuidance {
   const approvedFacts = Array.isArray(input?.approvedFacts)
     ? normalizeTextList(input.approvedFacts, 8, 160)
@@ -1701,6 +1710,9 @@ export function normalizeCampaignDraftGuidance(input: {
     bannedTerms,
     guideKeywords,
     reviewExamples,
+    blogEvidenceDetailLevel: isBlogEvidenceDetailLevel(input?.blogEvidenceDetailLevel)
+      ? input.blogEvidenceDetailLevel
+      : "TITLE_ONLY",
   };
 }
 

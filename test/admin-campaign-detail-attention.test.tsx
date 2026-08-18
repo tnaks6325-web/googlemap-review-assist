@@ -45,6 +45,7 @@ describe("admin campaign detail attention borders", () => {
           industry: null,
           approvedFacts: [],
           bannedTerms: [],
+          blogEvidenceDetailLevel: "TITLE_ONLY",
           guideKeywords: [],
           reviewExamples: [],
         }}
@@ -57,6 +58,7 @@ describe("admin campaign detail attention borders", () => {
           industry: null,
           approvedFacts: [],
           bannedTerms: [],
+          blogEvidenceDetailLevel: "TITLE_ONLY",
           guideKeywords: ["제주 흑돼지"],
           reviewExamples: [],
         }}

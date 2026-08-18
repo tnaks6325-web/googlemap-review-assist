@@ -11,6 +11,7 @@ describe("운영 작업 lease 복구", () => {
         payloadJson: "{}",
         status: "PROCESSING",
         lockedAt: new Date(Date.now() - 10 * 60 * 1000),
+        runAt: new Date(0),
       },
     });
 

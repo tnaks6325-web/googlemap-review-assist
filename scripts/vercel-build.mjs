@@ -58,6 +58,13 @@ if (process.env.VERCEL_ENV === "production") {
     `--schema=${schemaPath}`,
     "--file=prisma/production-naver-visitor-review-previews.sql",
   ]);
+  run("npx", [
+    "prisma",
+    "db",
+    "execute",
+    `--schema=${schemaPath}`,
+    "--file=prisma/production-campaign-draft-guidance.sql",
+  ]);
 } else {
   console.log("Skipping automatic production PostgreSQL schema synchronization.");
 }

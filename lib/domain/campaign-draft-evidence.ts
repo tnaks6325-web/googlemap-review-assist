@@ -1,6 +1,16 @@
 import type { PrismaClient } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { retryExternalOperation } from "@/lib/resilience";
+import { type BlogEvidenceDetailLevel } from "@/lib/domain/campaign-review-draft";
+
+export function blogEvidenceExcerpt(
+  reference: { title: string; description: string | null },
+  detailLevel: BlogEvidenceDetailLevel,
+) {
+  if (detailLevel === "EXCLUDE") return null;
+  if (detailLevel === "TITLE_ONLY") return cleanText(reference.title, 240);
+  return cleanText([reference.title, reference.description].filter(Boolean).join(" - "), 240);
+}
 
 export const CAMPAIGN_DRAFT_EVIDENCE_FACETS = [
   "MENU_PRODUCT",
@@ -218,10 +228,17 @@ function buildEvidenceSources(
       excerpt: review.content ?? "",
     });
   }
+  const blogEvidenceDetailLevel = campaign.draftGuidance?.blogEvidenceDetailLevel === "SUMMARY"
+    ? "SUMMARY"
+    : campaign.draftGuidance?.blogEvidenceDetailLevel === "EXCLUDE"
+      ? "EXCLUDE"
+      : "TITLE_ONLY";
   for (const reference of campaign.blogReferences) {
+    const excerpt = blogEvidenceExcerpt(reference, blogEvidenceDetailLevel);
+    if (!excerpt) continue;
     sources.set(`blog:${reference.id}`, {
       sourceType: reference.source,
-      excerpt: [reference.title, reference.description].filter(Boolean).join(" - "),
+      excerpt,
     });
   }
   for (const menu of campaign.business.menus) {
@@ -359,6 +376,20 @@ export async function listCampaignDraftEvidence(campaignId: string, db: DbClient
   return { evidence, readiness: summarizeEvidenceReadiness(evidence) };
 }
 
+export async function deleteCampaignDraftEvidence(
+  campaignId: string,
+  evidenceId: string,
+  db: DbClient = prisma,
+) {
+  const deleted = await db.campaignDraftEvidence.deleteMany({
+    where: { id: evidenceId.trim(), campaignId: campaignId.trim() },
+  });
+  if (deleted.count !== 1) {
+    throw new CampaignDraftEvidenceError("EVIDENCE_NOT_FOUND", "삭제할 원고 사실 카드를 찾을 수 없습니다.", 404);
+  }
+  return { deletedId: evidenceId.trim() };
+}
+
 export async function extractCampaignDraftEvidence(campaignId: string, db: DbClient = prisma) {
   const campaign = await fetchCampaignSources(db, campaignId);
   if (!campaign) throw new CampaignDraftEvidenceError("CAMPAIGN_NOT_FOUND", "캠페인을 찾을 수 없습니다.", 404);
@@ -388,7 +419,13 @@ export async function extractCampaignDraftEvidence(campaignId: string, db: DbCli
 
   await db.$transaction([
     db.campaignDraftEvidence.deleteMany({
-      where: { campaignId, status: "PENDING" },
+      where: {
+        campaignId,
+        OR: [
+          { status: "PENDING" },
+          { sourceType: "NAVER_BLOG_SEARCH" },
+        ],
+      },
     }),
     ...extracted.map((item) =>
       db.campaignDraftEvidence.upsert({
