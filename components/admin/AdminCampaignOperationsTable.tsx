@@ -102,8 +102,6 @@ export function AdminCampaignOperationsTable({
   const autoLinkStarted = useRef(false);
   const autoLinkPromise = useRef<Promise<number> | null>(null);
   const automationRunning = useRef(false);
-  const topTableScrollRef = useRef<HTMLDivElement | null>(null);
-  const bottomTableScrollRef = useRef<HTMLDivElement | null>(null);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<AdminCampaignStatusFilter>("all");
   const [automationLoading, setAutomationLoading] = useState(false);
@@ -136,10 +134,6 @@ export function AdminCampaignOperationsTable({
     () => filterAdminCampaignRows(campaigns, query, status),
     [campaigns, query, status],
   );
-
-  const syncTableScroll = (source: HTMLDivElement, target: HTMLDivElement | null) => {
-    if (target && target.scrollLeft !== source.scrollLeft) target.scrollLeft = source.scrollLeft;
-  };
 
   const runNaverAutoLink = useCallback((campaignIds: string[]) => {
     if (autoLinkPromise.current) return autoLinkPromise.current;
@@ -382,47 +376,29 @@ export function AdminCampaignOperationsTable({
           })}
         </div> : (<>
 
-        <div
-          ref={topTableScrollRef}
-          onScroll={(event) => syncTableScroll(event.currentTarget, bottomTableScrollRef.current)}
-          aria-label="캠페인 목록 가로 스크롤"
-          className="h-5 overflow-x-auto border-b border-line"
-        >
-          <div className="h-px min-w-[1730px]" />
-        </div>
-        <div
-          ref={bottomTableScrollRef}
-          onScroll={(event) => syncTableScroll(event.currentTarget, topTableScrollRef.current)}
-          className="overflow-x-auto"
-        >
-          <table className="w-full min-w-[1730px] table-fixed border-separate border-spacing-0">
+        <div className="overflow-hidden">
+          <table className="w-full table-fixed border-separate border-spacing-0">
             <caption className="sr-only">
               관리자 캠페인 운영 상태 및 자료 연결 현황
             </caption>
             <colgroup>
-              <col className="w-[90px]" />
-              <col className="w-[300px]" />
-              <col className="w-[104px]" />
-              <col className="w-[150px]" />
-              <col className="w-[70px]" />
-              <col className="w-[70px]" />
-              <col className="w-[130px]" />
-              <col className="w-[80px]" />
-              <col className="w-[110px]" />
-              <col className="w-[120px]" />
-              <col className="w-[480px]" />
+              <col className="w-[6%]" />
+              <col className="w-[24%]" />
+              <col className="w-[8%]" />
+              <col className="w-[12%]" />
+              <col className="w-[9%]" />
+              <col className="w-[12%]" />
+              <col className="w-[7%]" />
+              <col className="w-[22%]" />
             </colgroup>
             <thead>
               <tr className="bg-surface-alt">
-                <TableHeading stickyLeft>자동</TableHeading>
-                <TableHeading stickyLeft stickyOffset="left-[90px]">캠페인</TableHeading>
-                <TableHeading>운영 상태</TableHeading>
+                <TableHeading>자동</TableHeading>
+                <TableHeading>캠페인</TableHeading>
+                <TableHeading>상태</TableHeading>
                 <TableHeading>오늘 배정 / 일 한도</TableHeading>
-                <TableHeading>지급</TableHeading>
-                <TableHeading>코드</TableHeading>
-                <TableHeading>원고 자료</TableHeading>
-                <TableHeading>채널 연결</TableHeading>
-                <TableHeading>참고자료</TableHeading>
+                <TableHeading>지급 / 코드</TableHeading>
+                <TableHeading>원고 · 채널 · 참고</TableHeading>
                 <TableHeading>리뷰검수</TableHeading>
                 <TableHeading align="right">관리</TableHeading>
               </tr>
@@ -679,21 +655,21 @@ function CampaignRows({
   return (
     <>
       <tr className="group h-[92px]">
-        <td className="sticky left-0 z-20 border-t border-line bg-surface px-3 py-4 text-center group-first:border-t-0">
+        <td className="border-t border-line bg-surface px-2 py-3 text-center group-first:border-t-0">
           <CampaignAutomationToggle
             enabled={automationEnabled}
             loading={automationToggleLoading}
             onToggle={onAutomationToggle}
           />
         </td>
-        <td className="sticky left-[90px] z-10 border-t border-line bg-surface px-4 py-4 shadow-[2px_0_5px_rgba(16,24,40,0.06)] group-first:border-t-0">
+        <td className="border-t border-line bg-surface px-3 py-3 group-first:border-t-0">
           {googleMapsUrl && !automationLocked ? (
             <a
               href={googleMapsUrl}
               target="_blank"
               rel="noopener noreferrer"
               aria-label={`${campaign.businessName} Google 지도 열기`}
-              className="inline-flex items-center gap-1 font-bold text-ink underline decoration-line-strong underline-offset-4 transition hover:text-brand hover:decoration-brand"
+              className="inline-flex max-w-full items-center gap-1 truncate font-bold text-ink underline decoration-line-strong underline-offset-4 transition hover:text-brand hover:decoration-brand"
             >
               {campaign.businessName}
               <span aria-hidden="true" className="text-xs text-brand">
@@ -703,11 +679,11 @@ function CampaignRows({
           ) : (
             <p className="font-bold text-ink">{campaign.businessName}</p>
           )}
-          <p className="mt-1 max-w-[300px] truncate text-xs text-ink-weak">
+          <p className="mt-1 truncate text-xs text-ink-weak">
             {[campaign.category, campaign.address].filter(Boolean).join(" · ") ||
               campaign.campaignName}
           </p>
-          <p className="mt-0.5 max-w-[300px] truncate text-[11px] leading-4 text-ink-weak">
+          <p className="mt-0.5 truncate text-[11px] leading-4 text-ink-weak">
             기간 {formatCampaignPeriod(campaign.startDate, campaign.endDate)}
           </p>
         </td>
@@ -730,56 +706,46 @@ function CampaignRows({
           <p className="font-bold tabular-nums text-ink">
             {campaign.paidPointAmount.toLocaleString("ko-KR")}P
           </p>
-          <p className="mt-1 whitespace-nowrap text-[11px] text-ink-weak">
-            건당 {campaign.rewardPoints.toLocaleString("ko-KR")}P
+          <p className="mt-1 truncate text-[11px] text-ink-weak">
+            건당 {campaign.rewardPoints.toLocaleString("ko-KR")}P · 코드 {campaign.issuedCodeCount.toLocaleString("ko-KR")}개
           </p>
         </TableCell>
         <TableCell>
-          <p className="font-bold tabular-nums text-ink">
-            {campaign.issuedCodeCount.toLocaleString("ko-KR")}개
-          </p>
-        </TableCell>
-        <TableCell>
-          <div className="w-24">
-            <div className="h-1.5 overflow-hidden rounded-full bg-line">
-              <span
-                className={
-                  campaign.canGenerateReviewDraft
-                    ? "block h-full rounded-full bg-success"
-                    : "block h-full rounded-full bg-brand"
-                }
-                style={{ width: `${sourcePercent}%` }}
-              />
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="h-1.5 overflow-hidden rounded-full bg-line">
+                  <span
+                    className={
+                      campaign.canGenerateReviewDraft
+                        ? "block h-full rounded-full bg-success"
+                        : "block h-full rounded-full bg-brand"
+                    }
+                    style={{ width: `${sourcePercent}%` }}
+                  />
+                </div>
+                <p className="mt-1.5 truncate text-[11px] text-ink-weak">
+                  원고 {campaign.draftSourceGroupCount}/4 · {campaign.canGenerateReviewDraft ? "준비 완료" : "자료 보완"}
+                </p>
+              </div>
+              <div className="flex shrink-0 gap-1" aria-label="연결 채널">
+                <SourceChip
+                  label="G"
+                  title="Google 장소"
+                  connected={campaign.draftSourceGroups.googlePlace}
+                />
+                <SourceChip
+                  label="N"
+                  title="Naver 장소"
+                  connected={campaign.draftSourceGroups.naverPlace}
+                  warning={campaign.naverPlace?.matchStatus === "NEEDS_REVIEW"}
+                />
+              </div>
             </div>
-            <p className="mt-1.5 text-[11px] text-ink-weak">
-              {campaign.draftSourceGroupCount}/4
-              {campaign.canGenerateReviewDraft ? " · 준비 완료" : " · 부족"}
+            <p className="mt-1 truncate text-[11px] text-ink-weak">
+              참고 {campaign.blogReferenceCount + campaign.reviewReferenceCount}건 · 블로그 {campaign.blogReferenceCount} · 리뷰 {campaign.reviewReferenceCount}
             </p>
           </div>
-        </TableCell>
-        <TableCell>
-          <div className="flex gap-1" aria-label="연결 채널">
-            <SourceChip
-              label="G"
-              title="Google 장소"
-              connected={campaign.draftSourceGroups.googlePlace}
-            />
-            <SourceChip
-              label="N"
-              title="Naver 장소"
-              connected={campaign.draftSourceGroups.naverPlace}
-              warning={campaign.naverPlace?.matchStatus === "NEEDS_REVIEW"}
-            />
-          </div>
-        </TableCell>
-        <TableCell>
-          <p className="font-bold tabular-nums text-ink">
-            {campaign.blogReferenceCount + campaign.reviewReferenceCount}건
-          </p>
-          <p className="mt-1 whitespace-nowrap text-[11px] text-ink-weak">
-            블로그 {campaign.blogReferenceCount} · 리뷰{" "}
-            {campaign.reviewReferenceCount}
-          </p>
         </TableCell>
         <TableCell>
           <AdminCampaignReviewSubmissions
@@ -791,7 +757,7 @@ function CampaignRows({
           />
         </TableCell>
         <TableCell align="right">
-          <div className="flex flex-nowrap items-center justify-end gap-1.5 [&>*]:shrink-0">
+          <div className="flex flex-wrap items-center justify-end gap-1.5">
             <button
               type="button"
               onClick={onManualSetup}
@@ -822,7 +788,7 @@ function CampaignRows({
       </tr>
       {expanded ? (
         <tr id={`campaign-detail-${campaign.id}`}>
-          <td colSpan={11} className="border-t border-line bg-[#f8fbff] p-4">
+          <td colSpan={8} className="border-t border-line bg-[#f8fbff] p-4">
             {automationLocked ? <p className="rounded-[10px] border border-brand/20 bg-brand-tint px-4 py-3 text-sm font-semibold text-ink-sub">자동화 진행 중에는 상세 정보만 확인할 수 있습니다. 원고보관함·리뷰제출함의 상세 열람은 계속 가능합니다.</p> : <><AdminCampaignRewardPoints
               campaignId={campaign.id}
               initialRewardPoints={campaign.rewardPoints}
@@ -856,20 +822,16 @@ function CampaignRows({
 function TableHeading({
   children,
   align = "left",
-  stickyLeft = false,
-  stickyOffset = "left-0",
 }: {
   children: React.ReactNode;
   align?: "left" | "right";
-  stickyLeft?: boolean;
-  stickyOffset?: "left-0" | "left-[90px]";
 }) {
   return (
     <th
       scope="col"
-      className={`h-11 border-b border-line px-4 text-[11px] font-bold text-ink-weak ${
+      className={`h-11 border-b border-line px-3 text-[11px] font-bold text-ink-weak ${
         align === "right" ? "text-right" : "text-left"
-      } ${stickyLeft ? `sticky ${stickyOffset} z-30 bg-surface-alt shadow-[2px_0_5px_rgba(16,24,40,0.06)]` : ""}`}
+      }`}
     >
       {children}
     </th>
@@ -917,7 +879,7 @@ function TableCell({
 }) {
   return (
     <td
-      className={`border-t border-line px-4 py-4 group-first:border-t-0 ${
+      className={`border-t border-line px-3 py-3 group-first:border-t-0 ${
         align === "right" ? "text-right" : "text-left"
       }`}
     >
@@ -940,7 +902,7 @@ function StatusBadge({
 
   return (
     <span
-      className={`inline-flex min-h-6 whitespace-nowrap items-center rounded-full px-2 text-[11px] font-bold ${toneClass}`}
+      className={`inline-flex max-w-full min-h-6 truncate items-center rounded-full px-1.5 text-[10px] font-bold ${toneClass}`}
     >
       {status.label}
     </span>

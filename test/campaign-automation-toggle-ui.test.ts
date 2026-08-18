@@ -18,7 +18,7 @@ const globalsSource = readFileSync(new URL("../app/globals.css", import.meta.url
 describe("campaign-level automation controls", () => {
   it("shows an automatic ON/OFF control for every campaign in desktop and mobile lists", () => {
     expect(tableSource).toContain("CampaignAutomationToggle");
-    expect(tableSource).toContain("<TableHeading stickyLeft>자동</TableHeading>");
+    expect(tableSource).toContain("<TableHeading>자동</TableHeading>");
     expect(tableSource).toContain("role=\"switch\"");
     expect(tableSource).toContain("bg-success");
     expect(tableSource).toContain("cubic-bezier(0.7,0,0.9,0.4)");
