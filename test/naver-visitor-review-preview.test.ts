@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   NaverVisitorReviewPreviewError,
   normalizeNaverVisitorReviewPreviews,
   parseNaverVisitorReviewInput,
 } from "@/lib/domain/naver-visitor-review-preview";
+
+const collectorSource = readFileSync(new URL("../lib/domain/naver-visitor-review-collector.ts", import.meta.url), "utf8");
 
 describe("Naver visitor review preview input", () => {
   it("accepts a Naver place entry URL and exposes its numeric place id", () => {
@@ -53,5 +56,15 @@ describe("Naver visitor review preview normalization", () => {
     expect(result[0]?.content).toHaveLength(2000);
     expect(result[0]?.rating).toBeNull();
     expect(result[0]?.keywords).toEqual(["a".repeat(60), "b"]);
+  });
+});
+
+describe("Naver visitor review collector markup compatibility", () => {
+  it("recognizes the public visitor-review card markup currently served by Naver", () => {
+    expect(collectorSource).toContain('li.place_apply_pui[data-adlog-place-id]');
+  });
+
+  it("preserves regular-expression escapes inside the browser-evaluated source", () => {
+    expect(collectorSource).toContain("rawText.match(/\\\\d{4}");
   });
 });

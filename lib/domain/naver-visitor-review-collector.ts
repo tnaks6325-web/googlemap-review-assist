@@ -67,7 +67,7 @@ type BrowserPage = Awaited<ReturnType<Awaited<ReturnType<typeof puppeteer.launch
 async function extractPublicPreviewCards(page: BrowserPage): Promise<{ placeName: string | null; cards: NaverVisitorReviewPreviewInput[] }> {
   return page.evaluate(new Function(`
     return (() => {
-    const compact = (value) => (value ?? "").replace(/\s+/g, " ").trim();
+    const compact = (value) => (value ?? "").replace(/\\s+/g, " ").trim();
     const textOf = (root, selectors) => {
       for (const selector of selectors) {
         const value = compact(root.querySelector(selector)?.textContent);
@@ -75,14 +75,14 @@ async function extractPublicPreviewCards(page: BrowserPage): Promise<{ placeName
       }
       return "";
     };
-    const articleSelectors = ["li.pui__X35jYm", "li[class*='review']", "article[class*='review']"];
+    const articleSelectors = ["li.place_apply_pui[data-adlog-place-id]", "li.pui__X35jYm", "li[class*='review']", "article[class*='review']"];
     const nodes = articleSelectors.flatMap((selector) => Array.from(document.querySelectorAll(selector))).filter((node, index, all) => all.indexOf(node) === index);
     const cards = nodes.slice(0, 10).map((node) => {
       const content = textOf(node, [".pui__vn15t2", "[class*='review_text']", "[class*='ReviewText']", "[class*='text']"]);
       const authorMasked = textOf(node, [".pui__NMi-Dp", "[class*='nick']", "[class*='name']"]);
       const rawText = compact(node.textContent);
-      const ratingMatch = rawText.match(/(?:별점|평점)\s*([1-5](?:\.0)?)/);
-      const dateMatch = rawText.match(/\d{4}\.\s*\d{1,2}\.\s*\d{1,2}\.?/);
+      const ratingMatch = rawText.match(/(?:별점|평점)\\s*([1-5](?:\\.0)?)/);
+      const dateMatch = rawText.match(/\\d{4}\\.\\s*\\d{1,2}\\.\\s*\\d{1,2}\\.?|\\d{4}년\\s*\\d{1,2}월\\s*\\d{1,2}일/);
       const verificationMethod = /영수증|카드|예약|주문|방문/.exec(rawText)?.[0] ?? "";
       return { authorMasked, content, rating: ratingMatch ? Number(ratingMatch[1]) : null, visitDate: dateMatch?.[0] ?? "", verificationMethod };
     });
