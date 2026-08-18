@@ -71,6 +71,12 @@ body {
   display: none !important;
 }
 
+/* 모바일 미리보기는 데스크톱 뷰포트에서도 한 열로 쌓아 시트 검사 패널이 밖으로 이탈하지 않게 한다. */
+[data-admin-display-mode="mobile"] .admin-campaign-sheet-layout {
+  display: flex;
+  flex-direction: column;
+}
+
 /* PC 모드에서는 관리자 업무 화면을 80% 배율로 표시해 표와 도구를 한 화면에 더 많이 보여준다. */
 @media (min-width: 1024px) {
   [data-admin-display-mode="desktop"] .admin-desktop-compact {

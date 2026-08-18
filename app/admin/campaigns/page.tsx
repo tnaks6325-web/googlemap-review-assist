@@ -102,7 +102,7 @@ export default async function AdminCampaignsPage() {
       <AdminCampaignOperationsLockStatus state={automationLock} />
 
       {!automationLock.isLocked ? <section className="mb-7 rounded-[13px] border border-blue-200 bg-blue-50/60 p-4">
-        <div className="grid gap-4 xl:grid-cols-[minmax(240px,0.6fr)_minmax(480px,1.4fr)] xl:items-start">
+        <div className="admin-campaign-sheet-layout grid gap-4 xl:grid-cols-[minmax(240px,0.6fr)_minmax(480px,1.4fr)] xl:items-start">
           <div className="flex items-start gap-3">
             <span
               aria-hidden="true"
