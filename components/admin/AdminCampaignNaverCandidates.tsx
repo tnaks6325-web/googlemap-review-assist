@@ -204,9 +204,6 @@ export function AdminCampaignNaverCandidates({
                     className="underline decoration-line-strong underline-offset-4 transition hover:text-brand hover:decoration-brand"
                   >
                     {connectedPlace.name}
-                    <span aria-hidden="true" className="ml-1 text-xs text-brand">
-                      ↗
-                    </span>
                   </a>
                 ) : (
                   connectedPlace.name
@@ -326,9 +323,6 @@ export function AdminCampaignNaverCandidates({
                                 className="underline decoration-line-strong underline-offset-4 transition hover:text-brand hover:decoration-brand"
                               >
                                 {candidate.title}
-                                <span aria-hidden="true" className="ml-1 text-xs text-brand">
-                                  ↗
-                                </span>
                               </a>
                             ) : (
                               candidate.title
