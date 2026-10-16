@@ -694,9 +694,6 @@ function CampaignRows({
               className="inline-flex items-center gap-1 font-bold text-ink underline decoration-line-strong underline-offset-4 transition hover:text-brand hover:decoration-brand"
             >
               {campaign.businessName}
-              <span aria-hidden="true" className="text-xs text-brand">
-                ↗
-              </span>
             </a>
           ) : (
             <p className="font-bold text-ink">{campaign.businessName}</p>

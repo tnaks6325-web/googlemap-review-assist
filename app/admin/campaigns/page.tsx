@@ -118,7 +118,7 @@ export default async function AdminCampaignsPage() {
                 rel="noreferrer"
                 className="inline-flex h-9 items-center justify-center rounded-[9px] bg-brand-tint px-3 text-xs font-bold text-brand"
               >
-                광고 요청 시트 열기 ↗
+                광고 요청 시트 열기
               </a>
             </div>
             <SheetImportDryRun />
